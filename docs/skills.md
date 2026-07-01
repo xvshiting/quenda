@@ -1,0 +1,369 @@
+# Skills Framework
+
+Skills are composable capability packages that extend agent behavior with instructions and resources.
+
+## Overview
+
+A **Skill** is a reusable package that provides:
+
+- **Instructions** - How and when to use a capability
+- **Resource catalog** - Reference documents, templates, and assets
+- **Optional triggers** - Commands that activate the skill
+
+```text
+Skill = instructions + resource catalog + optional tools + optional policy metadata
+```
+
+Skills differ from Tools:
+- A **Tool** is an executable function the model can call
+- A **Skill** is instructional content that guides the model's behavior
+
+## Framework Contract
+
+All Kora agents automatically receive the **Framework Contract** in their system prompt. This includes:
+
+- Workspace structure conventions (physical vs logical)
+- Skills system overview and path locations
+- How to create new skills
+- Skill usage commands
+
+The Framework Contract ensures every agent knows where to find and how to create skills.
+
+## Physical vs Logical Workspace
+
+Kora distinguishes between **physical workspace** (project folder) and **logical workspace** (user-specific state):
+
+### Physical Workspace (Shared)
+```
+<project-folder>/           # Shared project files
+├── .kora/
+│   └── workspace.yaml      # Workspace binding (id, metadata)
+└── ...                     # Project code
+```
+
+### Logical Workspace (Per-User)
+```
+~/.kora/users/<user>/
+├── agents/
+│   └── <agent>/
+│       └── workspaces/<ws_id>/  # Session state
+└── workspaces/
+    └── <ws_id>/
+        └── skills/              # User-workspace skills
+```
+
+This design enables:
+- **User isolation**: Each user has their own skills per workspace
+- **Multi-tenant support**: Same project, different users, different skills
+- **Clean separation**: Project code vs user state
+
+## Skill Locations
+
+Skills are discovered in this priority order:
+
+| Priority | Location | Source | Description |
+|----------|----------|--------|-------------|
+| 1 (highest) | `~/.kora/users/<user>/workspaces/<ws_id>/skills/` | user_workspace | User-specific, highest priority |
+| 2 | `<agent-package>/skills/` | agent_package | Bundled with agent |
+| 3 (lowest) | `~/.kora/skills/` | user | Shared across workspaces |
+
+### User-Workspace Skills
+
+Skills specific to a user in a particular workspace:
+
+```
+~/.kora/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md
+```
+
+These skills:
+- Are isolated per user and per workspace
+- Have the highest priority (can override bundled skills)
+- Support multi-user environments
+
+### Agent Package Bundled Skills
+
+Skills bundled with the agent package. When distributing via PyPI, include in package data:
+
+```
+<agent-package>/
+├── AGENT.md
+├── config.yaml
+├── skills/                    # Bundled skills
+│   ├── code-review/
+│   │   └── SKILL.md
+│   └── repo-navigation/
+│       └── SKILL.md
+└── ...
+```
+
+In `config.yaml`, reference bundled skills:
+
+```yaml
+skills:
+  - code-review        # Auto-activate bundled skill
+  - repo-navigation
+```
+
+**Benefits:**
+- Installed together with the agent
+- Version consistency: skill version matches agent version
+- Removed when agent is uninstalled
+- No pollution of user/workspace environment
+
+### User Skills
+
+Shared skills in user's home directory:
+
+```
+~/.kora/skills/<skill-name>/SKILL.md
+```
+
+These are shared across all workspaces for this user.
+
+## Creating a Skill
+
+Skills are defined in `SKILL.md` files within a skill directory:
+
+```
+.kora/skills/
+└── code-review/
+    ├── SKILL.md
+    ├── guides/
+    │   └── style-guide.md
+    └── templates/
+        └── review-report.md
+```
+
+### SKILL.md Schema
+
+```yaml
+---
+name: code-review
+description: Comprehensive code review with style enforcement
+version: "1.0.0"
+
+kora:                          # Optional Kora-specific metadata
+  activates_on:
+    - command: "/review"      # Command trigger
+  resources:
+    references:
+      - path: "guides/style-guide.md"
+        description: "Style guidelines"
+    assets:
+      - path: "templates/review-report.md"
+        type: template
+---
+
+# Code Review Skill
+
+When performing a code review:
+1. Check code style against the style guide
+2. Verify test coverage
+3. Review documentation
+...
+```
+
+### Frontmatter Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
+| `description` | Yes | Human-readable description |
+| `version` | No | Semantic version (default: "0.1.0") |
+| `kora` | No | Kora-specific configuration |
+
+### Kora Metadata
+
+The `kora` section supports:
+
+```yaml
+kora:
+  activates_on:
+    - command: "/review"      # Slash command trigger
+  resources:
+    references:               # Documents for the model to reference
+      - path: "guides/style-guide.md"
+        description: "Style guidelines"
+    assets:                   # Templates and other assets
+      - path: "templates/report.md"
+        type: template
+```
+
+## Discovery Locations
+
+Skills are discovered in this priority order:
+
+1. **Workspace skills** - `.kora/skills/<name>/` (highest priority)
+2. **Ecosystem skills** - `.agents/skills/<name>/` (for compatibility)
+3. **User skills** - `~/.kora/skills/<name>/`
+
+## Using Skills
+
+### In Agent Configuration
+
+Activate skills by default in `config.yaml`:
+
+```yaml
+# config.yaml
+skills:
+  - code-review
+  - testing
+```
+
+Or with structured format:
+
+```yaml
+skills:
+  activate:
+    - code-review
+    - testing
+```
+
+### In REPL
+
+Use the `/skill` command to manage skills:
+
+```
+/skill list                    # List available and active skills
+/skill activate code-review    # Activate a skill
+/skill deactivate code-review  # Deactivate a skill
+/skill resources               # List resources from active skills
+```
+
+### Programmatic API
+
+```python
+from kora.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
+
+# Discover available skills
+# user_workspace_skills_path: logical workspace path for user isolation
+# agent_package_path: path to agent package with bundled skills
+discovery = SkillDiscovery(
+    user_workspace_skills_path=user_workspace_skills_path,
+    agent_package_path=agent_package_path,
+)
+skills = discovery.discover_skills()
+
+# Activate skills
+activator = SkillActivator(discovery)
+activator.activate_skill("code-review")
+
+# Get active skills for instruction composition
+active_skills = activator.active_skills
+
+# Access resources
+resolver = ResourceResolver(active_skills)
+guide = resolver.load_resource("code-review", "style-guide.md")
+```
+
+## Progressive Disclosure
+
+Skills implement progressive disclosure for efficiency:
+
+1. **Discovery** - Only frontmatter metadata is loaded
+2. **Activation** - The `SKILL.md` body is read lazily when the skill is used
+3. **Usage** - Resources are loaded on demand
+
+This ensures large skill directories don't impact startup time.
+
+## Instruction Composition
+
+Skills are integrated into the instruction composition layer (ADR-007):
+
+```
+Framework → Agent AGENT.md → Agent Instructions → User instructions → Workspace instructions → Skills
+```
+
+### Skill Injection
+
+**1. Active Skill Instructions (only for activated skills)**
+
+Activated skills get their full instructions injected:
+
+```markdown
+## Active Skill: code-review
+
+# Code Review
+
+When reviewing code, provide thorough, constructive feedback...
+```
+
+### How It Works
+
+1. **Discovery**: All skills in skill directories are discovered
+2. **Activation**: User or config activates specific skills
+3. **Instruction injection**: Full instructions of active skills → agent knows how to apply them
+4. **Resource loading**: References, templates, and other assets are read only when needed
+
+Discovered skill catalogs stay host-side by default. They can still be surfaced explicitly for debugging or routing flows, but they are not injected into every run prompt.
+
+## Resource Types
+
+### References
+
+Documents the model can reference for context:
+
+```yaml
+resources:
+  references:
+    - path: "guides/style-guide.md"
+      description: "Code style guidelines"
+```
+
+### Assets
+
+Templates, data files, and other resources:
+
+```yaml
+resources:
+  assets:
+    - path: "templates/report.md"
+      type: template
+```
+
+Asset types: `template`, `script`, `data`, `other`
+
+Scripts should stay inert unless the host explicitly decides to run them under trust controls.
+
+## Example Skills
+
+### Code Review Skill
+
+```
+.kora/skills/code-review/
+├── SKILL.md
+├── guides/
+│   ├── style-guide.md
+│   └── security-checklist.md
+└── templates/
+    └── review-report.md
+```
+
+### Testing Skill
+
+```
+.kora/skills/testing/
+├── SKILL.md
+└── references/
+    ├── test-patterns.md
+    └── coverage-guide.md
+```
+
+## Security Considerations
+
+- Skills are trusted workspace configuration
+- Skills can influence model behavior and tool selection
+- Scripts in skills are not automatically executed
+- Future third-party skills will require explicit trust controls
+
+## Architecture
+
+Skills are entirely a **Host layer** concern:
+
+| Layer | Responsibility |
+|-------|---------------|
+| **Kernel** | Unaware of skills, only handles messages and tool calls |
+| **Runtime** | Receives composed AgentConfig, doesn't own skill discovery |
+| **Host** | Discovers, validates, loads, and composes skills |
+
+This separation keeps the core runtime simple while allowing rich capability composition.

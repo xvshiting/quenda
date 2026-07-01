@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kora-agent"
+version = "0.1.7"
+description = "A lightweight Agent framework with extensible model providers"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    { name = "xvshiting" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "typing-extensions>=4.0.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "mypy>=1.8.0",
+    "ruff>=0.3.0",
+]
+code = [
+    "kora-code>=0.1.0",
+]
+openai = [
+    "openai>=1.0.0",
+]
+anthropic = [
+    "anthropic>=0.25.0",
+]
+network = [
+    "httpx[socks]>=0.25.0",
+]
+all = [
+    "kora-agent[dev,code,openai,anthropic,network]",
+]
+
+[project.scripts]
+kora = "kora.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/xvshiting/kora"
+Repository = "https://github.com/xvshiting/kora"
+Documentation = "https://github.com/xvshiting/kora#readme"
+Issues = "https://github.com/xvshiting/kora/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kora"]
+
+[tool.hatch.build.targets.sdist]
+# Only include source code and essential files for kora-agent
+# Use only-include to strictly limit what goes into the source distribution
+only-include = [
+    "src/kora",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
