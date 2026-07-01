@@ -1,0 +1,54 @@
+name: Publish quenda-code to PyPI
+
+on:
+  push:
+    tags:
+      - 'quenda-code-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Extract version from tag (e.g., quenda-code-v0.1.6 -> 0.1.6)
+          VERSION=${GITHUB_REF#refs/tags/quenda-code-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build package
+        working-directory: agents/quenda-code
+        run: |
+          rm -rf dist/
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: agents/quenda-code/dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: quenda-code ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            agents/quenda-code/dist/*.whl
+            agents/quenda-code/dist/*.tar.gz

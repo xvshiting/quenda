@@ -1,16 +1,16 @@
-name: Publish to PyPI
+name: Publish quenda to PyPI
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'quenda-v*'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # For OIDC authentication with PyPI
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -24,42 +24,30 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          pip install build
 
       - name: Extract version from tag
         id: version
         run: |
-          # Remove 'v' prefix from tag (e.g., v0.1.0 -> 0.1.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
+          # Extract version from tag (e.g., quenda-v0.1.8 -> 0.1.8)
+          VERSION=${GITHUB_REF#refs/tags/quenda-v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build quenda package
+      - name: Build package
         run: |
           rm -rf dist/
           python -m build
 
-      - name: Publish quenda to PyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
 
-      - name: Build quenda-code package
-        working-directory: agents/quenda-code
-        run: |
-          rm -rf dist/
-          python -m build
-
-      - name: Publish quenda-code to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: agents/quenda-code/dist/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          name: quenda ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
             dist/*.whl
             dist/*.tar.gz
-            agents/quenda-code/dist/*.whl
-            agents/quenda-code/dist/*.tar.gz
