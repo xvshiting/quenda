@@ -2,22 +2,30 @@ model:
   provider: jdcloud
   name: GLM-5
 
-# Capability declaration (ADR-014)
-# All bundles are requests. Host resolves the final tool set.
-tools:
-  bundles:
-    - core  # filesystem + execution + interaction
-
 # Instructions to include (relative to agent package)
 instructions:
   include:
     - instructions/coding.md
     - instructions/communication.md
 
-# Skills to activate by default (ADR-002)
+tools:
+  bundles:
+    - core
+
 skills:
-  - code-review
+  include_catalog: true
 
 # Theme configuration (ADR-014)
+# Uncomment to customize the interface appearance.
+# theme:
+#   # Use a preset: "default", "minimal", "ascii", "silent"
+#   preset: default
+#
+#   # Or override specific fields (see InterfaceTheme):
+#   agent_icon: "🤖"
+#   success_icon: "✓"
+#   error_icon: "❌"
+#   show_duration: true
+#   spinner_frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 theme:
-  agent_icon: "🐼"
+  agent_icon: "🐾"
