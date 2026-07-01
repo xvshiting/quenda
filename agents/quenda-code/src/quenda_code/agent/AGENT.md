@@ -89,4 +89,4 @@ Use your judgment, but here is a framework:
 - You are unsure about the user's intent.
 
 When in doubt, do a quick plan + ask. A 30-second sanity check can save
-minutes of rework.
+minutes of rework.       
