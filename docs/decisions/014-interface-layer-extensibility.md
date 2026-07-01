@@ -6,7 +6,7 @@
 
 ## 背景
 
-当前 Kora 的 Interface 层（`src/kora/interface/`）实现了终端渲染、REPL 交互、状态栏、活动指示器等功能，但大部分实现是硬编码的：
+当前 Quenda 的 Interface 层（`src/quenda/interface/`）实现了终端渲染、REPL 交互、状态栏、活动指示器等功能，但大部分实现是硬编码的：
 
 ### 当前硬编码内容
 
@@ -14,7 +14,7 @@
 |-----|------|-----------|
 | 状态栏文本 | `status.py` | `"🤖 mode: {mode} │ [/ for commands]"` |
 | 活动指示器 | `activity.py` | spinner 动画帧、消息格式 |
-| 欢迎消息 | `cli.py` | `"🤖 Kora Code Agent\n   Workspace: ..."` |
+| 欢迎消息 | `cli.py` | `"🤖 Quenda Code Agent\n   Workspace: ..."` |
 | 事件处理循环 | `cli.py` | indicator + renderer 协作逻辑 |
 | 图标和模板 | 多处 | `"✓"`, `"❌"`, `"✅"` 等 |
 
@@ -58,7 +58,7 @@
 统一的主题配置容器，包含所有可定制参数：
 
 ```python
-# src/kora/interface/theme.py
+# src/quenda/interface/theme.py
 
 @dataclass
 class InterfaceTheme:
@@ -142,7 +142,7 @@ class InterfaceTheme:
     def minimal(cls) -> InterfaceTheme:
         """最小主题：适合 CI/CD 环境"""
         return cls(
-            agent_icon="[Kora]",
+            agent_icon="[Quenda]",
             success_icon="[OK]",
             error_icon="[ERR]",
             complete_icon="[DONE]",
@@ -156,7 +156,7 @@ class InterfaceTheme:
     def ascii(cls) -> InterfaceTheme:
         """ASCII 主题：适合不支持 Unicode 的终端"""
         return cls(
-            agent_icon="[Kora]",
+            agent_icon="[Quenda]",
             success_icon="[+]",
             error_icon="[!]",
             complete_icon="[OK]",
@@ -171,7 +171,7 @@ class InterfaceTheme:
 状态栏内容提供者：
 
 ```python
-# src/kora/interface/status.py
+# src/quenda/interface/status.py
 
 @dataclass
 class StatusContext:
@@ -245,7 +245,7 @@ class DefaultStatusProvider:
 活动指示器抽象：
 
 ```python
-# src/kora/interface/activity.py
+# src/quenda/interface/activity.py
 
 class ActivityIndicator(Protocol):
     """活动指示器协议"""
@@ -316,7 +316,7 @@ class ProgressIndicator:
 启动消息提供者：
 
 ```python
-# src/kora/interface/welcome.py
+# src/quenda/interface/welcome.py
 
 @dataclass
 class WelcomeContext:
@@ -362,7 +362,7 @@ class DefaultWelcomeProvider:
 事件处理流水线抽象：
 
 ```python
-# src/kora/interface/events.py
+# src/quenda/interface/events.py
 
 class EventHandler(Protocol):
     """
@@ -489,7 +489,7 @@ class CollectingEventHandler:
 使用 StatusProvider 替代硬编码：
 
 ```python
-# src/kora/interface/status.py
+# src/quenda/interface/status.py
 
 @dataclass
 class StatusBarManager:
@@ -525,7 +525,7 @@ class StatusBarManager:
 使用 InterfaceTheme：
 
 ```python
-# src/kora/interface/console.py
+# src/quenda/interface/console.py
 
 class ConsoleRenderer:
     """
@@ -590,7 +590,7 @@ class ConsoleRenderer:
 CLI 层使用组合而非硬编码：
 
 ```python
-# src/kora/cli.py (简化后)
+# src/quenda/cli.py (简化后)
 
 def run_repl(
     agent_path: Path,
@@ -618,7 +618,7 @@ def run_repl(
 
     # 欢迎消息
     welcome_ctx = WelcomeContext(
-        agent_name="Kora Code Agent",
+        agent_name="Quenda Code Agent",
         workspace_id=setup.workspace_id,
         workspace_path=workspace,
         session_id=setup.session.id,
@@ -680,32 +680,32 @@ def run_repl(
 
 | 文件 | 变更 |
 |------|------|
-| `src/kora/interface/theme.py` | 新建 InterfaceTheme |
-| `src/kora/interface/status.py` | 添加 StatusProvider Protocol + DefaultStatusProvider |
-| `src/kora/interface/activity.py` | 添加 ActivityIndicator Protocol + SilentIndicator |
-| `src/kora/interface/__init__.py` | 导出新类型 |
+| `src/quenda/interface/theme.py` | 新建 InterfaceTheme |
+| `src/quenda/interface/status.py` | 添加 StatusProvider Protocol + DefaultStatusProvider |
+| `src/quenda/interface/activity.py` | 添加 ActivityIndicator Protocol + SilentIndicator |
+| `src/quenda/interface/__init__.py` | 导出新类型 |
 
 ### Phase 2: 渲染器更新
 
 | 文件 | 变更 |
 |------|------|
-| `src/kora/interface/console.py` | 使用 InterfaceTheme |
-| `src/kora/interface/welcome.py` | 新建 WelcomeProvider |
-| `src/kora/interface/status.py` | StatusBarManager 使用 StatusProvider |
+| `src/quenda/interface/console.py` | 使用 InterfaceTheme |
+| `src/quenda/interface/welcome.py` | 新建 WelcomeProvider |
+| `src/quenda/interface/status.py` | StatusBarManager 使用 StatusProvider |
 
 ### Phase 3: 事件处理器
 
 | 文件 | 变更 |
 |------|------|
-| `src/kora/interface/events.py` | 新建 EventHandler Protocol + 默认实现 |
-| `src/kora/cli.py` | 使用 EventHandler 替代硬编码循环 |
+| `src/quenda/interface/events.py` | 新建 EventHandler Protocol + 默认实现 |
+| `src/quenda/cli.py` | 使用 EventHandler 替代硬编码循环 |
 
 ### Phase 4: 配置集成
 
 | 文件 | 变更 |
 |------|------|
-| `src/kora/host/config.py` | 支持从配置加载主题 |
-| `agents/kora-code/config.yaml` | 添加主题配置示例 |
+| `src/quenda/host/config.py` | 支持从配置加载主题 |
+| `agents/quenda-code/config.yaml` | 添加主题配置示例 |
 
 ### 配置文件示例
 
@@ -755,8 +755,8 @@ interface:
 ### 短期
 
 1. **更多预设主题**：提供 dark/light/high-contrast 等
-2. **主题配置文件**：支持 `~/.kora/themes/` 目录
-3. **CLI 参数**：`kora code --theme minimal`
+2. **主题配置文件**：支持 `~/.quenda/themes/` 目录
+3. **CLI 参数**：`quenda code --theme minimal`
 
 ### 中期
 

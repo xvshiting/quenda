@@ -6,7 +6,7 @@ Draft (2026-06-29)
 
 ## Purpose
 
-This document provides a single matrix view of Kora's current and
+This document provides a single matrix view of Quenda's current and
 planned hook seams.
 
 For each seam, it answers four implementation-critical questions:
@@ -21,10 +21,10 @@ mechanical and less ambiguous.
 
 It should be read together with:
 
-- [ADR-020](/Users/xushiting/Workspace/kora/docs/decisions/020-runtime-terminology-and-execution-units.md)
-- [ADR-021](/Users/xushiting/Workspace/kora/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
-- [ADR-022](/Users/xushiting/Workspace/kora/docs/decisions/022-keep-core-minimal-and-push-strategies-to-policies.md)
-- [ADR-023](/Users/xushiting/Workspace/kora/docs/decisions/023-runtime-owns-tool-phase-and-policy-control.md)
+- [ADR-020](/Users/xushiting/Workspace/quenda/docs/decisions/020-runtime-terminology-and-execution-units.md)
+- [ADR-021](/Users/xushiting/Workspace/quenda/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
+- [ADR-022](/Users/xushiting/Workspace/quenda/docs/decisions/022-keep-core-minimal-and-push-strategies-to-policies.md)
+- [ADR-023](/Users/xushiting/Workspace/quenda/docs/decisions/023-runtime-owns-tool-phase-and-policy-control.md)
 
 ## How To Read This Matrix
 
@@ -36,7 +36,7 @@ Each seam is described along these dimensions:
 - `Data-Path Impact`: whether the seam changes payloads written into the
   loop or storage
 - `Transition Impact`: whether the seam can affect state transitions
-- `Status`: current maturity in Kora
+- `Status`: current maturity in Quenda
 
 ## Transition Impact Legend
 
@@ -53,7 +53,7 @@ impact categories.
 
 ## Current Official Seam Set
 
-These are the seams Kora already has or has already named explicitly in
+These are the seams Quenda already has or has already named explicitly in
 design work.
 
 | Seam | Role | Stage | Input Context | Output / Decision | Data-Path Impact | Transition Impact | Status |

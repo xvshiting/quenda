@@ -7,15 +7,15 @@ Tests the complete flow from tool discovery to config resolution.
 import pytest
 from pathlib import Path
 
-from kora.host.registry import (
+from quenda.host.registry import (
     NamedToolSpec,
     LoadedToolCatalog,
     ToolRegistryBuilder,
 )
-from kora.host.loader import load_agent_tools, AgentConfigYaml, ToolsConfig
-from kora.host.runner import _resolve_tools, _instantiate_tool
-from kora.kernel.tool import Tool
-from kora.kernel.types import ToolResult
+from quenda.host.loader import load_agent_tools, AgentConfigYaml, ToolsConfig
+from quenda.host.runner import _resolve_tools, _instantiate_tool
+from quenda.kernel.tool import Tool
+from quenda.kernel.types import ToolResult
 
 
 # Simple test tool
@@ -167,7 +167,7 @@ Test agent.
 
         # Create tool module with tools list
         (tools_dir / "echo_tool.py").write_text('''
-from kora import tool
+from quenda import tool
 
 @tool
 def echo(message: str) -> str:
@@ -179,7 +179,7 @@ tools = [echo]
 
         # Create tool module with register function
         (tools_dir / "ping_tool.py").write_text('''
-from kora.host.registry import ToolRegistryBuilder
+from quenda.host.registry import ToolRegistryBuilder
 
 class PingTool:
     name = "ping"
@@ -187,7 +187,7 @@ class PingTool:
     parameters = {"type": "object", "properties": {}}
 
     def execute(self, **kwargs):
-        from kora.kernel.types import ToolResult
+        from quenda.kernel.types import ToolResult
         return ToolResult(call_id="", name="ping", content="pong")
 
 def register(builder: ToolRegistryBuilder):

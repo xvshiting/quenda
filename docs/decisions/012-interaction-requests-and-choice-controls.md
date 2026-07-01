@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Kora needs a structured way to pause execution and ask the user to make a choice.
+Quenda needs a structured way to pause execution and ask the user to make a choice.
 
 This is not a tool call. Tools are for acting on the world. Choices are for asking a human to decide when the agent should not guess blindly.
 
@@ -21,7 +21,7 @@ LLMs can help generate the candidate options and explanatory text, but the frame
 
 ## Decision
 
-Kora should provide a structured interaction request protocol:
+Quenda should provide a structured interaction request protocol:
 
 - `InteractionRequest` for host-side choice/confirm/input/menu requests
 - `InteractionResponse` for user selections
@@ -45,7 +45,7 @@ The request is a structured object, not a prompt convention.
 
 ### Built-in interaction kinds
 
-Kora should ship with a small set of common kinds:
+Quenda should ship with a small set of common kinds:
 
 - `choice`
 - `confirm`
@@ -81,9 +81,9 @@ Loading contract:
 - `interactions` list of interaction handlers, or
 - `register(registry)` function
 
-This lets agent authors add custom interaction kinds without changing Kora framework code.
+This lets agent authors add custom interaction kinds without changing Quenda framework code.
 
-## Why This Fits Kora
+## Why This Fits Quenda
 
 This follows the same separation pattern as commands:
 
@@ -126,4 +126,4 @@ This ADR does not define:
 
 ## Recommendation
 
-Kora should adopt structured interaction requests as the framework primitive for choice/confirm/input/menu flows, and expose them through an extensible registry that can be loaded from agent packages.
+Quenda should adopt structured interaction requests as the framework primitive for choice/confirm/input/menu flows, and expose them through an extensible registry that can be loaded from agent packages.

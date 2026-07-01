@@ -13,11 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import patch, MagicMock
 
-from kora.cli import (
+from quenda.cli import (
     _extract_interaction_requests,
     _handle_interaction_request,
 )
-from kora.host import (
+from quenda.host import (
     InteractionContext,
     InteractionOption,
     InteractionRegistry,
@@ -25,7 +25,7 @@ from kora.host import (
     resolve_skill_activation_requests,
     create_default_interaction_registry,
 )
-from kora.runtime.events import ModelResponded
+from quenda.runtime.events import ModelResponded
 
 
 @dataclass
@@ -256,7 +256,7 @@ class TestHandleInteractionRequest:
         }
 
         # Mock select_option to return the first option
-        with patch("kora.cli.select_option") as mock_select:
+        with patch("quenda.cli.select_option") as mock_select:
             mock_select.return_value = InteractionOption(id="a", label="Option A")
             response = _handle_interaction_request(
                 request_payload, registry, context, repl_input
@@ -289,7 +289,7 @@ class TestHandleInteractionRequest:
         }
 
         # Mock select_option to return "Yes"
-        with patch("kora.cli.select_option") as mock_select:
+        with patch("quenda.cli.select_option") as mock_select:
             mock_select.return_value = InteractionOption(id="yes", label="Yes")
             response = _handle_interaction_request(
                 request_payload, registry, context, repl_input
@@ -355,7 +355,7 @@ class TestHandleInteractionRequest:
         }
 
         # Mock select_option to return custom input string
-        with patch("kora.cli.select_option") as mock_select:
+        with patch("quenda.cli.select_option") as mock_select:
             mock_select.return_value = "custom option C"
             response = _handle_interaction_request(
                 request_payload, registry, context, repl_input
@@ -391,7 +391,7 @@ class TestHandleInteractionRequest:
         }
 
         # Mock select_option to return None (user cancelled)
-        with patch("kora.cli.select_option") as mock_select:
+        with patch("quenda.cli.select_option") as mock_select:
             mock_select.return_value = None
             response = _handle_interaction_request(
                 request_payload, registry, context, repl_input

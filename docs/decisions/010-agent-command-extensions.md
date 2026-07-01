@@ -6,15 +6,15 @@
 
 ## 背景
 
-当前 Kora 的命令系统（`/help`, `/mode`, `/model` 等）全部硬编码在框架的 `src/kora/host/commands.py` 中。用户无法在不修改框架代码的情况下添加自定义命令。
+当前 Quenda 的命令系统（`/help`, `/mode`, `/model` 等）全部硬编码在框架的 `src/quenda/host/commands.py` 中。用户无法在不修改框架代码的情况下添加自定义命令。
 
-这违背了 Kora 的核心设计原则：
+这违背了 Quenda 的核心设计原则：
 - "框架提供机制，用户自己扩展能力"
 - "Agent equality" — 官方 Code Agent 和外部 Agent 使用相同的公共 API
 
 用户期望的扩展模型是：
 - 用户在仓库外自建一个 agent 目录
-- `kora run --agent /path/to/agent ...`
+- `quenda run --agent /path/to/agent ...`
 - Agent 自带自己的命令，不影响框架和其他 agent
 
 ## 决策
@@ -41,7 +41,7 @@ my-agent/
 
 1. **推荐方式：`commands` 列表**
    ```python
-   from kora.host.commands import Command, CommandResult, CommandContext
+   from quenda.host.commands import Command, CommandResult, CommandContext
    
    class StatusCommand:
        @property
@@ -97,7 +97,7 @@ Host 在加载 Agent Package 时：
 
 ### 为什么支持这个模型
 
-1. **用户不改框架**：扩展代码放在 agent 目录，不侵入 Kora 源码
+1. **用户不改框架**：扩展代码放在 agent 目录，不侵入 Quenda 源码
 2. **命令与 Agent 绑定**：每个 agent 有自己的命令集，互不干扰
 3. **符合 Unix 哲学**：小模块、可组合、目录即边界
 4. **声明式接入 + 代码实现**：平衡灵活性和可维护性
@@ -120,15 +120,15 @@ Host 在加载 Agent Package 时：
 
 | 文件 | 变更 |
 |------|------|
-| `src/kora/host/loader.py` | 添加命令扩展扫描和加载 |
-| `src/kora/host/commands.py` | 添加 `merge_registry()` 函数 |
-| `src/kora/cli.py` | 使用合并后的 registry |
+| `src/quenda/host/loader.py` | 添加命令扩展扫描和加载 |
+| `src/quenda/host/commands.py` | 添加 `merge_registry()` 函数 |
+| `src/quenda/cli.py` | 使用合并后的 registry |
 | `docs/getting-started.md` | 添加命令扩展文档 |
 
 ### 代码示例
 
 ```python
-# src/kora/host/loader.py
+# src/quenda/host/loader.py
 
 def load_agent_commands(agent_path: Path, registry: CommandRegistry) -> int:
     """Load command extensions from agent package."""

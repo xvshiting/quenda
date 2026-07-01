@@ -15,8 +15,8 @@ from dataclasses import asdict
 from datetime import datetime
 from openai import OpenAI
 
-from kora.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
-from kora.runtime import (
+from quenda.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.runtime import (
     AgentConfig,
     AnyEvent,
     ErrorOccurred,

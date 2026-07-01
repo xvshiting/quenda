@@ -15,7 +15,7 @@ extensions are:
 - `Verification / Reflection` phases
 - `Memory Read / Write / Compaction` phases
 
-The goal of this document is to show how these phases fit into Kora's
+The goal of this document is to show how these phases fit into Quenda's
 existing runtime state machine without collapsing the current layering.
 
 This document answers:
@@ -30,10 +30,10 @@ This document answers:
 These two phase families are the best next step because they are both:
 
 - highly relevant to current agent research
-- conceptually compatible with Kora's existing runtime design
+- conceptually compatible with Quenda's existing runtime design
 
 They also improve support for a broad range of methods without forcing
-Kora to adopt search or branching immediately.
+Quenda to adopt search or branching immediately.
 
 ### Verification / Reflection
 
@@ -67,7 +67,7 @@ Representative work:
 ## Current Baseline
 
 The current lifecycle from
-[ADR-021](/Users/xushiting/Workspace/kora/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
+[ADR-021](/Users/xushiting/Workspace/quenda/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
 can be simplified as:
 
 ```text
@@ -423,13 +423,13 @@ important research questions become harder to study:
 - studying trust or poisoning defenses
 - separating context compression from memory maintenance
 
-By naming `MemoryReadRunning` and `MemoryWriteRunning` explicitly, Kora
+By naming `MemoryReadRunning` and `MemoryWriteRunning` explicitly, Quenda
 creates a clean place for experimentation without overloading unrelated
 phases.
 
 ## What This Enables
 
-These additions would allow Kora to support the following more cleanly:
+These additions would allow Quenda to support the following more cleanly:
 
 - verifier-guided stopping
 - post-tool evidence evaluation
@@ -443,7 +443,7 @@ without requiring immediate branching or search semantics.
 
 ## What This Still Does Not Solve
 
-Even with these phase additions, Kora would still not fully support:
+Even with these phase additions, Quenda would still not fully support:
 
 - branch-native search execution
 - candidate tree evaluation
@@ -476,6 +476,6 @@ The next lifecycle expansion should focus first on:
 and should keep `MemoryCompactionRunning` and `ReflectionRunning` as
 explicit follow-on targets.
 
-This is the highest-leverage extension for improving Kora's support of
+This is the highest-leverage extension for improving Quenda's support of
 current agent research while preserving the current Runtime-centered
 state-machine architecture.

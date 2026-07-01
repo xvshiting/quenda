@@ -1,6 +1,6 @@
 # 更新日志
 
-记录 Kora 框架的重要变更，本文档随框架更新而同步更新。
+记录 Quenda 框架的重要变更，本文档随框架更新而同步更新。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ### 🎉 初始版本
 
-Kora 框架的第一个公开版本。
+Quenda 框架的第一个公开版本。
 
 ### Agent SDK
 
@@ -39,11 +39,11 @@ Kora 框架的第一个公开版本。
 - VolcEngine(火山引擎), Xiaomi(小米), Tencent(腾讯)
 - JDCloud(京东云), SiliconFlow(硅基流动)
 
-### Kora Code CLI
+### Quenda Code CLI
 
-- `kora code` — 交互式 REPL 模式
-- `kora code "message"` — 一次性执行模式
-- `kora run --agent` — 运行自定义 Agent
+- `quenda code` — 交互式 REPL 模式
+- `quenda code "message"` — 一次性执行模式
+- `quenda run --agent` — 运行自定义 Agent
 - 三种交互模式：chat / code / architect
 
 ### 命令系统
@@ -67,7 +67,7 @@ Kora 框架的第一个公开版本。
 
 ## 版本命名规则
 
-Kora 使用语义化版本：`MAJOR.MINOR.PATCH`
+Quenda 使用语义化版本：`MAJOR.MINOR.PATCH`
 
 - **MAJOR**: 不兼容的 API 变更
 - **MINOR**: 向下兼容的功能新增
@@ -78,5 +78,5 @@ Kora 使用语义化版本：`MAJOR.MINOR.PATCH`
 ## 查看版本
 
 ```bash
-python -c "import kora; print(kora.__version__)"
+python -c "import quenda; print(quenda.__version__)"
 ```

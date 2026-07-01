@@ -1,19 +1,19 @@
-# Kora 框架文档
+# Quenda 框架文档
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version 0.1.0">
   <img src="https://img.shields.io/badge/python-3.12+-green" alt="Python 3.12+">
 </p>
 
-**Kora** 是一个轻量级的 AI Agent 框架。提供两套核心产品：
+**Quenda** 是一个轻量级的 AI Agent 框架。提供两套核心产品：
 
 ---
 
 ## 📚 文档导航
 
-### [Kora Agent 教程](./agent/01-quickstart.md) 🐍
+### [Quenda Agent 教程](./agent/01-quickstart.md) 🐍
 
-面向 **Python 开发者**，教你如何使用 Kora SDK 构建和运行 AI Agent。
+面向 **Python 开发者**，教你如何使用 Quenda SDK 构建和运行 AI Agent。
 
 | 章节 | 内容 |
 |------|------|
@@ -27,9 +27,9 @@
 | [Policy 系统](./agent/09-policies.md) | 策略钩子、TraceSink、TerminationPolicy |
 | [API 参考](./agent/08-references.md) | 完整 API 速查表 |
 
-### [Kora Code 教程](./code/01-quickstart.md) 🐼
+### [Quenda Code 教程](./code/01-quickstart.md) 🐼
 
-面向 **终端用户**，教你如何使用 `kora code` 命令行工具进行 AI 辅助编程。
+面向 **终端用户**，教你如何使用 `quenda code` 命令行工具进行 AI 辅助编程。
 
 | 章节 | 内容 |
 |------|------|
@@ -47,10 +47,10 @@
 
 ## 🚀 快速链接
 
-- **安装**: `pip install kora-agent`
-- **启动 Kora Code**: `kora code`
-- **CLI 帮助**: `kora --help`
-- **运行自定义 Agent**: `kora run --agent /path/to/AGENT.md`
+- **安装**: `pip install quenda`
+- **启动 Quenda Code**: `quenda code`
+- **CLI 帮助**: `quenda --help`
+- **运行自定义 Agent**: `quenda run --agent /path/to/AGENT.md`
 
 ---
 

@@ -5,8 +5,8 @@ Tests for retry mechanism.
 import pytest
 from unittest.mock import Mock
 
-from kora.providers.errors import RateLimitError, NetworkError
-from kora.providers.retry import retry_with_backoff, retry_with_backoff_async
+from quenda.providers.errors import RateLimitError, NetworkError
+from quenda.providers.retry import retry_with_backoff, retry_with_backoff_async
 
 
 class TestRetryWithBackoff:

@@ -1,6 +1,6 @@
 # 使用技巧
 
-Kora Code 的最佳实践、常见问题和高级用法。
+Quenda Code 的最佳实践、常见问题和高级用法。
 
 ---
 
@@ -160,19 +160,19 @@ Agent 在执行任务后会自动调用测试工具验证。
 
 ```bash
 # 快速提问（不进入交互模式）
-kora code "列出当前目录的文件"
+quenda code "列出当前目录的文件"
 
 # 指定工作空间和模型
-kora code --workspace ~/projects/myapp --provider openai "分析项目结构"
+quenda code --workspace ~/projects/myapp --provider openai "分析项目结构"
 
 # 恢复之前的会话
-kora code --session <id>
+quenda code --session <id>
 
 # 查看版本
-kora --version
+quenda --version
 
 # 运行自定义 Agent
-kora run --agent ./my-agent "帮我做..."
+quenda run --agent ./my-agent "帮我做..."
 ```
 
 ---
@@ -189,7 +189,7 @@ export DEEPSEEK_API_KEY="sk-new-key"
 
 ### Q: Agent 访问不了某些文件？
 
-工作空间边界限制。确保文件在运行 `kora code` 的目录下。
+工作空间边界限制。确保文件在运行 `quenda code` 的目录下。
 
 ### Q: 如何保存长会话？
 
@@ -199,7 +199,7 @@ export DEEPSEEK_API_KEY="sk-new-key"
 
 ```bash
 # 启动时指定
-kora code --provider anthropic --model claude-sonnet-4-20250514
+quenda code --provider anthropic --model claude-sonnet-4-20250514
 
 # 运行时切换
 > /model anthropic/claude-sonnet-4-20250514
@@ -258,7 +258,7 @@ kora code --provider anthropic --model claude-sonnet-4-20250514
 ## 下一步
 
 - [创建自定义 Agent](./04-customization.md) — 打造你的专属编码助手
-- [Kora Agent SDK 教程](../agent/01-quickstart.md) — 用 Python 开发 Agent
+- [Quenda Agent SDK 教程](../agent/01-quickstart.md) — 用 Python 开发 Agent
 
 ---
 

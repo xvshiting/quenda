@@ -8,7 +8,7 @@ Usage:
     python demo_kernel.py
 """
 
-from kora.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
 
 
 class EchoTool:

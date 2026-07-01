@@ -15,18 +15,18 @@ from pathlib import Path
 
 import pytest
 
-from kora.tools.filesystem import (
+from quenda.tools.filesystem import (
     ApplyPatchTool,
     ListFilesTool,
     ReadFileTool,
     SearchTextTool,
     WriteFileTool,
 )
-from kora.tools.execution import (
+from quenda.tools.execution import (
     RunShellTool,
     ShellConfig,
 )
-from kora.tools import get_core_tools
+from quenda.tools import get_core_tools
 
 
 class TestListFilesTool:

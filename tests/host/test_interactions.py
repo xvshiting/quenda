@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from kora.host import (
+from quenda.host import (
     InteractionContext,
     InteractionOption,
     InteractionRequest,
@@ -21,7 +21,7 @@ from kora.host import (
     create_default_interaction_registry,
     load_agent_interactions,
 )
-from kora.interface import render_interaction_request
+from quenda.interface import render_interaction_request
 
 
 @dataclass
@@ -136,7 +136,7 @@ class TestAgentLocalInteractionLoading:
             interaction_file = interactions_dir / "custom.py"
             interaction_file.write_text(
                 """
-from kora.host.interactions import InteractionOption
+from quenda.host.interactions import InteractionOption
 
 class CustomInteraction:
     @property

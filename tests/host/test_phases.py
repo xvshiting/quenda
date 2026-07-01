@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass, field
 
-from kora.host.phases import (
+from quenda.host.phases import (
     FollowupPhaseDecision,
     run_followup_phases,
 )
-from kora.runtime.events import ModelResponded, RunCompleted, RunStarted
+from quenda.runtime.events import ModelResponded, RunCompleted, RunStarted
 
 
 @dataclass

@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kora.host import (
+from quenda.host import (
     WorkspaceBinding,
     WorkspaceResolver,
     User,
@@ -102,7 +102,7 @@ class TestWorkspaceResolver:
             assert binding.path_hint == str(workspace_path.resolve())
 
             # Binding file should exist
-            binding_file = workspace_path / ".kora" / "workspace.yaml"
+            binding_file = workspace_path / ".quenda" / "workspace.yaml"
             assert binding_file.exists()
 
     def test_resolve_loads_existing_binding(self, temp_storage_root: Path) -> None:
@@ -204,18 +204,18 @@ class TestProtectedPaths:
             resolver = WorkspaceResolver(user_storage_root=temp_storage_root)
             resolver.resolve(workspace_path)  # Create binding
 
-            protected_path = workspace_path / ".kora" / "workspace.yaml"
+            protected_path = workspace_path / ".quenda" / "workspace.yaml"
             assert resolver.is_protected_path(protected_path, workspace_path)
 
-    def test_other_kora_files_not_protected(self, temp_storage_root: Path) -> None:
-        """Test that other .kora files are not protected."""
+    def test_other_quenda_files_not_protected(self, temp_storage_root: Path) -> None:
+        """Test that other .quenda files are not protected."""
         with TemporaryDirectory() as workspace_dir:
             workspace_path = Path(workspace_dir)
             resolver = WorkspaceResolver(user_storage_root=temp_storage_root)
             resolver.resolve(workspace_path)
 
             # config.yaml should not be protected (Project-owned)
-            config_path = workspace_path / ".kora" / "config.yaml"
+            config_path = workspace_path / ".quenda" / "config.yaml"
             assert not resolver.is_protected_path(config_path, workspace_path)
 
     def test_regular_files_not_protected(self, temp_storage_root: Path) -> None:
@@ -236,7 +236,7 @@ class TestProtectedPaths:
             workspace_path = Path(workspace_dir)
             resolver = WorkspaceResolver(user_storage_root=temp_storage_root)
 
-            outside_path = Path("/tmp/other") / ".kora" / "workspace.yaml"
+            outside_path = Path("/tmp/other") / ".quenda" / "workspace.yaml"
             assert not resolver.is_protected_path(outside_path, workspace_path)
 
 
@@ -273,7 +273,7 @@ class TestYAMLParsing:
 
     def test_roundtrip_serialization(self) -> None:
         """Test that serialization roundtrips correctly."""
-        from kora.host.workspace import _write_yaml, _parse_yaml
+        from quenda.host.workspace import _write_yaml, _parse_yaml
 
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.yaml"

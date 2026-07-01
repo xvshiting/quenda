@@ -7,7 +7,7 @@ Draft (2026-06-26)
 ## Purpose
 
 This document expands
-[ADR-018](/Users/xushiting/Workspace/kora/docs/decisions/018-multimodal-message-architecture.md).
+[ADR-018](/Users/xushiting/Workspace/quenda/docs/decisions/018-multimodal-message-architecture.md).
 
 The ADR answers:
 
@@ -24,7 +24,7 @@ This document answers:
 
 ## Goals
 
-- introduce a unified multimodal input capability for Kora
+- introduce a unified multimodal input capability for Quenda
 - support image input in phase 1
 - preserve compatibility with the existing text + tool-calling flow
 - avoid leaking provider-specific schemas into core abstractions
@@ -40,7 +40,7 @@ This document answers:
 
 ## Current State
 
-Today, Kora has "vision metadata" but not a real multimodal message
+Today, Quenda has "vision metadata" but not a real multimodal message
 path.
 
 ### Current strengths
@@ -65,7 +65,7 @@ The design should follow these principles.
 
 ### 1. Internal-first abstraction
 
-Normalize the Kora-internal abstraction before implementing provider
+Normalize the Quenda-internal abstraction before implementing provider
 payload mapping.
 
 No single provider schema should become the core message model.
@@ -93,7 +93,7 @@ Phase 1 should focus only on image input.
 ```text
 Host input
   -> Runtime normalization
-  -> Kora content blocks
+  -> Quenda content blocks
   -> Provider family converter
   -> Provider request payload
 ```
@@ -160,7 +160,7 @@ inside one message model.
 
 ## Message Compatibility Strategy
 
-To reduce migration cost, Kora should continue to allow two entry forms:
+To reduce migration cost, Quenda should continue to allow two entry forms:
 
 - simple text messages, such as `content="hello"`
 - explicit structured block lists
@@ -253,7 +253,7 @@ The goal is early, explicit failure rather than silent fallback.
 
 ## Persistence and Replay
 
-Session persistence should store Kora blocks, not provider request
+Session persistence should store Quenda blocks, not provider request
 bodies.
 
 ### Recommended persistence rules

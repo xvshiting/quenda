@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 from io import StringIO
 
-from kora.interface import ActivityEventHandler, InterfaceTheme, ProgressEventHandler
-from kora.interface.console import ConsoleRenderer
-from kora.interface.status import StatusBarManager
-from kora.runtime.events import ModelResponded, RunCompleted, RunStarted, ToolExecuted
+from quenda.interface import ActivityEventHandler, InterfaceTheme, ProgressEventHandler
+from quenda.interface.console import ConsoleRenderer
+from quenda.interface.status import StatusBarManager
+from quenda.runtime.events import ModelResponded, RunCompleted, RunStarted, ToolExecuted
 
 
 @dataclass

@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kora.host import (
+from quenda.host import (
     WorkspaceResolver,
     Permission,
     PermissionDeniedError,
@@ -72,7 +72,7 @@ class TestHostPermissionPolicy:
             workspace_path=temp_workspace,
         )
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         assert policy.check(protected_path, Permission.READ)
 
     def test_deny_write_protected_path(
@@ -84,7 +84,7 @@ class TestHostPermissionPolicy:
             workspace_path=temp_workspace,
         )
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         assert not policy.check(protected_path, Permission.WRITE)
 
     def test_deny_delete_protected_path(
@@ -96,7 +96,7 @@ class TestHostPermissionPolicy:
             workspace_path=temp_workspace,
         )
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         assert not policy.check(protected_path, Permission.DELETE)
 
     def test_allow_write_regular_file(
@@ -120,7 +120,7 @@ class TestHostPermissionPolicy:
             workspace_path=temp_workspace,
         )
 
-        config_path = temp_workspace / ".kora" / "config.yaml"
+        config_path = temp_workspace / ".quenda" / "config.yaml"
         assert policy.check(config_path, Permission.WRITE)
 
     def test_deny_outside_workspace(
@@ -158,7 +158,7 @@ class TestHostPermissionPolicy:
             workspace_path=temp_workspace,
         )
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
 
         with pytest.raises(PermissionDeniedError) as exc_info:
             policy.require(protected_path, Permission.WRITE)
@@ -221,7 +221,7 @@ class TestCompositePolicy:
 
         composite = CompositePolicy([permissive, restrictive])
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         assert not composite.check(protected_path, Permission.WRITE)
 
     def test_require_raises_on_first_denial(
@@ -236,7 +236,7 @@ class TestCompositePolicy:
 
         composite = CompositePolicy([restrictive, permissive])
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         with pytest.raises(PermissionDeniedError):
             composite.require(protected_path, Permission.WRITE)
 
@@ -301,7 +301,7 @@ class TestPolicyIntegration:
         )
 
         # Create a file and symlink to protected path
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
         symlink_path = temp_workspace / "link_to_protected"
 
         # Even through symlink, protected path should be denied
@@ -318,7 +318,7 @@ class TestPolicyIntegration:
             workspace_path=temp_workspace,
         )
 
-        protected_path = temp_workspace / ".kora" / "workspace.yaml"
+        protected_path = temp_workspace / ".quenda" / "workspace.yaml"
 
         # READ allowed
         assert policy.check(protected_path, Permission.READ)

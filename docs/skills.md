@@ -20,7 +20,7 @@ Skills differ from Tools:
 
 ## Framework Contract
 
-All Kora agents automatically receive the **Framework Contract** in their system prompt. This includes:
+All Quenda agents automatically receive the **Framework Contract** in their system prompt. This includes:
 
 - Workspace structure conventions (physical vs logical)
 - Skills system overview and path locations
@@ -31,19 +31,19 @@ The Framework Contract ensures every agent knows where to find and how to create
 
 ## Physical vs Logical Workspace
 
-Kora distinguishes between **physical workspace** (project folder) and **logical workspace** (user-specific state):
+Quenda distinguishes between **physical workspace** (project folder) and **logical workspace** (user-specific state):
 
 ### Physical Workspace (Shared)
 ```
 <project-folder>/           # Shared project files
-├── .kora/
+├── .quenda/
 │   └── workspace.yaml      # Workspace binding (id, metadata)
 └── ...                     # Project code
 ```
 
 ### Logical Workspace (Per-User)
 ```
-~/.kora/users/<user>/
+~/.quenda/users/<user>/
 ├── agents/
 │   └── <agent>/
 │       └── workspaces/<ws_id>/  # Session state
@@ -63,16 +63,16 @@ Skills are discovered in this priority order:
 
 | Priority | Location | Source | Description |
 |----------|----------|--------|-------------|
-| 1 (highest) | `~/.kora/users/<user>/workspaces/<ws_id>/skills/` | user_workspace | User-specific, highest priority |
+| 1 (highest) | `~/.quenda/users/<user>/workspaces/<ws_id>/skills/` | user_workspace | User-specific, highest priority |
 | 2 | `<agent-package>/skills/` | agent_package | Bundled with agent |
-| 3 (lowest) | `~/.kora/skills/` | user | Shared across workspaces |
+| 3 (lowest) | `~/.quenda/skills/` | user | Shared across workspaces |
 
 ### User-Workspace Skills
 
 Skills specific to a user in a particular workspace:
 
 ```
-~/.kora/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md
+~/.quenda/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md
 ```
 
 These skills:
@@ -115,7 +115,7 @@ skills:
 Shared skills in user's home directory:
 
 ```
-~/.kora/skills/<skill-name>/SKILL.md
+~/.quenda/skills/<skill-name>/SKILL.md
 ```
 
 These are shared across all workspaces for this user.
@@ -125,7 +125,7 @@ These are shared across all workspaces for this user.
 Skills are defined in `SKILL.md` files within a skill directory:
 
 ```
-.kora/skills/
+.quenda/skills/
 └── code-review/
     ├── SKILL.md
     ├── guides/
@@ -142,7 +142,7 @@ name: code-review
 description: Comprehensive code review with style enforcement
 version: "1.0.0"
 
-kora:                          # Optional Kora-specific metadata
+quenda:                          # Optional Quenda-specific metadata
   activates_on:
     - command: "/review"      # Command trigger
   resources:
@@ -170,14 +170,14 @@ When performing a code review:
 | `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
 | `description` | Yes | Human-readable description |
 | `version` | No | Semantic version (default: "0.1.0") |
-| `kora` | No | Kora-specific configuration |
+| `quenda` | No | Quenda-specific configuration |
 
-### Kora Metadata
+### Quenda Metadata
 
-The `kora` section supports:
+The `quenda` section supports:
 
 ```yaml
-kora:
+quenda:
   activates_on:
     - command: "/review"      # Slash command trigger
   resources:
@@ -193,9 +193,9 @@ kora:
 
 Skills are discovered in this priority order:
 
-1. **Workspace skills** - `.kora/skills/<name>/` (highest priority)
+1. **Workspace skills** - `.quenda/skills/<name>/` (highest priority)
 2. **Ecosystem skills** - `.agents/skills/<name>/` (for compatibility)
-3. **User skills** - `~/.kora/skills/<name>/`
+3. **User skills** - `~/.quenda/skills/<name>/`
 
 ## Using Skills
 
@@ -233,7 +233,7 @@ Use the `/skill` command to manage skills:
 ### Programmatic API
 
 ```python
-from kora.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
+from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
 
 # Discover available skills
 # user_workspace_skills_path: logical workspace path for user isolation
@@ -330,7 +330,7 @@ Scripts should stay inert unless the host explicitly decides to run them under t
 ### Code Review Skill
 
 ```
-.kora/skills/code-review/
+.quenda/skills/code-review/
 ├── SKILL.md
 ├── guides/
 │   ├── style-guide.md
@@ -342,7 +342,7 @@ Scripts should stay inert unless the host explicitly decides to run them under t
 ### Testing Skill
 
 ```
-.kora/skills/testing/
+.quenda/skills/testing/
 ├── SKILL.md
 └── references/
     ├── test-patterns.md

@@ -1,17 +1,17 @@
 # API Reference
 
-Core API for the Kora framework.
+Core API for the Quenda framework.
 
 ## Public API
 
 ```python
-from kora import Agent, Session, tool
+from quenda import Agent, Session, tool
 ```
 
 Provider exports:
 
 ```python
-from kora.providers import (
+from quenda.providers import (
     Model,
     ModelSpec,
     Provider,
@@ -97,7 +97,7 @@ Set the default model for this agent.
 `AgentDefinition` protocol.
 
 ```python
-from kora.runtime import AgentConfig, AgentDefinition
+from quenda.runtime import AgentConfig, AgentDefinition
 
 config = AgentConfig(
     name="assistant",
@@ -169,7 +169,7 @@ Number of messages in history.
 The pure-data, persistable representation of a session.
 
 ```python
-from kora.runtime import SessionState
+from quenda.runtime import SessionState
 
 state = SessionState.create("assistant", session_id="optional-id")
 ```
@@ -190,14 +190,14 @@ A `Run` represents a single execution of an agent within a session. It
 bridges the async Runtime with the sync Kernel and emits events.
 
 ```python
-from kora.runtime import Run, RunStatus
+from quenda.runtime import Run, RunStatus
 ```
 
 `RunStatus` is an enum with values: `PENDING`, `RUNNING`, `COMPLETED`,
 `FAILED`.
 
 Runs are normally created internally by `Session.send()`. For
-low-level control see `kora.runtime.run.Run`.
+low-level control see `quenda.runtime.run.Run`.
 
 ---
 
@@ -206,7 +206,7 @@ low-level control see `kora.runtime.run.Run`.
 Create a tool from a function.
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def my_function(param: str, optional: int = 10) -> str:
@@ -245,8 +245,8 @@ The decorator:
 For implementing custom tools with state.
 
 ```python
-from kora.kernel.tool import Tool
-from kora.kernel.types import ToolResult
+from quenda.kernel.tool import Tool
+from quenda.kernel.types import ToolResult
 
 class CustomTool(Tool):
     def __init__(self, workspace: Path):
@@ -297,7 +297,7 @@ class CustomTool(Tool):
 Interface for model providers.
 
 ```python
-from kora.kernel import Model, ModelResponse, Message, Tool
+from quenda.kernel import Model, ModelResponse, Message, Tool
 
 class MyModel(Model):
     def invoke(
@@ -306,7 +306,7 @@ class MyModel(Model):
         *,
         tools: list[Tool],
     ) -> ModelResponse:
-        # Call the LLM API and convert to/from Kora types
+        # Call the LLM API and convert to/from Quenda types
         ...
 ```
 
@@ -324,7 +324,7 @@ class MyModel(Model):
 The built-in provider path is registry-based:
 
 ```python
-from kora.providers import get_provider_registry
+from quenda.providers import get_provider_registry
 
 registry = get_provider_registry()
 model = registry.get_model("dashscope", "qwen-max")
@@ -348,7 +348,7 @@ For custom providers, register a `ProviderSpec` with one or more
 `ModelSpec` entries:
 
 ```python
-from kora.providers import ModelSpec, ProviderSpec, get_provider_registry
+from quenda.providers import ModelSpec, ProviderSpec, get_provider_registry
 
 registry = get_provider_registry()
 registry.register(ProviderSpec(
@@ -434,7 +434,7 @@ class StreamChunk:
     is_final: bool = False
 ```
 
-Yielded by `Model.invoke_stream()`. Import from `kora.kernel.types`.
+Yielded by `Model.invoke_stream()`. Import from `quenda.kernel.types`.
 
 ---
 
@@ -443,7 +443,7 @@ Yielded by `Model.invoke_stream()`. Import from `kora.kernel.types`.
 The synchronous model-tool loop executor.
 
 ```python
-from kora.kernel import Kernel, KernelStep
+from quenda.kernel import Kernel, KernelStep
 ```
 
 ```python
@@ -467,7 +467,7 @@ All events inherit from a base `Event` with `id`, `timestamp`, and
 `run_id` fields, and are emitted during `Run` execution.
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     AnyEvent,
     ErrorOccurred,
     Event,
@@ -550,10 +550,10 @@ class ErrorOccurred(Event):
 
 ## Built-in Tools
 
-### File System (`kora.tools.filesystem`)
+### File System (`quenda.tools.filesystem`)
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     ListFilesTool,
     SearchTextTool,
     ReadFileTool,
@@ -563,10 +563,10 @@ from kora.tools import (
 )
 ```
 
-### Execution (`kora.tools.execution`)
+### Execution (`quenda.tools.execution`)
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     RunShellTool,
     ShellConfig,
     PythonExecutionTool,
@@ -575,10 +575,10 @@ from kora.tools import (
 )
 ```
 
-### Network (`kora.tools.network`)
+### Network (`quenda.tools.network`)
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     HTTPRequestTool,
     HTTPConfig,
     WebFetchTool,
@@ -592,7 +592,7 @@ from kora.tools import (
 ### Core tools bundle
 
 ```python
-from kora.tools import get_core_tools
+from quenda.tools import get_core_tools
 
 # The 6 essential tools for a coding agent:
 # list_files, search_text, read_file, write_file, apply_patch, run_shell
@@ -605,12 +605,12 @@ See [Tools Guide](tools.md) for per-tool parameters and usage.
 
 ## Provider Errors
 
-All provider-related exceptions inherit from `KoraError` and are
-exported from `kora.providers`:
+All provider-related exceptions inherit from `QuendaError` and are
+exported from `quenda.providers`:
 
 ```python
-from kora.providers import (
-    KoraError,
+from quenda.providers import (
+    QuendaError,
     ProviderError,
     AuthenticationError,
     APIError,
@@ -623,7 +623,7 @@ from kora.providers import (
 
 | Exception | Description |
 |-----------|-------------|
-| `KoraError` | Base exception for all Kora errors |
+| `QuendaError` | Base exception for all Quenda errors |
 | `ProviderError` | Base exception for provider-related errors |
 | `AuthenticationError` | API key invalid, missing, or denied |
 | `APIError` | Base exception for API communication errors |

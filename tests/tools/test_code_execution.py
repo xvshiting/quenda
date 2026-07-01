@@ -4,7 +4,7 @@ Tests for Python code execution tool.
 
 import pytest
 
-from kora.tools.execution import PythonExecutionTool, SandboxConfig
+from quenda.tools.execution import PythonExecutionTool, SandboxConfig
 
 
 class TestPythonExecutionTool:
@@ -191,7 +191,7 @@ class TestASTValidator:
 
     def test_valid_code(self) -> None:
         """Test valid code passes validation."""
-        from kora.tools.execution.code import ASTValidator
+        from quenda.tools.execution.code import ASTValidator
 
         validator = ASTValidator(SandboxConfig())
         errors = validator.validate("print('hello')")
@@ -199,7 +199,7 @@ class TestASTValidator:
 
     def test_syntax_error_detected(self) -> None:
         """Test syntax error is detected."""
-        from kora.tools.execution.code import ASTValidator
+        from quenda.tools.execution.code import ASTValidator
 
         validator = ASTValidator(SandboxConfig())
         errors = validator.validate("print('unclosed")
@@ -208,7 +208,7 @@ class TestASTValidator:
 
     def test_async_blocked(self) -> None:
         """Test async is blocked."""
-        from kora.tools.execution.code import ASTValidator
+        from quenda.tools.execution.code import ASTValidator
 
         validator = ASTValidator(SandboxConfig())
         errors = validator.validate("async def f(): pass")

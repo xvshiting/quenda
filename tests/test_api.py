@@ -4,9 +4,9 @@ Test convenience API.
 
 import pytest
 
-from kora import Agent, tool
-from kora.kernel import Message, Model, ModelResponse
-from kora.runtime import RunCompleted, RunStarted
+from quenda import Agent, tool
+from quenda.kernel import Message, Model, ModelResponse
+from quenda.runtime import RunCompleted, RunStarted
 
 
 class FakeModel:

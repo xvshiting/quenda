@@ -7,13 +7,13 @@ Tests the complete flow from skill discovery to instruction composition.
 import pytest
 from pathlib import Path
 
-from kora.host.runner import setup_agent, AgentSetup
-from kora.host.skill import (
+from quenda.host.runner import setup_agent, AgentSetup
+from quenda.host.skill import (
     SkillDiscovery,
     SkillActivator,
     ResourceResolver,
 )
-from kora.host.instructions import InstructionScope, FRAMEWORK_CONTRACT
+from quenda.host.instructions import InstructionScope, FRAMEWORK_CONTRACT
 
 
 class TestSkillsE2E:
@@ -53,7 +53,7 @@ skills:
 name: code-review
 description: Code review capability
 version: "1.0.0"
-kora:
+quenda:
   activates_on:
     - command: "/review"
   resources:
@@ -218,7 +218,7 @@ skills:
         (skill_dir / "SKILL.md").write_text("""---
 name: broken-skill
 description: Skill with missing resource
-kora:
+quenda:
   resources:
     references:
       - path: "missing.md"
@@ -416,9 +416,9 @@ description: Test skill
         workspace.mkdir()
 
         # Workspace instructions (in physical workspace)
-        kora_dir = workspace / ".kora"
-        kora_dir.mkdir(parents=True)  # Create .kora directory first
-        (kora_dir / "INSTRUCTIONS.md").write_text("# Workspace Instructions")
+        quenda_dir = workspace / ".quenda"
+        quenda_dir.mkdir(parents=True)  # Create .quenda directory first
+        (quenda_dir / "INSTRUCTIONS.md").write_text("# Workspace Instructions")
 
         setup = setup_agent(agent_dir, workspace)
         assert setup is not None

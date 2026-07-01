@@ -6,7 +6,7 @@ Proposed (2026-06-26)
 
 ## Context
 
-Kora already includes a usable default interaction surface:
+Quenda already includes a usable default interaction surface:
 
 - REPL
 - slash commands
@@ -16,7 +16,7 @@ Kora already includes a usable default interaction surface:
 These are useful for demos, local workflows, and a good single-agent
 default experience.
 
-However, if Kora's long-term goal is to become:
+However, if Quenda's long-term goal is to become:
 
 - an extensible agent framework
 - infrastructure for downstream specialized agents
@@ -48,7 +48,7 @@ not terminal UI, slash-menu richness, or front-end interaction details.
 
 ## Decision
 
-Kora should evolve primarily as a **hookable, policy-driven agent
+Quenda should evolve primarily as a **hookable, policy-driven agent
 framework**, rather than primarily as a richer REPL / menu / command UI
 system.
 
@@ -199,7 +199,7 @@ This ADR extends those principles into agent-strategy design.
 
 ### Positive
 
-- gives Kora a clearer framework identity
+- gives Quenda a clearer framework identity
 - better supports downstream agents and research extensions
 - makes strategy comparison and promotion easier
 - improves compatibility with evaluation, training, and optimization
@@ -222,7 +222,7 @@ This ADR extends those principles into agent-strategy design.
 
 ## Recommendation
 
-Kora should make its next core investment in:
+Quenda should make its next core investment in:
 
 - lifecycle hooks
 - policy extension points

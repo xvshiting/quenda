@@ -28,14 +28,14 @@ prescribe exact class names or file boundaries.
 
 ## Why This Refactor Matters
 
-Today, Kora already has:
+Today, Quenda already has:
 
 - a stable lifecycle vocabulary in
-  [ADR-020](/Users/xushiting/Workspace/kora/docs/decisions/020-runtime-terminology-and-execution-units.md)
+  [ADR-020](/Users/xushiting/Workspace/quenda/docs/decisions/020-runtime-terminology-and-execution-units.md)
 - a runtime state machine in
-  [ADR-021](/Users/xushiting/Workspace/kora/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
+  [ADR-021](/Users/xushiting/Workspace/quenda/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
 - target hook contracts for tool policies in
-  [hook-interface-drafts.md](/Users/xushiting/Workspace/kora/docs/architecture/hook-interface-drafts.md)
+  [hook-interface-drafts.md](/Users/xushiting/Workspace/quenda/docs/architecture/hook-interface-drafts.md)
 
 But the current execution path still gives Kernel ownership of the
 critical handoff points needed for tool policies:
@@ -51,7 +51,7 @@ As a result:
 - Runtime cannot cleanly define tool-phase semantics for denial,
   partial execution, or phase-level stopping
 
-If Kora wants real policy seams instead of interface placeholders, this
+If Quenda wants real policy seams instead of interface placeholders, this
 ownership boundary has to move.
 
 ## Current Ownership Problem
@@ -86,7 +86,7 @@ that raw output is the material to write back into the loop.
 
 ### 3. Tool-phase semantics stay implicit
 
-Because Kernel internally owns execution and writeback, Kora has no
+Because Kernel internally owns execution and writeback, Quenda has no
 clear place to define:
 
 - denied tool calls
@@ -167,14 +167,14 @@ The ownership split should become:
 - individual tool execution mechanics
 - execution-time hard guards and invariants
 
-This keeps the boundary aligned with the broader Kora direction:
+This keeps the boundary aligned with the broader Quenda direction:
 
 - Runtime owns control flow
 - Kernel owns execution primitives
 
 ## Recommended Tool-Phase Model
 
-Kora should treat one tool phase as a Runtime-owned interval with the
+Quenda should treat one tool phase as a Runtime-owned interval with the
 following internal subphases:
 
 1. tool batch requested
@@ -223,7 +223,7 @@ The loop-facing tool result after
 The exact message content Runtime writes back into conversation history
 for the next model step.
 
-In the current Kora model, this remains:
+In the current Quenda model, this remains:
 
 - one assistant message containing requested tool calls
 - one user message containing tool results
@@ -295,7 +295,7 @@ Runtime builds the request using:
 - current step counters
 
 Phase 1 should keep this contract small and aligned with the existing
-`src/kora/runtime/tool_policy.py` interface.
+`src/quenda/runtime/tool_policy.py` interface.
 
 ### 3. Runtime invokes `ToolSelectionPolicy`
 
@@ -423,7 +423,7 @@ This is especially important for:
 
 ## Recommended Treatment Of Errors And Denials
 
-Kora should distinguish three cases clearly.
+Quenda should distinguish three cases clearly.
 
 ### 1. Rejected tool call
 
@@ -448,7 +448,7 @@ Recommended phase-1 rule:
 - Runtime should fall back to passthrough behavior for that result
 - optional diagnostics may be recorded to trace
 
-This matches the broader Kora principle that observers and optional
+This matches the broader Quenda principle that observers and optional
 policy logic should not make the runtime brittle.
 
 ## Termination And Interruption Semantics
@@ -683,7 +683,7 @@ It operationalizes:
 
 It also enables future work documented in:
 
-- [verification-and-memory-lifecycle-extension.md](/Users/xushiting/Workspace/kora/docs/architecture/verification-and-memory-lifecycle-extension.md)
+- [verification-and-memory-lifecycle-extension.md](/Users/xushiting/Workspace/quenda/docs/architecture/verification-and-memory-lifecycle-extension.md)
 
 because verification, reflection, and memory write need a clean
 post-tool boundary.
@@ -704,7 +704,7 @@ correct direction.
 
 ## Final Recommendation
 
-Kora should not make tool policies configurable before this refactor is
+Quenda should not make tool policies configurable before this refactor is
 done.
 
 The correct order is:

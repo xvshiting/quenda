@@ -1,12 +1,12 @@
 # Policy 系统
 
-策略钩子 (Policy Hooks) 是 Kora 的扩展机制，让你可以在不修改核心代码的情况下控制 Agent 的行为。
+策略钩子 (Policy Hooks) 是 Quenda 的扩展机制，让你可以在不修改核心代码的情况下控制 Agent 的行为。
 
 ---
 
 ## 概述
 
-Kora 的 Policy 系统遵循 **"简单默认，可扩展设计"** 原则：
+Quenda 的 Policy 系统遵循 **"简单默认，可扩展设计"** 原则：
 
 - **Core 定义执行机制和默认行为**
 - **Policy 定义策略逻辑**
@@ -51,7 +51,7 @@ Kora 的 Policy 系统遵循 **"简单默认，可扩展设计"** 原则：
 ### 基础用法
 
 ```python
-from kora.runtime import Run, JsonlTraceSink
+from quenda.runtime import Run, JsonlTraceSink
 
 # 创建 TraceSink
 sink = JsonlTraceSink("traces/run.jsonl")
@@ -73,7 +73,7 @@ events = await run.execute_to_completion("你好")
 所有事件都继承自 `Event` 基类：
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     RunStarted,      # Run 开始
     RunCompleted,    # Run 正常完成
     RunTerminated,   # Run 被策略终止
@@ -87,7 +87,7 @@ from kora.runtime import (
 ### 自定义 TraceSink
 
 ```python
-from kora.runtime import TraceSink, AnyEvent
+from quenda.runtime import TraceSink, AnyEvent
 
 class MyTraceSink:
     """自定义 TraceSink 实现。"""
@@ -122,7 +122,7 @@ run = Run.create(agent, session, model, trace_sink=MyTraceSink())
 ### 基础用法
 
 ```python
-from kora.runtime import Run, MaxStepsPolicy
+from quenda.runtime import Run, MaxStepsPolicy
 
 # 限制最多 20 步
 policy = MaxStepsPolicy(max_steps=20)
@@ -138,7 +138,7 @@ run = Run.create(
 events = await run.execute_to_completion("帮我分析这个项目")
 
 # 检查是否被终止
-from kora.runtime import RunTerminated
+from quenda.runtime import RunTerminated
 terminated = [e for e in events if isinstance(e, RunTerminated)]
 if terminated:
     print(f"被终止: {terminated[0].reason}")
@@ -151,7 +151,7 @@ if terminated:
 限制最大步骤数：
 
 ```python
-from kora.runtime import MaxStepsPolicy
+from quenda.runtime import MaxStepsPolicy
 
 policy = MaxStepsPolicy(max_steps=50)
 ```
@@ -161,7 +161,7 @@ policy = MaxStepsPolicy(max_steps=50)
 限制执行时间（毫秒）：
 
 ```python
-from kora.runtime import TimeBudgetPolicy
+from quenda.runtime import TimeBudgetPolicy
 
 # 最多运行 5 分钟
 policy = TimeBudgetPolicy(max_time_ms=5 * 60 * 1000)
@@ -172,7 +172,7 @@ policy = TimeBudgetPolicy(max_time_ms=5 * 60 * 1000)
 限制 Token 使用量：
 
 ```python
-from kora.runtime import TokenBudgetPolicy
+from quenda.runtime import TokenBudgetPolicy
 
 # 最多使用 100k tokens
 policy = TokenBudgetPolicy(max_total_tokens=100_000)
@@ -183,7 +183,7 @@ policy = TokenBudgetPolicy(max_total_tokens=100_000)
 连续错误时停止：
 
 ```python
-from kora.runtime import ConsecutiveErrorPolicy
+from quenda.runtime import ConsecutiveErrorPolicy
 
 # 连续 3 次错误后停止
 policy = ConsecutiveErrorPolicy(max_consecutive_errors=3)
@@ -194,7 +194,7 @@ policy = ConsecutiveErrorPolicy(max_consecutive_errors=3)
 使用 `CompositeTerminationPolicy` 组合多个策略：
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     CompositeTerminationPolicy,
     MaxStepsPolicy,
     TokenBudgetPolicy,
@@ -219,7 +219,7 @@ run = Run.create(
 ### 自定义 TerminationPolicy
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     TerminationPolicy,
     TerminationState,
     TerminationDecision,
@@ -288,7 +288,7 @@ class TerminationState:
 可以将 `TraceSink` 和 `TerminationPolicy` 组合使用：
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     Run,
     JsonlTraceSink,
     CompositeTerminationPolicy,
@@ -316,7 +316,7 @@ run = Run.create(
 events = await run.execute_to_completion("帮我重构这个模块")
 
 # 分析结果
-from kora.runtime import RunCompleted, RunTerminated
+from quenda.runtime import RunCompleted, RunTerminated
 
 completed = [e for e in events if isinstance(e, RunCompleted)]
 terminated = [e for e in events if isinstance(e, RunTerminated)]
@@ -338,7 +338,7 @@ elif terminated:
 用于审批工具执行请求：
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     ToolSelectionPolicy,
     ToolSelectionRequest,
     ToolSelectionDecision,
@@ -365,7 +365,7 @@ policy = AllowlistToolSelectionPolicy(
 用于处理工具输出：
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     ToolResultProcessingPolicy,
     ToolResultEnvelope,
     ProcessedToolResult,
@@ -424,8 +424,8 @@ run = Run.create(agent, session, model)
 
 ```python
 import asyncio
-from kora import Agent
-from kora.runtime import (
+from quenda import Agent
+from quenda.runtime import (
     JsonlTraceSink,
     CompositeTerminationPolicy,
     MaxStepsPolicy,

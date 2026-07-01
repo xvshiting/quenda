@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide will help you create your first Kora agent.
+This guide will help you create your first Quenda agent.
 
 ## Installation
 
@@ -12,20 +12,20 @@ This guide will help you create your first Kora agent.
 ### Basic Installation
 
 ```bash
-pip install kora
+pip install quenda
 ```
 
 ### Optional Dependencies
 
 ```bash
 # Network tools (HTTP requests, web search)
-pip install kora[network]
+pip install quenda[network]
 
 # Anthropic Claude support
-pip install kora[anthropic]
+pip install quenda[anthropic]
 
 # All dependencies
-pip install kora[all]
+pip install quenda[all]
 ```
 
 ## Set Up Environment
@@ -51,7 +51,7 @@ export DASHSCOPE_API_KEY='your-api-key'
 The easiest way to create a tool is using the `@tool` decorator:
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def greet(name: str) -> str:
@@ -84,12 +84,12 @@ The decorator automatically:
 
 ### Step 2: Set Up a Model Provider
 
-Kora ships built-in provider specs under `kora.providers` for common
+Quenda ships built-in provider specs under `quenda.providers` for common
 backends. The easiest path is to resolve a model from the global provider
 registry:
 
 ```python
-from kora.providers import get_provider_registry
+from quenda.providers import get_provider_registry
 
 registry = get_provider_registry()
 model = registry.get_model("dashscope", "qwen-max")
@@ -111,7 +111,7 @@ For a custom provider that uses an OpenAI-compatible or Anthropic-compatible
 API, the simplest path is to register a `ProviderSpec`:
 
 ```python
-from kora.providers import ProviderSpec, ModelSpec, get_provider_registry
+from quenda.providers import ProviderSpec, ModelSpec, get_provider_registry
 
 registry = get_provider_registry()
 registry.register(ProviderSpec(
@@ -133,7 +133,7 @@ client:
 
 ```python
 from openai import OpenAI
-from kora.kernel import Model, ModelResponse, Tool, ToolCall, Message
+from quenda.kernel import Model, ModelResponse, Tool, ToolCall, Message
 
 class SimpleModel:
     """A custom model provider implementing the Model protocol."""
@@ -184,7 +184,7 @@ class SimpleModel:
 ### Step 3: Create an Agent
 
 ```python
-from kora import Agent
+from quenda import Agent
 from pathlib import Path
 
 # Define workspace for file operations
@@ -210,7 +210,7 @@ agent = Agent(
 
 ```python
 import asyncio
-from kora.runtime import RunStarted, RunCompleted, ToolExecuted
+from quenda.runtime import RunStarted, RunCompleted, ToolExecuted
 
 async def main():
     # Open a session (persists conversation history)
@@ -244,7 +244,7 @@ File system tools require a workspace path for security (paths are
 validated and rejected if they escape the workspace):
 
 ```python
-from kora.tools import get_filesystem_tools
+from quenda.tools import get_filesystem_tools
 
 workspace = Path("/path/to/workspace")
 
@@ -268,7 +268,7 @@ Individual tools are also available: `ListFilesTool`, `SearchTextTool`,
 agent (the 5 filesystem tools plus `run_shell`):
 
 ```python
-from kora.tools import get_core_tools
+from quenda.tools import get_core_tools
 
 agent = Agent(
     name="coder",
@@ -282,11 +282,11 @@ agent = Agent(
 Network tools require the `httpx` package:
 
 ```bash
-pip install kora[network]
+pip install quenda[network]
 ```
 
 ```python
-from kora.tools import get_network_tools
+from quenda.tools import get_network_tools
 
 agent = Agent(
     name="web-assistant",
@@ -301,7 +301,7 @@ agent = Agent(
 ## Using Python Execution Tool
 
 ```python
-from kora.tools import PythonExecutionTool
+from quenda.tools import PythonExecutionTool
 
 agent = Agent(
     name="code-assistant",
@@ -315,7 +315,7 @@ agent = Agent(
 ## Using Shell Execution Tool
 
 ```python
-from kora.tools import RunShellTool
+from quenda.tools import RunShellTool
 
 agent = Agent(
     name="shell-assistant",

@@ -2,7 +2,7 @@
 
 import pytest
 
-from kora.kernel.types import Message, ModelResponse, ToolCall, ToolResult
+from quenda.kernel.types import Message, ModelResponse, ToolCall, ToolResult
 
 
 def test_tool_call_creation() -> None:

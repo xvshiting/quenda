@@ -14,7 +14,7 @@ It focuses on one practical goal:
 - a downstream user should be able to write a small policy
   implementation and attach it to a well-defined lifecycle stage
   through programmatic registration or configuration, without modifying
-  Kora core
+  Quenda core
 
 This document answers:
 
@@ -25,7 +25,7 @@ This document answers:
 
 ## Problem Statement
 
-Kora is moving toward a lifecycle-hook and policy-driven design.
+Quenda is moving toward a lifecycle-hook and policy-driven design.
 
 That direction is only useful if downstream users can actually consume
 it easily. In practice, this means the framework should not require
@@ -41,7 +41,7 @@ The desired experience is much simpler:
 1. a user writes a small policy object or function
 2. the user attaches it to a named lifecycle stage
 3. the agent configuration activates it
-4. Kora invokes it at the appropriate stage
+4. Quenda invokes it at the appropriate stage
 
 This matches the broader framework goals:
 
@@ -105,7 +105,7 @@ To keep naming consistent, the following terms are recommended.
 
 ### Lifecycle Stage
 
-A named point in the agent execution lifecycle where Kora allows
+A named point in the agent execution lifecycle where Quenda allows
 strategy substitution.
 
 Examples:
@@ -173,7 +173,7 @@ developers.
 
 ### Configuration-based registration
 
-Kora already has a `config.yaml` loading path for agent packages. Policy
+Quenda already has a `config.yaml` loading path for agent packages. Policy
 configuration should integrate naturally with that shape.
 
 Example:
@@ -208,7 +208,7 @@ This implies three separable concerns:
 
 ### 1. Stage definition
 
-Kora core defines the official lifecycle-stage names and contracts.
+Quenda core defines the official lifecycle-stage names and contracts.
 
 Examples:
 
@@ -283,7 +283,7 @@ The first configurable stages should be the ones with the best mix of:
 
 - high research value
 - low ambiguity
-- good fit with the current Kora architecture
+- good fit with the current Quenda architecture
 
 Recommended initial stages:
 
@@ -335,7 +335,7 @@ This keeps each seam understandable in isolation.
 
 ## Configuration Model
 
-Kora already has a machine-readable agent configuration path via
+Quenda already has a machine-readable agent configuration path via
 `config.yaml`. Policy configuration should fit that model rather than
 requiring a second unrelated configuration system.
 
@@ -369,7 +369,7 @@ policies:
 
 - `factory` points to an importable constructor or class
 - `config` is an opaque dictionary passed to the factory
-- if a stage is omitted, Kora uses its built-in default
+- if a stage is omitted, Quenda uses its built-in default
 - if a stage name is unknown, configuration validation should fail
 
 ## Programmatic API Design
@@ -423,9 +423,9 @@ Recommended validation:
 
 This is important because research users need predictable failure modes.
 
-## Interaction with Existing Kora Architecture
+## Interaction with Existing Quenda Architecture
 
-The current Kora architecture already suggests where this should fit.
+The current Quenda architecture already suggests where this should fit.
 
 ### Agent
 
@@ -530,7 +530,7 @@ Mitigation:
 
 ## Final Recommendation
 
-Kora should make lifecycle strategy extension feel lightweight:
+Quenda should make lifecycle strategy extension feel lightweight:
 
 - users write a small policy object
 - users bind it to a named stage

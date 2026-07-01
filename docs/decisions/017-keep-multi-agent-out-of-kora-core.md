@@ -1,4 +1,4 @@
-# ADR-017: Keep Multi-Agent Out of Kora Core
+# ADR-017: Keep Multi-Agent Out of Quenda Core
 
 ## Status
 
@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora is evolving into a layered single-agent framework with clear
+Quenda is evolving into a layered single-agent framework with clear
 boundaries:
 
 ```text
@@ -42,27 +42,27 @@ complexity:
 - branch and session relationships between agents
 - scheduling and cancellation semantics
 
-These concerns are materially different from the core problem Kora is
+These concerns are materially different from the core problem Quenda is
 currently solving.
 
 ## Decision
 
-Kora core should remain a **single-agent framework**.
+Quenda core should remain a **single-agent framework**.
 
 Multi-agent orchestration should be implemented in a **separate
-upper-layer library or package**, built on top of Kora's public
+upper-layer library or package**, built on top of Quenda's public
 primitives rather than folded into the core package.
 
 In practical packaging terms, the preferred direction is:
 
-- `kora-agent`: core framework
-- `kora-code`: official coding agent
-- future package such as `kora-multiagent` or `kora-orchestrator`:
+- `quenda`: core framework
+- `quenda-code`: official coding agent
+- future package such as `quenda-multiagent` or `quenda-orchestrator`:
   optional multi-agent orchestration layer
 
 ## Why This Boundary Matters
 
-This separation keeps Kora focused on the smallest complete problem:
+This separation keeps Quenda focused on the smallest complete problem:
 
 - how one agent should run correctly
 - how one session should persist and evolve
@@ -109,7 +109,7 @@ It should not grow into a generalized multi-agent scheduler or router.
 ### Host
 
 Host may eventually help configure or launch orchestrated systems, but it
-should not force every Kora consumer to adopt multi-agent concepts as
+should not force every Quenda consumer to adopt multi-agent concepts as
 part of the base framework.
 
 ## Recommended Architecture
@@ -117,18 +117,18 @@ part of the base framework.
 The correct dependency direction is:
 
 ```text
-kora-multiagent
-  -> kora-agent
+quenda-multiagent
+  -> quenda
 ```
 
 Not:
 
 ```text
-kora-agent
+quenda
   -> internal multi-agent orchestration layer
 ```
 
-That means the multi-agent layer should consume Kora primitives such as:
+That means the multi-agent layer should consume Quenda primitives such as:
 
 - Agent
 - Session
@@ -137,7 +137,7 @@ That means the multi-agent layer should consume Kora primitives such as:
 - Host persistence and branch facilities
 - tool and instruction systems
 
-But the Kora core package should not expose multi-agent orchestration as
+But the Quenda core package should not expose multi-agent orchestration as
 one of its default responsibilities.
 
 ## What Core Should Provide Instead
@@ -171,7 +171,7 @@ A future orchestration package can explore:
 - orchestration UIs or traces
 
 This lets the orchestration layer evolve faster without destabilizing
-Kora core.
+Quenda core.
 
 ## Relationship to Roadmap
 
@@ -181,7 +181,7 @@ extension layer".
 That means:
 
 - it can stay on the roadmap
-- it should not be treated as a requirement for Kora core maturity
+- it should not be treated as a requirement for Quenda core maturity
 - core stabilization should proceed without waiting for it
 
 ## Non-Goals
@@ -204,7 +204,7 @@ core framework boundary.
 - protects Runtime and Host boundaries from orchestration creep
 - reduces maintenance burden in the core package
 - allows faster experimentation in a separate package
-- aligns with Kora's current real strengths
+- aligns with Quenda's current real strengths
 
 ### Negative
 
@@ -214,8 +214,8 @@ core framework boundary.
 
 ## Recommendation
 
-Kora should explicitly define itself as a single-agent framework.
+Quenda should explicitly define itself as a single-agent framework.
 
 Multi-agent coordination should be treated as an optional upper-layer
-package built on top of Kora, not as part of Kora core itself.
+package built on top of Quenda, not as part of Quenda core itself.
 

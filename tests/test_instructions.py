@@ -8,15 +8,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kora.host.instructions import (
+from quenda.host.instructions import (
     InstructionScope,
     InstructionSource,
     TemplateContext,
     InstructionComposer,
     resolve_instruction_sources,
 )
-from kora.host.loader import AgentPackage, AgentConfigYaml, load_agent_package
-from kora.host.identity import User
+from quenda.host.loader import AgentPackage, AgentConfigYaml, load_agent_package
+from quenda.host.identity import User
 
 
 class TestInstructionScope:
@@ -58,7 +58,7 @@ class TestTemplateContext:
     def test_context_creation(self) -> None:
         """Create a template context."""
         context = TemplateContext(
-            agent_name="kora-code",
+            agent_name="quenda-code",
             agent_version="0.1.0",
             workspace_id="ws_abc123",
             workspace_path="/home/user/project",
@@ -68,7 +68,7 @@ class TestTemplateContext:
             date="2024-01-15",
             session_id="session_xyz",
         )
-        assert context.agent_name == "kora-code"
+        assert context.agent_name == "quenda-code"
         assert context.workspace_id == "ws_abc123"
 
 
@@ -128,7 +128,7 @@ class TestInstructionComposer:
     def test_render_template_simple(self) -> None:
         """Render simple template variables."""
         context = TemplateContext(
-            agent_name="kora-code",
+            agent_name="quenda-code",
             agent_version="0.1.0",
             workspace_id="ws_123",
             workspace_path="/home/user/project",
@@ -141,12 +141,12 @@ class TestInstructionComposer:
         composer = InstructionComposer(context)
         content = "Agent: {{agent.name}}, Workspace: {{workspace.id}}"
         result = composer.render_template(content)
-        assert result == "Agent: kora-code, Workspace: ws_123"
+        assert result == "Agent: quenda-code, Workspace: ws_123"
 
     def test_render_template_all_variables(self) -> None:
         """Render all whitelisted variables."""
         context = TemplateContext(
-            agent_name="kora-code",
+            agent_name="quenda-code",
             agent_version="1.0.0",
             workspace_id="ws_abc",
             workspace_path="/home/user/project",
@@ -167,7 +167,7 @@ Session: {{session.id}}"""
 
         result = composer.render_template(content)
 
-        assert "Agent: kora-code v1.0.0" in result
+        assert "Agent: quenda-code v1.0.0" in result
         assert "Workspace: ws_abc at /home/user/project" in result
         assert "User: user_123" in result
         assert "Model: openai/gpt-4" in result
@@ -220,12 +220,12 @@ class TestResolveInstructionSources:
 
     def test_resolve_with_workspace_instructions(self, tmp_path: Path) -> None:
         """Resolve workspace-level INSTRUCTIONS.md."""
-        # Create workspace with .kora/INSTRUCTIONS.md
+        # Create workspace with .quenda/INSTRUCTIONS.md
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        kora_dir = workspace / ".kora"
-        kora_dir.mkdir()
-        instructions_md = kora_dir / "INSTRUCTIONS.md"
+        quenda_dir = workspace / ".quenda"
+        quenda_dir.mkdir()
+        instructions_md = quenda_dir / "INSTRUCTIONS.md"
         instructions_md.write_text("Workspace-specific rules.", encoding="utf-8")
 
         user = User(id="user_123")
@@ -251,7 +251,7 @@ class TestResolveInstructionSources:
         """Resolve without workspace instructions (file doesn't exist)."""
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        # No .kora directory
+        # No .quenda directory
 
         user = User(id="user_123")
 

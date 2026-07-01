@@ -1,11 +1,11 @@
-# Kora Technology Radar and Architecture Decision Framework
+# Quenda Technology Radar and Architecture Decision Framework
 
 > Purpose: guide long-term architecture choices, evaluate external solutions,
-> and keep project decisions consistent with Kora's layered design.
+> and keep project decisions consistent with Quenda's layered design.
 
 ## 1. Why this exists
 
-Kora is still early enough that the biggest risk is not missing features.
+Quenda is still early enough that the biggest risk is not missing features.
 The bigger risk is accumulating inconsistent abstractions, tooling, and
 documentation while the product surface is still forming.
 
@@ -186,7 +186,7 @@ Examples of the kind of thing that belongs here:
 
 Criteria:
 
-- promising but not yet proven in Kora's workflow
+- promising but not yet proven in Quenda's workflow
 - small enough to pilot without locking in architecture
 - can be isolated behind an interface
 
@@ -282,7 +282,7 @@ Treat these as warning signs:
 When I evaluate a technical proposal, I will usually respond in this structure:
 
 - Summary
-- Fit with Kora's architecture
+- Fit with Quenda's architecture
 - Tradeoffs
 - Risks
 - Recommendation
@@ -302,7 +302,7 @@ For any new architecture or tool proposal:
 
 ## 11. Current project stance
 
-For Kora today, the likely priority order is:
+For Quenda today, the likely priority order is:
 
 1. Stabilize the environment and documentation.
 2. Lock the provider contract.

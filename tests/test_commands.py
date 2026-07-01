@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from kora.host.commands import (
+from quenda.host.commands import (
     CommandCandidate,
     CommandContext,
     CommandRegistry,
@@ -165,7 +165,7 @@ class TestCommandRegistry:
             description = "A test command"
             usage = "/test"
             def execute(self, args, ctx):  # type: ignore
-                from kora.host.commands import CommandResult
+                from quenda.host.commands import CommandResult
                 return CommandResult(status="ok", message="done")
 
         registry.register(FakeCmd())
@@ -183,7 +183,7 @@ class TestCommandRegistry:
             description = "cmd a"
             usage = "/a"
             def execute(self, args, ctx):  # type: ignore
-                from kora.host.commands import CommandResult
+                from quenda.host.commands import CommandResult
                 return CommandResult(status="ok", message="a")
 
         class CmdB:
@@ -191,7 +191,7 @@ class TestCommandRegistry:
             description = "cmd b"
             usage = "/b"
             def execute(self, args, ctx):  # type: ignore
-                from kora.host.commands import CommandResult
+                from quenda.host.commands import CommandResult
                 return CommandResult(status="ok", message="b")
 
         registry.register(CmdA())

@@ -6,7 +6,7 @@ Proposed (2026-06-29)
 
 ## Context
 
-Kora has already established the following architectural direction:
+Quenda has already established the following architectural direction:
 
 - `ADR-019` prioritizes strategy hooks over rich UI
 - `ADR-020` defines runtime terminology, including tool call, tool
@@ -16,7 +16,7 @@ Kora has already established the following architectural direction:
 - `ADR-022` keeps core minimal while pushing strategy into policies and
   extensions
 
-Kora also already defines the target policy contracts for:
+Quenda also already defines the target policy contracts for:
 
 - `ToolSelectionPolicy`
 - `ToolResultProcessingPolicy`
@@ -53,11 +53,11 @@ As a result:
 - tool denial, partial execution, and phase-level stopping semantics
   remain underspecified
 
-Kora needs a clear ownership rule before these seams can become real.
+Quenda needs a clear ownership rule before these seams can become real.
 
 ## Decision
 
-Kora should make **Runtime the owner of the tool phase**.
+Quenda should make **Runtime the owner of the tool phase**.
 
 This means Runtime, not Kernel, should own:
 
@@ -222,7 +222,7 @@ Those may be added later without changing this ownership decision.
 
 ## Recommended Implementation Direction
 
-Kora should prefer a refactor where Runtime becomes the explicit owner
+Quenda should prefer a refactor where Runtime becomes the explicit owner
 of the execution loop rather than adding callback seams inside
 `Kernel.run()`.
 
@@ -246,11 +246,11 @@ Recommended order:
 
 Supporting breakdown:
 
-- [tool-phase-runtime-refactor-breakdown.md](/Users/xushiting/Workspace/kora/docs/architecture/tool-phase-runtime-refactor-breakdown.md)
+- [tool-phase-runtime-refactor-breakdown.md](/Users/xushiting/Workspace/quenda/docs/architecture/tool-phase-runtime-refactor-breakdown.md)
 
 Supporting design draft:
 
-- [tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/kora/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
+- [tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/quenda/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
 
 ## Consequences
 
@@ -288,4 +288,4 @@ Future proposals involving tool use should be checked against this rule:
 - if the proposal changes only how one tool call is mechanically
   executed, Kernel may own it
 
-This keeps the control boundary durable as Kora grows.
+This keeps the control boundary durable as Quenda grows.

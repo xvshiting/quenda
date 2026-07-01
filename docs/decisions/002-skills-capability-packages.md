@@ -11,7 +11,7 @@ capabilities. Claude Code and the Agent Skills specification both use a
 directory-based model centered on a `SKILL.md` file, with optional
 supporting resources such as scripts, references, and assets.
 
-This model is useful for Kora because many reusable capabilities are not
+This model is useful for Quenda because many reusable capabilities are not
 just tools. They often include:
 
 - instructions for when and how to use the capability
@@ -20,12 +20,12 @@ just tools. They often include:
 - optional scripts or assets
 - policy constraints around tool use
 
-Kora needs a way to reuse these capability packages without expanding the
+Quenda needs a way to reuse these capability packages without expanding the
 Kernel or making ordinary Agent definitions harder to understand.
 
 ## Decision
 
-Kora should add a Skills mechanism, but only as a Host-level loading and
+Quenda should add a Skills mechanism, but only as a Host-level loading and
 composition concept.
 
 The initial definition is:
@@ -67,11 +67,11 @@ The Host owns:
 
 ## Proposed MVP
 
-The first Kora Skills trial should be deliberately small:
+The first Quenda Skills trial should be deliberately small:
 
-- support local directory Skills such as `.kora/skills/<name>/SKILL.md`
+- support local directory Skills such as `.quenda/skills/<name>/SKILL.md`
 - optionally recognize `.agents/skills/<name>/SKILL.md` for ecosystem compatibility
-- parse frontmatter fields such as `name`, `description`, and optional Kora metadata
+- parse frontmatter fields such as `name`, `description`, and optional Quenda metadata
 - list available Skills as a lightweight catalog
 - load full Skill instructions only when selected or activated
 - expose references and assets as a resource catalog
@@ -122,7 +122,7 @@ belong in Host.
 ### Build a Plugin System First
 
 Rejected. A plugin system would introduce installation, versioning,
-permissions, and distribution concerns before Kora has proven the smaller
+permissions, and distribution concerns before Quenda has proven the smaller
 capability-package model.
 
 ## Consequences
@@ -132,7 +132,7 @@ capability-package model.
 - keeps Kernel and Runtime simple
 - aligns with Claude Code and Agent Skills ecosystem direction
 - supports reusable capabilities without requiring private Code Agent hooks
-- gives Kora a path toward richer Agent composition
+- gives Quenda a path toward richer Agent composition
 
 ### Negative
 

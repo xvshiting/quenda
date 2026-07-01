@@ -1,6 +1,6 @@
 # Agent 基础
 
-理解 Kora Agent 的核心概念和配置方式。
+理解 Quenda Agent 的核心概念和配置方式。
 
 ---
 
@@ -21,7 +21,7 @@ Agent(name, system_prompt, tools, model)
 ### 基础方式
 
 ```python
-from kora import Agent
+from quenda import Agent
 
 agent = Agent(
     name="my-assistant",
@@ -34,10 +34,10 @@ agent = Agent(
 ### 完整配置
 
 ```python
-from kora import Agent
-from kora.host.storage import FileStorage, FileStorageConfig
-from kora.host.compression_policy import DefaultCompressionPolicy
-from kora.runtime.compressor import SummarizerCompressor
+from quenda import Agent
+from quenda.host.storage import FileStorage, FileStorageConfig
+from quenda.host.compression_policy import DefaultCompressionPolicy
+from quenda.runtime.compressor import SummarizerCompressor
 
 agent = Agent(
     name="advanced-agent",
@@ -99,7 +99,7 @@ agent.storage         # Storage 或 None
 
 ## 两种执行模式
 
-Kora Agent 提供两种执行方式：
+Quenda Agent 提供两种执行方式：
 
 ### 1. 一次性执行 `run()`
 
@@ -158,7 +158,7 @@ len(session)          # 消息数量
 `AgentConfig` 是不可变的（frozen dataclass）：
 
 ```python
-from kora.runtime import AgentConfig
+from quenda.runtime import AgentConfig
 
 config = AgentConfig(
     name="my-agent",
@@ -171,7 +171,7 @@ config = AgentConfig(
 
 ## 使用 AGENT.md 文件
 
-Kora 支持从 `AGENT.md` 文件加载 Agent 配置：
+Quenda 支持从 `AGENT.md` 文件加载 Agent 配置：
 
 ```markdown
 ---
@@ -185,7 +185,7 @@ version: 1.0.0
 代码中加载：
 
 ```python
-from kora.host import load_agent_from_markdown
+from quenda.host import load_agent_from_markdown
 
 config = load_agent_from_markdown("path/to/AGENT.md")
 # 返回 AgentConfig 实例（不含工具和模型）

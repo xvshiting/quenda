@@ -1,10 +1,10 @@
-# Kora Current Design State
+# Quenda Current Design State
 
 > Last updated: 2026-06-30
 
 ## 项目概述
 
-Kora 是一个轻量级 Python Agent 框架，采用三层架构设计。
+Quenda 是一个轻量级 Python Agent 框架，采用三层架构设计。
 
 ## 项目管理快照
 
@@ -13,7 +13,7 @@ Kora 是一个轻量级 Python Agent 框架，采用三层架构设计。
 Skills 能力包机制见 [decisions/002-skills-capability-packages.md](decisions/002-skills-capability-packages.md)。
 Host 命名与边界说明见 [decisions/003-host-name-and-boundary.md](decisions/003-host-name-and-boundary.md)。
 Workspace 身份与用户 Agent 状态模型见 [decisions/004-workspace-identity-and-user-agent-state.md](decisions/004-workspace-identity-and-user-agent-state.md)。
-Code Agent MVP 设计见 [decisions/005-kora-code-agent-mvp.md](decisions/005-kora-code-agent-mvp.md)。
+Code Agent MVP 设计见 [decisions/005-quenda-code-agent-mvp.md](decisions/005-quenda-code-agent-mvp.md)。
 Interface 事件渲染策略见 [decisions/006-interface-event-rendering.md](decisions/006-interface-event-rendering.md)。
 Instruction 层与 Scope Overlay 见 [decisions/007-instruction-layer-and-scope-overlay.md](decisions/007-instruction-layer-and-scope-overlay.md)。
 Tool Schema 唯一来源原则见 [decisions/008-tool-schema-single-source.md](decisions/008-tool-schema-single-source.md)。
@@ -30,13 +30,13 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
 
 - **Phase 0-6**: 框架核心全部完成
 
-- **Trial: Kora Code Agent MVP ✅**
-  - `agents/kora-code/AGENT.md`
-  - `src/kora/cli.py`（`kora run` / `kora code`）
+- **Trial: Quenda Code Agent MVP ✅**
+  - `agents/quenda-code/AGENT.md`
+  - `src/quenda/cli.py`（`quenda run` / `quenda code`）
   - REPL 交互模式
   - Session 持久化
   - 验收测试全部通过
-  - 详见 [ADR-005](decisions/005-kora-code-agent-mvp.md)
+  - 详见 [ADR-005](decisions/005-quenda-code-agent-mvp.md)
 
 - **Trial: Interface 事件渲染 ✅**
   - 增强 `ToolExecuted` 事件（arguments, duration_ms, result_lines）
@@ -57,8 +57,8 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
     - 用户选择后注入 user message，启动下一轮
 
 - **ADR-004 Workspace 身份与状态模型 ✅**
-  - `.kora/workspace.yaml` workspace binding
-  - `~/.kora/users/<user>/agents/<agent>/workspaces/<id>/` 存储布局
+  - `.quenda/workspace.yaml` workspace binding
+  - `~/.quenda/users/<user>/agents/<agent>/workspaces/<id>/` 存储布局
   - `WorkspaceResolver` 实现
   - Session 持久化正确包含 assistant message
   - JSON 存储 UTF-8 编码
@@ -85,14 +85,14 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
   - `load_agent_commands()` 动态加载命令模块
   - `commands` 列表或 `register()` 函数导出方式
   - 用户命令可覆盖内置命令
-  - 示例：`agents/kora-code/extensions/commands/status.py`
+  - 示例：`agents/quenda-code/extensions/commands/status.py`
 
 - **ADR-002 Skills Framework ✅**
   - **Skills 是 Host 层的能力包机制**
   - `Skill = instructions + resource catalog + optional tools + optional policy metadata`
   - 渐进披露：Discovery（仅 frontmatter）→ Activation（指令）→ Usage（资源）
   - 三层优先级：`user_workspace` > `agent_package` > `user`
-  - 用户隔离：`~/.kora/users/<user>/workspaces/<ws_id>/skills/`
+  - 用户隔离：`~/.quenda/users/<user>/workspaces/<ws_id>/skills/`
   - Agent 包可打包 Skills：`<agent-package>/skills/`
   - `/skill` REPL 命令：`list`, `activate`, `deactivate`, `resources`
   - Framework Contract：所有 Agent 自动获得 Skills 路径约定
@@ -132,7 +132,7 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
 
 - **P2: Host 安全与权限**
   - 工具权限控制系统
-  - `.kora/workspace.yaml` 写保护
+  - `.quenda/workspace.yaml` 写保护
   - 身份认证、多租户支持
   - 上下文重建（已完成：`ContextRebuilder` + `set_system_prompt` + CLI 接入）
 
@@ -197,7 +197,7 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
 - `host/instructions.py` — `InstructionComposer` 指令组合，包含 `FRAMEWORK_CONTRACT`
 - `host/permission.py` — 权限控制
 - `host/skill/` — Skills 框架（ADR-002）
-  - `models.py` — `SkillFrontmatter`, `SkillKoraMetadata`, `SkillResource`
+  - `models.py` — `SkillFrontmatter`, `SkillQuendaMetadata`, `SkillResource`
   - `package.py` — `SkillPackage` dataclass
   - `discovery.py` — `SkillDiscovery` 发现技能，三层优先级
   - `activation.py` — `SkillActivator` 激活/停用技能

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kora.kernel.types import ToolResult
-from kora.tools import (
+from quenda.kernel.types import ToolResult
+from quenda.tools import (
     ReadFileTool,
     WriteFileTool,
     ListFilesTool,

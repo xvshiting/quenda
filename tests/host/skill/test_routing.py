@@ -1,11 +1,11 @@
 """Tests for host-side skill routing helpers."""
 
-from kora.host.skill.routing import (
+from quenda.host.skill.routing import (
     build_skill_activation_followup,
     extract_skill_activation_requests,
     resolve_skill_activation_requests,
 )
-from kora.runtime.events import ModelResponded
+from quenda.runtime.events import ModelResponded
 
 
 class TestExtractSkillActivationRequests:

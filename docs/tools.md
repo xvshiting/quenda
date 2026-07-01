@@ -1,6 +1,6 @@
 # Tools Guide
 
-Kora provides a focused set of built-in tools organized around
+Quenda provides a focused set of built-in tools organized around
 **capabilities**, not individual Unix commands. Each tool covers a
 family of operations (e.g. `read_file` covers `cat`, `head`, `tail`,
 `sed -n`).
@@ -12,7 +12,7 @@ family of operations (e.g. `read_file` covers `cat`, `head`, `tail`,
 The simplest way to create a tool:
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def my_tool(param: str, optional: int = 10) -> str:
@@ -35,8 +35,8 @@ For stateful tools:
 
 ```python
 from pathlib import Path
-from kora.kernel.tool import Tool
-from kora.kernel.types import ToolResult
+from quenda.kernel.tool import Tool
+from quenda.kernel.types import ToolResult
 
 class MyComplexTool(Tool):
     def __init__(self, workspace: Path):
@@ -88,7 +88,7 @@ The 6 essential tools for a coding agent, available via
 | `run_shell` | Execute and verify | `pytest`, `git`, `npm`, … |
 
 ```python
-from kora.tools import get_core_tools
+from quenda.tools import get_core_tools
 from pathlib import Path
 
 tools = get_core_tools(Path("."))
@@ -103,7 +103,7 @@ rejected if they escape the workspace root.
 
 ```python
 from pathlib import Path
-from kora.tools import (
+from quenda.tools import (
     ListFilesTool,
     SearchTextTool,
     ReadFileTool,
@@ -131,7 +131,7 @@ List files and directories. Covers `ls`, `find`, `tree`.
 
 ```python
 list_tool.execute()                              # List workspace root (flat)
-list_tool.execute(path="src/kora")               # List specific directory
+list_tool.execute(path="src/quenda")               # List specific directory
 list_tool.execute(path=".", depth=3)             # Tree view with depth limit
 list_tool.execute(pattern="*.py")                # Filter by glob pattern
 ```
@@ -237,7 +237,7 @@ operations not covered by specialized tools (tests, git, package
 managers, build commands). Dangerous commands are blocked.
 
 ```python
-from kora.tools import RunShellTool, ShellConfig
+from quenda.tools import RunShellTool, ShellConfig
 from pathlib import Path
 
 shell_tool = RunShellTool(Path("."))
@@ -274,7 +274,7 @@ Execute Python code in a sandboxed environment with AST validation,
 import restrictions, and restricted builtins.
 
 ```python
-from kora.tools import PythonExecutionTool, SandboxConfig
+from quenda.tools import PythonExecutionTool, SandboxConfig
 
 python_tool = PythonExecutionTool()  # workspace optional
 
@@ -317,10 +317,10 @@ python_tool.execute(code='import time; time.sleep(5)', timeout=3)
 
 ## Network Tools
 
-Requires: `pip install kora[network]` (installs `httpx`).
+Requires: `pip install quenda[network]` (installs `httpx`).
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     HTTPRequestTool,
     HTTPConfig,
     WebFetchTool,
@@ -415,7 +415,7 @@ search_tool.execute(query="machine learning", max_results=5)
 
 ```python
 from pathlib import Path
-from kora.tools import (
+from quenda.tools import (
     get_core_tools,
     get_network_tools,
 )
@@ -426,7 +426,7 @@ all_tools = []
 all_tools.extend(get_core_tools(workspace))   # 6 coding tools
 all_tools.extend(get_network_tools())         # 3 network tools
 
-from kora import Agent
+from quenda import Agent
 agent = Agent(
     name="full-assistant",
     tools=all_tools,

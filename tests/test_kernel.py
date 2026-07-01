@@ -6,7 +6,7 @@ Uses fake model and fake tools for deterministic testing.
 
 import pytest
 
-from kora.kernel import Kernel, KernelStep, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.kernel import Kernel, KernelStep, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
 
 
 class FakeTool:

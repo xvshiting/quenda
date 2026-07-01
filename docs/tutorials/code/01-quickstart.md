@@ -1,25 +1,25 @@
-# 快速开始 — Kora Code
+# 快速开始 — Quenda Code
 
-Kora Code 是 Kora 框架的正式编码助手。本节教你如何使用 CLI 工具进行 AI 辅助编程。
+Quenda Code 是 Quenda 框架的正式编码助手。本节教你如何使用 CLI 工具进行 AI 辅助编程。
 
 ---
 
 ## 安装
 
 ```bash
-pip install kora-agent
+pip install quenda
 ```
 
-如果 Kora Code 是独立安装的：
+如果 Quenda Code 是独立安装的：
 
 ```bash
-pip install kora-agent[code]
+pip install quenda[code]
 ```
 
 验证安装：
 
 ```bash
-kora --help
+quenda --help
 ```
 
 ---
@@ -31,19 +31,19 @@ kora --help
 直接提问，Agent 执行后返回结果：
 
 ```bash
-kora code "帮我写一个 Python 斐波那契函数"
+quenda code "帮我写一个 Python 斐波那契函数"
 ```
 
 指定工作空间：
 
 ```bash
-kora code --workspace /path/to/my-project "分析项目结构"
+quenda code --workspace /path/to/my-project "分析项目结构"
 ```
 
 指定模型：
 
 ```bash
-kora code --provider anthropic --model claude-sonnet-4-20250514 "帮我重构这段代码"
+quenda code --provider anthropic --model claude-sonnet-4-20250514 "帮我重构这段代码"
 ```
 
 ### 交互式 REPL 模式
@@ -51,13 +51,13 @@ kora code --provider anthropic --model claude-sonnet-4-20250514 "帮我重构这
 不加消息参数进入交互模式：
 
 ```bash
-kora code
+quenda code
 ```
 
 启动后你会看到：
 
 ```
-🐼 Kora Code Agent
+🐼 Quenda Code Agent
 Workspace: ws_xxx  (当前目录)
 Session: abc123...
 Model: deepseek/deepseek-v4-flash
@@ -101,11 +101,11 @@ Model: deepseek/deepseek-v4-flash
 
 ## 工作空间
 
-Kora Code 默认使用当前目录作为工作空间：
+Quenda Code 默认使用当前目录作为工作空间：
 
 ```bash
 cd /path/to/my-project
-kora code
+quenda code
 # 工作空间: /path/to/my-project
 ```
 
@@ -118,9 +118,9 @@ kora code
 ### 方式一：命令行参数
 
 ```bash
-kora code --provider anthropic --model claude-sonnet-4-20250514
-kora code --provider openai --model gpt-4o
-kora code --provider deepseek --model deepseek-v4-flash
+quenda code --provider anthropic --model claude-sonnet-4-20250514
+quenda code --provider openai --model gpt-4o
+quenda code --provider deepseek --model deepseek-v4-flash
 ```
 
 ### 方式二：运行时切换
@@ -163,7 +163,7 @@ export OPENAI_API_KEY="sk-xxx"
 
 ```bash
 # 启动时指定会话
-kora code --session <session-id>
+quenda code --session <session-id>
 ```
 
 ### 清除历史

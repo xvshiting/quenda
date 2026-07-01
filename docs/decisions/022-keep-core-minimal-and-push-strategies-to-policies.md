@@ -6,7 +6,7 @@ Proposed (2026-06-29)
 
 ## Context
 
-Kora is intentionally moving toward a hookable, policy-driven agent
+Quenda is intentionally moving toward a hookable, policy-driven agent
 framework.
 
 That direction creates an immediate architectural tension:
@@ -25,7 +25,7 @@ simple.
 
 Recent design work already established several related principles:
 
-- `ADR-017` keeps multi-agent orchestration out of Kora core
+- `ADR-017` keeps multi-agent orchestration out of Quenda core
 - `ADR-019` prioritizes strategy hooks over richer UI
 - `ADR-020` defines stable runtime terminology
 - `ADR-021` defines an explicit runtime lifecycle and state machine
@@ -36,13 +36,13 @@ The next required decision is a stricter boundary rule:
 - what should remain outside core
 - how official implementations should fit into the system
 
-Without that boundary, Kora risks becoming a framework that is
+Without that boundary, Quenda risks becoming a framework that is
 conceptually extensible but operationally opinionated and difficult to
 replace.
 
 ## Decision
 
-Kora core should remain a **minimal single-agent runtime** with
+Quenda core should remain a **minimal single-agent runtime** with
 **research-grade extension seams**, while concrete agent strategies
 should live in policies, middleware, observers, or official extension
 packages rather than in core.
@@ -53,7 +53,7 @@ The guiding rule is:
   guards**
 - **policies and extensions define strategy**
 
-Kora should therefore optimize for:
+Quenda should therefore optimize for:
 
 - a short default execution path
 - small, named extension seams
@@ -225,7 +225,7 @@ They should not define core abstractions or runtime control flow.
 
 ## Official Implementations
 
-Kora should distinguish clearly between:
+Quenda should distinguish clearly between:
 
 - core protocols
 - core defaults
@@ -270,7 +270,7 @@ No core patching should be required.
 
 ## Promotion Rule
 
-When a strategy becomes popular or useful, Kora should not immediately
+When a strategy becomes popular or useful, Quenda should not immediately
 move it into core.
 
 The preferred promotion path is:
@@ -286,7 +286,7 @@ to emerge.
 
 ## Design Tests For Future Proposals
 
-Any proposal that adds behavior to Kora should be checked against the
+Any proposal that adds behavior to Quenda should be checked against the
 following questions.
 
 ### 1. Is this mechanism or strategy?
@@ -321,7 +321,7 @@ Preferred policies belong in defaults or official implementations.
 This decision is aligned with a Unix-style philosophy for agent
 frameworks.
 
-Kora core should aim to be:
+Quenda core should aim to be:
 
 - small in mandatory behavior
 - explicit in interfaces
@@ -341,7 +341,7 @@ itself to become large or over-opinionated.
 
 ### Positive
 
-- preserves Kora as a simple default agent framework
+- preserves Quenda as a simple default agent framework
 - gives researchers and downstream developers clean replacement seams
 - reduces pressure to merge experimental logic into runtime core
 - makes official strategies easier to compare against third-party

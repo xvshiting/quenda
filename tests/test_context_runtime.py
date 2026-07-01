@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from kora.runtime import Agent, AgentConfig
-from kora.runtime.session import Session, SessionState
-from kora.host.commands import (
+from quenda.runtime import Agent, AgentConfig
+from quenda.runtime.session import Session, SessionState
+from quenda.host.commands import (
     CommandContext,
     CommandResult,
     ModelCommand,
@@ -59,8 +59,8 @@ class TestAgentSetSystemPrompt:
 
     def test_set_system_prompt_preserves_other_fields(self) -> None:
         """Test that set_system_prompt doesn't change name or tools."""
-        from kora.kernel.tool import Tool
-        from kora.kernel.types import ToolResult
+        from quenda.kernel.tool import Tool
+        from quenda.kernel.types import ToolResult
 
         class FakeTool(Tool):
             name = "fake"
@@ -127,7 +127,7 @@ class TestModelCommandRebuildContext:
 
         # We can't easily test actual model switching without a real model,
         # but we can verify the command structure supports rebuild_context
-        from kora.host.commands import ModelCommand
+        from quenda.host.commands import ModelCommand
         assert hasattr(ModelCommand, "execute")
 
         # Check that CommandResult supports the fields we need

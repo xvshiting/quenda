@@ -66,6 +66,6 @@ Tool definitions are the single source of truth for tool information.
 
 ## References
 
-- `src/kora/kernel/tool.py` - Tool interface
-- `src/kora/kernel/loop.py` - Tool registration and execution
-- `src/kora/providers/api/converters.py` - Tool schema conversion for model API
+- `src/quenda/kernel/tool.py` - Tool interface
+- `src/quenda/kernel/loop.py` - Tool registration and execution
+- `src/quenda/providers/api/converters.py` - Tool schema conversion for model API

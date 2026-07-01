@@ -6,18 +6,18 @@ Accepted (2026-06-30)
 
 ## Context
 
-Kora already supports custom tool authoring in two important ways:
+Quenda already supports custom tool authoring in two important ways:
 
 - users can define tools with `@tool`
 - users can implement the `Tool` protocol directly
 
-Kora also now supports Host-owned capability-style built-in tool
+Quenda also now supports Host-owned capability-style built-in tool
 resolution through agent configuration, such as:
 
 - `tools.bundles`
 - `execution.python.allowed_modules`
 
-However, Kora still lacks a complete agent-package mechanism for:
+However, Quenda still lacks a complete agent-package mechanism for:
 
 1. registering custom tools from agent-owned files
 2. resolving those custom tools by name from `config.yaml`
@@ -56,11 +56,11 @@ tools:
 and expect Host to discover, register, and resolve `my_tool`
 automatically.
 
-Kora needs a formal decision for this packaging and resolution model.
+Quenda needs a formal decision for this packaging and resolution model.
 
 ## Decision
 
-Kora should support **agent-local custom tool extensions** as a
+Quenda should support **agent-local custom tool extensions** as a
 Host-owned extension mechanism.
 
 The official convention should be:
@@ -125,7 +125,7 @@ Each `extensions/tools/*.py` module should export one of the following.
 Recommended:
 
 ```python
-from kora import tool
+from quenda import tool
 
 
 @tool
@@ -245,7 +245,7 @@ not assume that custom tools are automatically unrestricted forever.
 
 This decision should remain compatible with the emerging Skills model.
 
-Longer term, Kora may need to resolve tools from multiple sources:
+Longer term, Quenda may need to resolve tools from multiple sources:
 
 1. built-in
 2. agent-local
@@ -282,7 +282,7 @@ capability resolution, not as a Runtime feature.
 
 Supporting design draft:
 
-- [agent-local-custom-tool-registration-and-config-resolution.md](/Users/xushiting/Workspace/kora/docs/architecture/agent-local-custom-tool-registration-and-config-resolution.md)
+- [agent-local-custom-tool-registration-and-config-resolution.md](/Users/xushiting/Workspace/quenda/docs/architecture/agent-local-custom-tool-registration-and-config-resolution.md)
 
 ## Consequences
 
@@ -294,7 +294,7 @@ Supporting design draft:
 - keeps Runtime and Kernel boundaries clean
 - aligns tool extensions with existing command and interaction
   extensions
-- prepares Kora for later multi-source tool resolution
+- prepares Quenda for later multi-source tool resolution
 
 ### Negative
 
@@ -313,6 +313,6 @@ Supporting design draft:
 
 ## Final Rule
 
-Kora should treat **agent-local custom tools as Host-discovered,
+Quenda should treat **agent-local custom tools as Host-discovered,
 config-resolved extensions**, not as Runtime features and not as
 implicit Python-side side effects.

@@ -9,15 +9,15 @@ These tests verify:
 
 import pytest
 from pathlib import Path
-from kora.host.runner import (
+from quenda.host.runner import (
     StableHostBinding,
     RunContextSnapshot,
     setup_host_binding,
     refresh_run_context,
     setup_agent,
 )
-from kora.host.workspace import WorkspaceResolver
-from kora.host.skill import SkillDiscovery
+from quenda.host.workspace import WorkspaceResolver
+from quenda.host.skill import SkillDiscovery
 
 
 class TestTextRefreshPath:
@@ -198,7 +198,7 @@ description: A test skill
 
         # Update binding's skill discovery path
         # Note: In production, this would be the user-workspace path
-        from kora.host.skill import SkillDiscovery
+        from quenda.host.skill import SkillDiscovery
         new_discovery = SkillDiscovery(user_workspace_skills_path=skills_dir)
 
         # Second refresh - should discover new skill
@@ -229,7 +229,7 @@ description: A test skill
         binding.active_skill_names.append("test-skill")
 
         # Refresh should resolve the skill
-        from kora.host.skill import SkillDiscovery
+        from quenda.host.skill import SkillDiscovery
         discovery = SkillDiscovery(user_workspace_skills_path=skills_dir)
         snapshot = refresh_run_context(binding)
 

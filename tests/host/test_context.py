@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from kora.host import ContextRebuilder, User
+from quenda.host import ContextRebuilder, User
 
 
 class TestContextRebuilder:
@@ -72,7 +72,7 @@ class TestContextRebuilder:
 
     def test_rebuild_with_multiple_sources(self) -> None:
         """Test rebuilding with multiple instruction sources."""
-        from kora.host.instructions import InstructionSource, InstructionScope
+        from quenda.host.instructions import InstructionSource, InstructionScope
 
         instructions = [
             InstructionSource(
@@ -105,11 +105,11 @@ class TestContextRebuilder:
 
     def test_rebuild_with_workspace_instructions(self) -> None:
         """Test rebuild picks up workspace INSTRUCTIONS.md."""
-        from kora.host.instructions import InstructionScope, InstructionSource
+        from quenda.host.instructions import InstructionScope, InstructionSource
 
         with TemporaryDirectory() as tmpdir:
             workspace_path = Path(tmpdir)
-            ws_instructions = workspace_path / ".kora" / "INSTRUCTIONS.md"
+            ws_instructions = workspace_path / ".quenda" / "INSTRUCTIONS.md"
             ws_instructions.parent.mkdir(parents=True)
             ws_instructions.write_text("Workspace preference: use {{model.name}}", encoding="utf-8")
 
@@ -199,7 +199,7 @@ class TestContextRebuilderApply:
 
     def test_apply_updates_agent(self) -> None:
         """Test that apply() updates the agent's system prompt."""
-        from kora.runtime import Agent
+        from quenda.runtime import Agent
 
         rebuilder = ContextRebuilder(
             agent_name="test-agent",
@@ -229,7 +229,7 @@ class TestContextRebuilderApply:
 
     def test_apply_updates_session(self) -> None:
         """Test that apply() followed by session.set_system_prompt works."""
-        from kora.runtime import Agent
+        from quenda.runtime import Agent
 
         rebuilder = ContextRebuilder(
             agent_name="test-agent",

@@ -6,7 +6,7 @@ Draft (2026-06-30)
 
 ## Purpose
 
-This document defines how Kora should support **agent-local custom
+This document defines how Quenda should support **agent-local custom
 tools** that are:
 
 - implemented in Python inside an agent package
@@ -22,13 +22,13 @@ The key goal is to close the current gap between:
 
 ## Problem Statement
 
-Kora already supports custom tools in one important sense:
+Quenda already supports custom tools in one important sense:
 
 - users can define tools with `@tool`
 - users can implement the `Tool` protocol directly
 - users can pass those tools programmatically into `Agent(..., tools=[...])`
 
-However, Kora does **not** yet provide a complete agent-package
+However, Quenda does **not** yet provide a complete agent-package
 mechanism for:
 
 1. registering custom tools from agent-owned files
@@ -49,7 +49,7 @@ systems.
 
 ### 1. Tool definition exists
 
-Kora supports:
+Quenda supports:
 
 - `@tool`
 - direct `Tool` implementations
@@ -84,7 +84,7 @@ There is also no complete path where:
 
 ## Design Goal
 
-Kora should support this user experience:
+Quenda should support this user experience:
 
 ```text
 my-agent/
@@ -154,7 +154,7 @@ Each `extensions/tools/*.py` module should export one of the following.
 Recommended:
 
 ```python
-from kora import tool
+from quenda import tool
 
 
 @tool
@@ -182,7 +182,7 @@ This should remain a secondary path for advanced cases.
 
 ## Proposed Host-Level Objects
 
-Kora should introduce a small Host-owned tool registration model.
+Quenda should introduce a small Host-owned tool registration model.
 
 ### 1. `ToolRegistryBuilder`
 
@@ -343,7 +343,7 @@ should leave room for one.
 
 This proposal should be compatible with the emerging skills model.
 
-Longer term, Kora may need to resolve tools from three origins:
+Longer term, Quenda may need to resolve tools from three origins:
 
 1. built-in
 2. agent-local
@@ -448,7 +448,7 @@ Those should build on top of this mechanism, not be bundled into it.
 
 ## Recommendation
 
-Kora should implement **agent-local custom tool registration as a Host
+Quenda should implement **agent-local custom tool registration as a Host
 extension mechanism**, parallel to command and interaction extensions,
 and should wire `config.yaml.tools.include` into that registry-based
 resolution path.

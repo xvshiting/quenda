@@ -4,8 +4,8 @@ Tests for the interactive selector UI.
 
 from unittest.mock import patch, MagicMock
 
-from kora.interface.selector import select_option, _select_basic
-from kora.host.interactions import InteractionOption, InteractionRequest
+from quenda.interface.selector import select_option, _select_basic
+from quenda.host.interactions import InteractionOption, InteractionRequest
 
 
 class TestSelectOption:

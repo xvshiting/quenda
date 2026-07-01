@@ -6,7 +6,7 @@ Draft (2026-06-29)
 
 ## Purpose
 
-This document evaluates how well Kora's current runtime terminology and
+This document evaluates how well Quenda's current runtime terminology and
 state-machine design support recent agent research directions, and
 identifies the next set of lifecycle phases and transitions that would
 most improve that support.
@@ -21,9 +21,9 @@ It answers three questions:
 
 This document builds on:
 
-- [ADR-019: Prioritize Strategy Hooks Over Rich UI](/Users/xushiting/Workspace/kora/docs/decisions/019-strategy-hooks-over-rich-ui.md)
-- [ADR-020: Runtime Terminology and Execution Units](/Users/xushiting/Workspace/kora/docs/decisions/020-runtime-terminology-and-execution-units.md)
-- [ADR-021: Runtime Lifecycle and State Machine](/Users/xushiting/Workspace/kora/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
+- [ADR-019: Prioritize Strategy Hooks Over Rich UI](/Users/xushiting/Workspace/quenda/docs/decisions/019-strategy-hooks-over-rich-ui.md)
+- [ADR-020: Runtime Terminology and Execution Units](/Users/xushiting/Workspace/quenda/docs/decisions/020-runtime-terminology-and-execution-units.md)
+- [ADR-021: Runtime Lifecycle and State Machine](/Users/xushiting/Workspace/quenda/docs/decisions/021-runtime-lifecycle-and-state-machine.md)
 
 ## Evaluation Criteria
 
@@ -187,7 +187,7 @@ This is sufficient to support:
 
 The main gap is schema richness, not lifecycle shape.
 
-Kora still needs:
+Quenda still needs:
 
 - richer event payload conventions
 - explicit trace schema stabilization
@@ -300,7 +300,7 @@ Reason:
 - there is no first-class notion of branch, candidate, rollback, or
   branch evaluation
 
-This means search methods can be built above Kora, but not yet in a
+This means search methods can be built above Quenda, but not yet in a
 smooth native way.
 
 ### Remaining gaps
@@ -328,7 +328,7 @@ Recommended transition shapes:
 - `BranchEvaluating -> BranchPruned`
 
 This does not mean search should be pushed into core immediately, but it
-does mean the lifecycle should eventually leave room for it if Kora
+does mean the lifecycle should eventually leave room for it if Quenda
 wants to support search-heavy agent research smoothly.
 
 ## 8. Multi-agent orchestration
@@ -350,7 +350,7 @@ Reason:
   the kinds of surfaces upper-layer orchestration systems need
 - but orchestration itself should still remain above core
 
-This matches Kora's architectural direction.
+This matches Quenda's architectural direction.
 
 ### Remaining gaps
 
@@ -393,7 +393,7 @@ These are the most important next gaps.
 
 ## Recommended Next-Phase Expansion
 
-If Kora wants to better support the current research frontier, the next
+If Quenda wants to better support the current research frontier, the next
 phase of lifecycle expansion should prioritize three categories.
 
 ### Priority 1: Verification and Reflection
@@ -461,7 +461,7 @@ current execution model too early.
 
 ## Final Recommendation
 
-Kora's current terminology and runtime lifecycle already support a large
+Quenda's current terminology and runtime lifecycle already support a large
 and important subset of current agent research, especially:
 
 - ReAct-style loops
@@ -471,7 +471,7 @@ and important subset of current agent research, especially:
 
 That means the current design is already a strong foundation.
 
-However, if Kora wants to support the broader frontier of agent
+However, if Quenda wants to support the broader frontier of agent
 research more smoothly, the next lifecycle expansion should explicitly
 add:
 

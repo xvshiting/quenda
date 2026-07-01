@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora currently uses three conceptual layers:
+Quenda currently uses three conceptual layers:
 
 ```text
 Interface -> Host -> Runtime -> Kernel
@@ -17,7 +17,7 @@ definition, contributors may treat Host as a catch-all for UI, server
 processes, persistence, workspace loading, plugins, permissions, and
 runtime orchestration.
 
-That ambiguity becomes more important as Kora adds Skills, persistence,
+That ambiguity becomes more important as Quenda adds Skills, persistence,
 identity, and workspace trust.
 
 ## Decision

@@ -6,7 +6,7 @@ Proposed (2026-06-26)
 
 ## Context
 
-Kora is moving toward a hookable, policy-driven runtime. That direction
+Quenda is moving toward a hookable, policy-driven runtime. That direction
 requires more than a list of hook interfaces. It also requires a clear
 model of:
 
@@ -24,13 +24,13 @@ Without that model, several design problems remain underspecified:
 - when processed tool results are written back to the loop
 - where future verification or reflection phases would fit
 
-Today, much of Kora's lifecycle is implicit in `Run.execute()` and
+Today, much of Quenda's lifecycle is implicit in `Run.execute()` and
 `Kernel.run()`. The framework needs an explicit runtime state machine so
 that hooks, policies, and phase transitions can be designed coherently.
 
 ## Decision
 
-Kora should define its runtime execution model as an explicit state
+Quenda should define its runtime execution model as an explicit state
 machine centered on the `Run`.
 
 Recommended principles:
@@ -432,7 +432,7 @@ This ADR builds directly on:
 
 ## Recommendation
 
-Kora should treat this lifecycle state machine as the canonical
+Quenda should treat this lifecycle state machine as the canonical
 architectural model for future hook and policy work.
 
 In particular:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kora.tools.execution import RunShellTool, ShellConfig
+from quenda.tools.execution import RunShellTool, ShellConfig
 
 
 class TestRunShellTool:

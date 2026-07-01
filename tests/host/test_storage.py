@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kora.host import FileStorage, FileStorageConfig, RunState
-from kora.runtime import SessionState, Session, AgentConfig
-from kora.kernel.types import Message, ToolCall, ToolResult
+from quenda.host import FileStorage, FileStorageConfig, RunState
+from quenda.runtime import SessionState, Session, AgentConfig
+from quenda.kernel.types import Message, ToolCall, ToolResult
 
 
 class TestRunState:
@@ -303,7 +303,7 @@ class TestFileStorageEdgeCases:
     def test_storage_with_custom_base_dir(self) -> None:
         """Test storage with custom base directory."""
         with TemporaryDirectory() as tmpdir:
-            custom_dir = Path(tmpdir) / "custom_kora"
+            custom_dir = Path(tmpdir) / "custom_quenda"
             config = FileStorageConfig(base_dir=custom_dir)
             storage = FileStorage(config)
 

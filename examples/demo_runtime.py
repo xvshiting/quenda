@@ -7,8 +7,8 @@ This demonstrates the full Kora Runtime flow.
 
 import asyncio
 
-from kora import Agent
-from kora.runtime import (
+from quenda import Agent
+from quenda.runtime import (
     RunCompleted,
     RunStarted,
     ToolExecuted,

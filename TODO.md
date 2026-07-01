@@ -1,4 +1,4 @@
-# Kora TODO
+# Quenda TODO
 
 > 当前执行优先级来自 [docs/PM-REPORT-2026-06-23.md](docs/PM-REPORT-2026-06-23.md)。
 > 新架构和技术方案评估请使用 [docs/TECH-RADAR.md](docs/TECH-RADAR.md)。
@@ -27,7 +27,7 @@
 - [x] 修复 Session 持久化：正确包含 assistant message
 - [x] 修复 JSON 存储：UTF-8 编码（`ensure_ascii=False`）
 - [x] **上下文重建**：实现 `ContextRebuilder`，在 `/model` 切换后重建 system prompt
-  - `src/kora/host/context.py` — `ContextRebuilder` 类
+  - `src/quenda/host/context.py` — `ContextRebuilder` 类
   - `Agent.set_system_prompt()` / `Session.set_system_prompt()` — 运行时更新 system prompt
   - `ModelCommand` 返回 `rebuild_context=True` + `state_patch`
   - CLI `run_repl()` 接入上下文重建流程
@@ -38,12 +38,12 @@
   - `/context [show|tools|session]` — 查看当前上下文/工具/会话信息
   - `/reset` — 清空消息并恢复原始系统提示词
 - [x] **上下文压缩**：实现 ADR-015 上下文压缩与分层存储
-  - `src/kora/runtime/compression.py` — `CompressionStats`, `CompressionDecision`, `CompressionResult`
-  - `src/kora/host/compression_policy.py` — `CompressionPolicy`, `DefaultCompressionPolicy`
-  - `src/kora/runtime/compressor.py` — `Compressor`, `SummarizerCompressor`
-  - `src/kora/runtime/token_estimator.py` — Token 估算
-  - `src/kora/runtime/events.py` — `CompressionStarted`, `CompressionCompleted`
-  - `src/kora/host/storage.py` — 归档存储支持
+  - `src/quenda/runtime/compression.py` — `CompressionStats`, `CompressionDecision`, `CompressionResult`
+  - `src/quenda/host/compression_policy.py` — `CompressionPolicy`, `DefaultCompressionPolicy`
+  - `src/quenda/runtime/compressor.py` — `Compressor`, `SummarizerCompressor`
+  - `src/quenda/runtime/token_estimator.py` — Token 估算
+  - `src/quenda/runtime/events.py` — `CompressionStarted`, `CompressionCompleted`
+  - `src/quenda/host/storage.py` — 归档存储支持
   - `/compress` 命令 — 手动触发压缩
   - `/status` 命令 — 查看 token 使用和压缩状态
   - `config.yaml` 支持 `compression` 配置
@@ -84,11 +84,11 @@
 - [x] 实现 instruction append-only 组合
 - [ ] 暂缓：User scope instructions、Instruction disable 机制
 
-### Trial: Kora Code Agent MVP ✅
+### Trial: Quenda Code Agent MVP ✅
 
-- [x] 创建 `agents/kora-code/AGENT.md`（定义系统提示和行为准则）
-- [x] 创建 `src/kora/cli.py`（通用 CLI：`kora run` / `kora code`）
-- [x] `pyproject.toml` 已有 `kora` 命令入口点配置
+- [x] 创建 `agents/quenda-code/AGENT.md`（定义系统提示和行为准则）
+- [x] 创建 `src/quenda/cli.py`（通用 CLI：`quenda run` / `quenda code`）
+- [x] `pyproject.toml` 已有 `quenda` 命令入口点配置
 - [x] 验收测试 1：基础问答 ✅（Agent 能理解项目结构并给出合理回答）
 - [x] 验收测试 2：代码探索 ✅（Agent 能找到入口点，解释代码）
 - [x] 验收测试 3：简单修改 ✅（Agent 用 `apply_patch` 正确添加 docstring）
@@ -109,8 +109,8 @@
 #### 发现的问题（待回填到基础设施）
 
 1. **默认模型配置**：已修复，改用 `deepseek` + `deepseek-v4-flash`
-2. **FileStorageConfig.base_dir 默认值**：当前是 `.kora`（相对路径），ADR-004 设计是 `~/.kora`
-3. **User 缺少 kora_dir 属性**：CLI 需手动构建 `~/.kora/users/<user_id>` 存储路径
+2. **FileStorageConfig.base_dir 默认值**：当前是 `.quenda`（相对路径），ADR-004 设计是 `~/.quenda`
+3. **User 缺少 quenda_dir 属性**：CLI 需手动构建 `~/.quenda/users/<user_id>` 存储路径
 4. **AGENT.md frontmatter 未解析 default_provider/default_model**：CLI 应读取这些值作为默认配置
 5. **权限系统暂缓**：完整 tool permission、allow/ask/deny、Host-owned metadata 写保护先不做，保留到 Host 安全阶段
 
@@ -120,7 +120,7 @@
 - [x] 设计 Host 层 Skill 发现、信任、加载和资源暴露流程
 - [x] 明确 Skill 与 Tool、Agent、Runtime、Kernel 的边界
 - [x] 实现三层优先级：`user_workspace` > `agent_package` > `user`
-- [x] 实现用户隔离：`~/.kora/users/<user>/workspaces/<ws_id>/skills/`
+- [x] 实现用户隔离：`~/.quenda/users/<user>/workspaces/<ws_id>/skills/`
 - [x] 实现 Agent 包打包 Skills：`<agent-package>/skills/`
 - [x] 实现 Framework Contract：所有 Agent 自动获得 Skills 路径约定
 - [x] 实现 `/skill` REPL 命令：`list`, `activate`, `deactivate`, `resources`
@@ -129,7 +129,7 @@
 
 ## Phase 0: 项目基础 ✅
 
-- [x] 设置 Python 项目结构（pyproject.toml, src/kora/）
+- [x] 设置 Python 项目结构（pyproject.toml, src/quenda/）
 - [x] 配置开发环境（pytest, mypy, ruff）
 - [x] 创建最小可运行的包结构
 

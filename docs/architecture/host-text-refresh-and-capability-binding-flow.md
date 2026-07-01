@@ -18,9 +18,9 @@ concepts. Its purpose is to define:
 
 This document builds directly on:
 
-- [ADR-020: Runtime Terminology and Execution Units](/Users/xushiting/Workspace/kora/docs/decisions/020-runtime-terminology-and-execution-units.md)
-- [ADR-025: Skill Lifetime and Prompt Residency](/Users/xushiting/Workspace/kora/docs/decisions/025-skill-lifetime-and-prompt-residency.md)
-- [ADR-026: Textual Context Reload and Capability Rebind](/Users/xushiting/Workspace/kora/docs/decisions/026-textual-context-reload-and-capability-rebind.md)
+- [ADR-020: Runtime Terminology and Execution Units](/Users/xushiting/Workspace/quenda/docs/decisions/020-runtime-terminology-and-execution-units.md)
+- [ADR-025: Skill Lifetime and Prompt Residency](/Users/xushiting/Workspace/quenda/docs/decisions/025-skill-lifetime-and-prompt-residency.md)
+- [ADR-026: Textual Context Reload and Capability Rebind](/Users/xushiting/Workspace/quenda/docs/decisions/026-textual-context-reload-and-capability-rebind.md)
 
 ## Scope
 
@@ -43,7 +43,7 @@ Host should have two separate preparation paths:
 
 ## Execution Boundary
 
-In current Kora terms:
+In current Quenda terms:
 
 - one new user input normally creates one new `Run`
 - that run normally corresponds to one user-facing `Turn`
@@ -254,7 +254,7 @@ same implementation track:
 
 ## Recommended Stop Point
 
-This design track should be considered complete when Kora can do all of
+This design track should be considered complete when Quenda can do all of
 the following:
 
 1. edit `AGENT.md` and see the change on the next user message

@@ -6,7 +6,7 @@ Proposed (2026-06-26)
 
 ## Context
 
-Kora already marks some models as supporting `vision` at the
+Quenda already marks some models as supporting `vision` at the
 `ModelSpec` layer, but the framework's internal message model is still
 text-centric:
 
@@ -30,7 +30,7 @@ This creates several practical problems:
 
 The project needs a clear answer to four questions:
 
-- should Kora Core define a first-class multimodal message abstraction
+- should Quenda Core define a first-class multimodal message abstraction
 - which layer should own that abstraction
 - should phase 1 support only image input or attempt a wider multimodal
   surface
@@ -39,7 +39,7 @@ The project needs a clear answer to four questions:
 
 ## Decision
 
-Kora should introduce a **structured content-block message model** as
+Quenda should introduce a **structured content-block message model** as
 the foundation for multimodal support.
 
 Phase 1 should be intentionally narrow:
@@ -60,7 +60,7 @@ Recommended direction:
 
 - keep the current text shortcut for backward compatibility
 - introduce normalized content blocks internally
-- let Kora define the blocks rather than copying any one provider
+- let Quenda define the blocks rather than copying any one provider
   schema
 
 Recommended first block types:
@@ -121,11 +121,11 @@ Backward compatibility is required:
 
 ### 5. Provider strategy
 
-Kora should not bind multimodal support to a single provider format.
+Quenda should not bind multimodal support to a single provider format.
 
 Recommended approach:
 
-- normalize blocks inside Kora
+- normalize blocks inside Quenda
 - let the OpenAI-compatible converter map those blocks into the
   appropriate message / content schema
 - let the Anthropic converter map them into its content-block schema
@@ -136,12 +136,12 @@ In other words, multimodal compatibility should be implemented at the
 
 ### 6. Persistence strategy
 
-Session storage must persist structured Kora messages, not raw provider
+Session storage must persist structured Quenda messages, not raw provider
 payloads.
 
 Recommended constraints:
 
-- persist the Kora block abstraction, not provider-native payloads
+- persist the Quenda block abstraction, not provider-native payloads
 - prefer references for image blocks rather than embedding large binary
   data
 - allow base64 only as a transport representation, not as the default
@@ -246,7 +246,7 @@ Conclusion:
 
 Recommended order of work:
 
-1. define the Kora content-block abstraction
+1. define the Quenda content-block abstraction
 2. allow `Message` to represent structured content
 3. extend the OpenAI-compatible converter
 4. extend the Anthropic converter
@@ -256,9 +256,9 @@ Recommended order of work:
 
 ## Decision Summary
 
-Kora should adopt a structured content-block message architecture, with
+Quenda should adopt a structured content-block message architecture, with
 image input as the phase-1 multimodal scope.
 
-This capability should be defined as a core Kora abstraction, mapped by
+This capability should be defined as a core Quenda abstraction, mapped by
 provider API families, and remain backward compatible with the existing
 text and tool-calling flow.

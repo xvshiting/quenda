@@ -6,11 +6,11 @@ Proposed (2026-06-30)
 
 ## Context
 
-Kora already established several important skill decisions:
+Quenda already established several important skill decisions:
 
 - `ADR-002` places Skills at the Host layer
 - `ADR-007` defines the broader instruction layering model
-- [skill-turn-boundary-reload-semantics.md](/Users/xushiting/Workspace/kora/docs/architecture/skill-turn-boundary-reload-semantics.md)
+- [skill-turn-boundary-reload-semantics.md](/Users/xushiting/Workspace/quenda/docs/architecture/skill-turn-boundary-reload-semantics.md)
   recommends turn-boundary refresh rather than live hot reload
 
 However, one important part is still underspecified:
@@ -27,20 +27,20 @@ Different things are being conflated:
 - composing its instruction body into the current run
 - loading one of its reference or asset files
 
-That ambiguity becomes more costly as Kora moves toward:
+That ambiguity becomes more costly as Quenda moves toward:
 
 - prompt-budget awareness
 - model-driven skill selection
 - progressive disclosure of skill resources
 - stronger reproducibility and tracing
 
-Kora needs a formal lifetime model so downstream users can plug in
+Quenda needs a formal lifetime model so downstream users can plug in
 different skill-routing strategies without changing what the framework
 means by "active", "loaded", or "unloaded".
 
 ## Decision
 
-Kora should distinguish **four separate skill states** and give each
+Quenda should distinguish **four separate skill states** and give each
 one its own lifetime semantics:
 
 1. **Discovered skill metadata**
@@ -180,7 +180,7 @@ once.
 
 ## Official Default Residency Model
 
-Kora should use the following default model.
+Quenda should use the following default model.
 
 | Skill element | Default residency | Owned by | Notes |
 |---|---|---|---|
@@ -191,7 +191,7 @@ Kora should use the following default model.
 
 ## Explicit Activation vs Model-Selected Use
 
-Kora should support two conceptually different cases.
+Quenda should support two conceptually different cases.
 
 ### Case 1. Explicitly activated skill
 
@@ -219,7 +219,7 @@ In this case, the default should be:
 - resources are loaded only if needed
 - nothing is automatically promoted to session-persistent activation
 
-If later Kora adds model-driven skill selection, this ADR's semantics
+If later Quenda adds model-driven skill selection, this ADR's semantics
 should remain stable:
 
 - selection decides **whether to apply**
@@ -227,7 +227,7 @@ should remain stable:
 
 ## Unload Semantics
 
-Kora should define unload behavior explicitly.
+Quenda should define unload behavior explicitly.
 
 ### Instruction unload
 
@@ -312,7 +312,7 @@ without pretending they all shared one lifetime.
 
 ## Recommended Host Data Model
 
-Kora should move toward a state model like this:
+Quenda should move toward a state model like this:
 
 ### Stable state
 
@@ -349,7 +349,7 @@ this ADR.
 
 - gives skills a clear and composable runtime mental model
 - prevents resource content from silently bloating future prompts
-- keeps Kora compatible with both explicit and automatic skill use
+- keeps Quenda compatible with both explicit and automatic skill use
 - supports future observability around skill application
 
 ### Negative

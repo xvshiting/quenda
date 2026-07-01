@@ -1,16 +1,16 @@
 """Test that Kora package can be imported."""
 
-import kora
+import quenda
 
 
 def test_version() -> None:
     """Test that version is defined."""
-    assert kora.__version__ == "0.1.0"
+    assert quenda.__version__ == "0.1.0"
 
 
 def test_kernel_types_import() -> None:
     """Test that kernel types can be imported."""
-    from kora.kernel import Message, ModelResponse, ToolCall, ToolResult
+    from quenda.kernel import Message, ModelResponse, ToolCall, ToolResult
 
     call = ToolCall(id="1", name="test", arguments={})
     assert call.id == "1"

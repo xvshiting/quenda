@@ -5,7 +5,7 @@ Tests for skill resource management.
 import pytest
 from pathlib import Path
 
-from kora.host.skill import (
+from quenda.host.skill import (
     SkillDiscovery,
     SkillActivator,
     ResourceResolver,
@@ -27,7 +27,7 @@ class TestResourceResolver:
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-kora:
+quenda:
   resources:
     references:
       - path: "guides/style-guide.md"
@@ -63,7 +63,7 @@ Perform code review.
         (skill_dir2 / "SKILL.md").write_text("""---
 name: testing
 description: Testing skill
-kora:
+quenda:
   resources:
     references:
       - path: "test-guide.md"

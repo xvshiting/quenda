@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kora.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
-from kora.runtime import (
+from quenda.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.runtime import (
     AgentConfig,
     ErrorOccurred,
     JsonlTraceSink,
@@ -183,7 +183,7 @@ class TestRun:
         def fake_invoke_model(self, messages, tools=None):  # type: ignore[no-untyped-def]
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("kora.runtime.run.Kernel.invoke_model", fake_invoke_model)
+        monkeypatch.setattr("quenda.runtime.run.Kernel.invoke_model", fake_invoke_model)
 
         events = await run.execute_to_completion("Hi")
 
@@ -327,7 +327,7 @@ class TestTerminationPolicy:
 
     def test_never_terminate_policy(self) -> None:
         """Test NeverTerminatePolicy never stops."""
-        from kora.runtime.termination import NeverTerminatePolicy, TerminationState
+        from quenda.runtime.termination import NeverTerminatePolicy, TerminationState
 
         policy = NeverTerminatePolicy()
         state = TerminationState(
@@ -348,7 +348,7 @@ class TestTerminationPolicy:
 
     def test_max_steps_policy(self) -> None:
         """Test MaxStepsPolicy stops after limit."""
-        from kora.runtime.termination import MaxStepsPolicy, TerminationState
+        from quenda.runtime.termination import MaxStepsPolicy, TerminationState
 
         policy = MaxStepsPolicy(max_steps=10)
 
@@ -389,7 +389,7 @@ class TestTerminationPolicy:
 
     def test_composite_policy(self) -> None:
         """Test CompositeTerminationPolicy combines policies."""
-        from kora.runtime.termination import (
+        from quenda.runtime.termination import (
             CompositeTerminationPolicy,
             MaxStepsPolicy,
             NeverTerminatePolicy,
@@ -421,7 +421,7 @@ class TestTerminationPolicy:
 
     def test_run_accepts_termination_policy(self) -> None:
         """Test Run.create accepts termination_policy."""
-        from kora.runtime.termination import MaxStepsPolicy
+        from quenda.runtime.termination import MaxStepsPolicy
 
         agent = AgentConfig(name="test")
         session = SessionState.create("test")
@@ -436,7 +436,7 @@ class TestTerminationPolicy:
     @pytest.mark.asyncio
     async def test_run_terminates_with_policy(self) -> None:
         """Test Run terminates when policy triggers."""
-        from kora.runtime.termination import MaxStepsPolicy
+        from quenda.runtime.termination import MaxStepsPolicy
 
         tool = FakeTool()
         agent = AgentConfig(name="test", tools=[tool])
@@ -485,7 +485,7 @@ class TestToolSelectionPolicy:
     @pytest.mark.asyncio
     async def test_run_with_allow_all_policy(self) -> None:
         """Test AllowAllToolSelectionPolicy allows all tool calls."""
-        from kora.runtime.tool_policy import AllowAllToolSelectionPolicy
+        from quenda.runtime.tool_policy import AllowAllToolSelectionPolicy
 
         tool = FakeTool()
         agent = AgentConfig(name="test", tools=[tool])
@@ -510,7 +510,7 @@ class TestToolSelectionPolicy:
     @pytest.mark.asyncio
     async def test_run_with_denylist_policy(self) -> None:
         """Test DenylistToolSelectionPolicy blocks denied tools."""
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         tool = FakeTool()
         agent = AgentConfig(name="test", tools=[tool])
@@ -537,7 +537,7 @@ class TestToolSelectionPolicy:
     @pytest.mark.asyncio
     async def test_run_with_partial_approval(self) -> None:
         """Test partial approval: some approved, some rejected."""
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class NamedTool:
             """A tool with a configurable name."""
@@ -595,7 +595,7 @@ class TestToolSelectionPolicy:
     @pytest.mark.asyncio
     async def test_run_preserves_tool_order(self) -> None:
         """Test tool results are in original request order."""
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class NamedTool:
             """A tool with a configurable name."""
@@ -676,7 +676,7 @@ class TestToolResultProcessingPolicy:
     @pytest.mark.asyncio
     async def test_run_with_passthrough_policy(self) -> None:
         """Test PassthroughToolResultProcessingPolicy leaves result unchanged."""
-        from kora.runtime.tool_policy import PassthroughToolResultProcessingPolicy
+        from quenda.runtime.tool_policy import PassthroughToolResultProcessingPolicy
 
         class VerboseTool:
             """A tool that returns a long result."""
@@ -719,7 +719,7 @@ class TestToolResultProcessingPolicy:
     @pytest.mark.asyncio
     async def test_run_with_truncating_policy(self) -> None:
         """Test TruncatingToolResultProcessingPolicy truncates long results."""
-        from kora.runtime.tool_policy import TruncatingToolResultProcessingPolicy
+        from quenda.runtime.tool_policy import TruncatingToolResultProcessingPolicy
 
         class VerboseTool:
             """A tool that returns a very long result."""
@@ -765,7 +765,7 @@ class TestToolResultProcessingPolicy:
     @pytest.mark.asyncio
     async def test_run_with_line_limited_policy(self) -> None:
         """Test LineLimitedToolResultProcessingPolicy limits lines."""
-        from kora.runtime.tool_policy import LineLimitedToolResultProcessingPolicy
+        from quenda.runtime.tool_policy import LineLimitedToolResultProcessingPolicy
 
         class MultiLineTool:
             """A tool that returns many lines."""
@@ -836,7 +836,7 @@ class TestToolResultProcessingPolicy:
     @pytest.mark.asyncio
     async def test_raw_result_preserved_for_trace(self) -> None:
         """Test raw_result is available even when result is processed."""
-        from kora.runtime.tool_policy import TruncatingToolResultProcessingPolicy
+        from quenda.runtime.tool_policy import TruncatingToolResultProcessingPolicy
 
         class SecretTool:
             """A tool that might return sensitive data."""
@@ -888,8 +888,8 @@ class TestToolPhaseEvents:
     @pytest.mark.asyncio
     async def test_tool_phase_started_event_emitted(self) -> None:
         """Test ToolPhaseStarted event is emitted with correct data."""
-        from kora.runtime.events import ToolPhaseStarted
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.events import ToolPhaseStarted
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class NamedTool:
             def __init__(self, name: str) -> None:
@@ -949,7 +949,7 @@ class TestToolPhaseEvents:
     @pytest.mark.asyncio
     async def test_tool_phase_started_with_no_policy(self) -> None:
         """Test ToolPhaseStarted event shows default policy when none configured."""
-        from kora.runtime.events import ToolPhaseStarted
+        from quenda.runtime.events import ToolPhaseStarted
 
         tool = FakeTool()
         agent = AgentConfig(name="test", tools=[tool])
@@ -978,7 +978,7 @@ class TestToolPhaseEvents:
     @pytest.mark.asyncio
     async def test_tool_executed_has_denial_fields(self) -> None:
         """Test ToolExecuted event has is_denied and denial_reason fields."""
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         tool = FakeTool()
         agent = AgentConfig(name="test", tools=[tool])
@@ -1030,7 +1030,7 @@ class TestToolPhaseEvents:
     @pytest.mark.asyncio
     async def test_trace_distinguishes_denial_from_failure(self) -> None:
         """Test trace can distinguish tool denial from execution failure."""
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class FailingTool:
             @property
@@ -1104,8 +1104,8 @@ class TestAgentPolicyBinding:
     @pytest.mark.asyncio
     async def test_agent_tool_selection_policy_binding(self) -> None:
         """Test Agent accepts and propagates tool_selection_policy."""
-        from kora.runtime.agent import Agent
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.agent import Agent
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class EchoTool:
             @property
@@ -1137,8 +1137,8 @@ class TestAgentPolicyBinding:
     @pytest.mark.asyncio
     async def test_agent_tool_result_processing_policy_binding(self) -> None:
         """Test Agent accepts and propagates tool_result_processing_policy."""
-        from kora.runtime.agent import Agent
-        from kora.runtime.tool_policy import TruncatingToolResultProcessingPolicy
+        from quenda.runtime.agent import Agent
+        from quenda.runtime.tool_policy import TruncatingToolResultProcessingPolicy
 
         policy = TruncatingToolResultProcessingPolicy(max_chars=100)
 
@@ -1153,8 +1153,8 @@ class TestAgentPolicyBinding:
     @pytest.mark.asyncio
     async def test_agent_termination_policy_binding(self) -> None:
         """Test Agent accepts and propagates termination_policy."""
-        from kora.runtime.agent import Agent
-        from kora.runtime.termination import MaxStepsPolicy
+        from quenda.runtime.agent import Agent
+        from quenda.runtime.termination import MaxStepsPolicy
 
         policy = MaxStepsPolicy(max_steps=10)
 
@@ -1173,9 +1173,9 @@ class TestSessionPolicyBinding:
     @pytest.mark.asyncio
     async def test_session_inherits_agent_policies(self) -> None:
         """Test Session inherits policies from Agent."""
-        from kora.runtime.agent import Agent
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy, TruncatingToolResultProcessingPolicy
-        from kora.runtime.termination import MaxStepsPolicy
+        from quenda.runtime.agent import Agent
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy, TruncatingToolResultProcessingPolicy
+        from quenda.runtime.termination import MaxStepsPolicy
 
         selection_policy = DenylistToolSelectionPolicy(denied={"dangerous"})
         result_policy = TruncatingToolResultProcessingPolicy(max_chars=100)
@@ -1198,8 +1198,8 @@ class TestSessionPolicyBinding:
     @pytest.mark.asyncio
     async def test_session_policies_flow_to_run(self) -> None:
         """Test Session policies are passed to Run during send()."""
-        from kora.runtime.agent import Agent
-        from kora.runtime.tool_policy import DenylistToolSelectionPolicy
+        from quenda.runtime.agent import Agent
+        from quenda.runtime.tool_policy import DenylistToolSelectionPolicy
 
         class EchoTool:
             @property
@@ -1223,7 +1223,7 @@ class TestSessionPolicyBinding:
         # Create fake model
         class FakeModelForSession:
             def invoke(self, messages, *, tools):
-                from kora.kernel.types import ModelResponse
+                from quenda.kernel.types import ModelResponse
                 return ModelResponse(content="Done", stop_reason="end_turn")
 
         agent = Agent(

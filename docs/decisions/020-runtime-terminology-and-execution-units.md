@@ -6,7 +6,7 @@ Proposed (2026-06-26)
 
 ## Context
 
-Kora is moving toward a more explicit lifecycle model for hooks,
+Quenda is moving toward a more explicit lifecycle model for hooks,
 policies, and runtime control.
 
 That work is difficult to do well if the project uses core execution
@@ -32,12 +32,12 @@ This ambiguity creates several problems:
 - different documents can appear to agree while actually describing
   different levels of execution
 
-Kora needs a stable terminology layer before it can define a durable
+Quenda needs a stable terminology layer before it can define a durable
 lifecycle state machine or policy system.
 
 ## Decision
 
-Kora should standardize the following execution terms and use them
+Quenda should standardize the following execution terms and use them
 consistently in architecture, API design, and implementation work.
 
 ## Core Execution Units
@@ -77,7 +77,7 @@ In the current design, one user message normally creates one run.
 A `Turn` is a user-facing conversational unit, not the primary runtime
 control unit.
 
-In the current Kora design, one run usually corresponds to one agent
+In the current Quenda design, one run usually corresponds to one agent
 turn, but these concepts should remain distinct:
 
 - `Run` is a runtime object
@@ -261,7 +261,7 @@ Failure is distinct from both completion and policy termination.
 
 ## Recommended Usage Rules
 
-To keep future design consistent, Kora should follow these rules.
+To keep future design consistent, Quenda should follow these rules.
 
 ### 1. Use `Run` as the primary hook and trace unit
 
@@ -283,7 +283,7 @@ This is important because many future policies will need access to:
 
 Do not use "termination" as a generic synonym for every kind of stop.
 
-Kora should distinguish:
+Quenda should distinguish:
 
 - completion
 - termination
@@ -325,5 +325,5 @@ In particular:
 
 ## Recommendation
 
-Kora should adopt this terminology as the baseline vocabulary for all
+Quenda should adopt this terminology as the baseline vocabulary for all
 future hook, lifecycle, and runtime-control work.

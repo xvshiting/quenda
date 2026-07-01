@@ -1,7 +1,7 @@
 """Tests for REPL-specific interface helpers."""
 
-from kora.interface.repl import format_activity_log
-from kora.interface.status import StatusBarManager
+from quenda.interface.repl import format_activity_log
+from quenda.interface.status import StatusBarManager
 
 
 def test_format_activity_log_renders_entries() -> None:

@@ -1,4 +1,4 @@
-# ADR-005: Kora Code Agent MVP
+# ADR-005: Quenda Code Agent MVP
 
 ## Status
 
@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora 是一个 Agent 框架，需要有一个官方 Code Agent 作为：
+Quenda 是一个 Agent 框架，需要有一个官方 Code Agent 作为：
 1. 框架功能的验收用例
 2. 用户参考的 Agent 示例
 3. 真实使用场景的压力测试
@@ -32,7 +32,7 @@ Code Agent MVP 必须通过公共 API 实现，不能有特权分支。
 它由以下部分组成：
 
 ```text
-agents/kora-code/
+agents/quenda-code/
 ├── AGENT.md           # Agent 定义（系统提示 + 元数据）
 └── tools/             # Code Agent 特有工具（如果有）
 ```
@@ -41,14 +41,14 @@ agents/kora-code/
 
 ```markdown
 ---
-name: kora-code
+name: quenda-code
 version: 0.1.0
-description: Kora's official coding agent
+description: Quenda's official coding agent
 default_provider: anthropic
 default_model: claude-sonnet-4-20250514
 ---
 
-You are Kora Code, an expert coding assistant.
+You are Quenda Code, an expert coding assistant.
 
 ## Core Capabilities
 
@@ -86,38 +86,38 @@ Code Agent 通过通用 CLI 启动，使用与其他 Agent 相同的公共 API�
 
 ```bash
 # 通用方式 - 适用于任何 Agent
-kora run --agent agents/kora-code --workspace /path/to/project "你的任务"
+quenda run --agent agents/quenda-code --workspace /path/to/project "你的任务"
 
-# 快捷方式 - kora code 等价于 kora run --agent agents/kora-code
-kora code --workspace /path/to/project "你的任务"
+# 快捷方式 - quenda code 等价于 quenda run --agent agents/quenda-code
+quenda code --workspace /path/to/project "你的任务"
 ```
 
 ### CLI 结构
 
 ```text
 agents/
-  kora-code/
+  quenda-code/
     AGENT.md           # Code Agent 定义
 
-src/kora/
-  cli.py               # 通用 CLI：kora run / kora code
+src/quenda/
+  cli.py               # 通用 CLI：quenda run / quenda code
   host/                # Host loading/resolution
   runtime/             # Session/Run execution
 ```
 
-**不创建独立的 `kora_code` 包**。Code Agent 只是 `agents/kora-code/AGENT.md`，通过公共 CLI 启动。
+**不创建独立的 `quenda_code` 包**。Code Agent 只是 `agents/quenda-code/AGENT.md`，通过公共 CLI 启动。
 
 ### CLI 实现
 
 ```python
-# src/kora/cli.py
+# src/quenda/cli.py
 import argparse
 from pathlib import Path
 
-from kora.host import load_agent_from_markdown, FileStorage, DefaultUserResolver
-from kora.providers import get_provider_registry
-from kora.runtime import Agent
-from kora.tools import get_core_tools
+from quenda.host import load_agent_from_markdown, FileStorage, DefaultUserResolver
+from quenda.providers import get_provider_registry
+from quenda.runtime import Agent
+from quenda.tools import get_core_tools
 
 
 def run_agent(
@@ -147,7 +147,7 @@ def run_agent(
 
     # 5. Setup storage (public API)
     user = DefaultUserResolver().resolve()
-    storage = FileStorage(base_dir=user.kora_dir)
+    storage = FileStorage(base_dir=user.quenda_dir)
 
     # 6. Create Agent (public API)
     agent = Agent(
@@ -191,10 +191,10 @@ def print_event(event):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Kora Agent Framework")
+    parser = argparse.ArgumentParser(description="Quenda Agent Framework")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # kora run --agent <path> "message"
+    # quenda run --agent <path> "message"
     run_parser = subparsers.add_parser("run", help="Run an agent")
     run_parser.add_argument("--agent", type=Path, required=True, help="Path to AGENT.md")
     run_parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace directory")
@@ -203,8 +203,8 @@ def main():
     run_parser.add_argument("--session", help="Resume session by ID")
     run_parser.add_argument("message", help="Task or question")
 
-    # kora code "message" (shortcut for --agent agents/kora-code)
-    code_parser = subparsers.add_parser("code", help="Run Kora Code Agent")
+    # quenda code "message" (shortcut for --agent agents/quenda-code)
+    code_parser = subparsers.add_parser("code", help="Run Quenda Code Agent")
     code_parser.add_argument("--workspace", type=Path, default=Path.cwd(), help="Workspace directory")
     code_parser.add_argument("--provider", help="Model provider")
     code_parser.add_argument("--model", help="Model name")
@@ -223,8 +223,8 @@ def main():
             session_id=args.session,
         )
     elif args.command == "code":
-        # Find agents/kora-code/AGENT.md relative to package
-        agent_path = Path(__file__).parent.parent.parent / "agents" / "kora-code" / "AGENT.md"
+        # Find agents/quenda-code/AGENT.md relative to package
+        agent_path = Path(__file__).parent.parent.parent / "agents" / "quenda-code" / "AGENT.md"
         if not agent_path.exists():
             print(f"Error: Code Agent not found at {agent_path}")
             return 1
@@ -281,7 +281,7 @@ Code Agent MVP 成功的标准是它能完成以下任务：
 ### 1. 基础问答
 
 ```bash
-kora code --workspace /path/to/project "What does this project do?"
+quenda code --workspace /path/to/project "What does this project do?"
 ```
 
 期望：
@@ -292,7 +292,7 @@ kora code --workspace /path/to/project "What does this project do?"
 ### 2. 代码探索
 
 ```bash
-kora code --workspace /path/to/project "Where is the main entry point?"
+quenda code --workspace /path/to/project "Where is the main entry point?"
 ```
 
 期望：
@@ -303,7 +303,7 @@ kora code --workspace /path/to/project "Where is the main entry point?"
 ### 3. 简单修改
 
 ```bash
-kora code --workspace /path/to/project "Add a docstring to the main function"
+quenda code --workspace /path/to/project "Add a docstring to the main function"
 ```
 
 期望：
@@ -314,7 +314,7 @@ kora code --workspace /path/to/project "Add a docstring to the main function"
 ### 4. 命令执行
 
 ```bash
-kora code --workspace /path/to/project "Run the tests and report failures"
+quenda code --workspace /path/to/project "Run the tests and report failures"
 ```
 
 期望：
@@ -381,9 +381,9 @@ MVP 阶段明确排除：
 Code Agent MVP 作为新的 Trial 项：
 
 ```markdown
-### Trial: Kora Code Agent MVP
+### Trial: Quenda Code Agent MVP
 
-- [ ] 创建 `agents/kora-code/AGENT.md`
+- [ ] 创建 `agents/quenda-code/AGENT.md`
 - [ ] 创建最小 CLI 入口
 - [ ] 验证框架公共 API 可用性
 - [ ] 验收测试（基础问答、代码探索、简单修改、命令执行）
@@ -417,8 +417,8 @@ P0/P1 稳定化工作并行推进，Code Agent 暴露的问题回填到基础设
 
 采纳此 ADR，开始 Code Agent MVP 开发：
 
-1. 创建 `agents/kora-code/AGENT.md`
-2. 创建 `src/kora/cli.py`（通用 CLI：`kora run` / `kora code`）
-3. 在 `pyproject.toml` 中注册 `kora` 命令入口点
+1. 创建 `agents/quenda-code/AGENT.md`
+2. 创建 `src/quenda/cli.py`（通用 CLI：`quenda run` / `quenda code`）
+3. 在 `pyproject.toml` 中注册 `quenda` 命令入口点
 4. 用验收测试验证
 5. 记录暴露的问题

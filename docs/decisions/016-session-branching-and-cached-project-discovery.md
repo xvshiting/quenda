@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora sessions are increasingly used for coding-agent workflows where the
+Quenda sessions are increasingly used for coding-agent workflows where the
 first expensive step is not code generation, but project discovery:
 
 - listing directories
@@ -33,7 +33,7 @@ The project therefore needs a workflow that supports:
 
 ## Decision
 
-Kora should support **session branching** as a Host-level control-plane
+Quenda should support **session branching** as a Host-level control-plane
 feature.
 
 The intended workflow is:
@@ -43,7 +43,7 @@ The intended workflow is:
 3. Fork task branches from the base branch for specific work.
 4. Return to the base branch when starting the next task.
 
-This gives Kora a reusable context baseline that works well with prompt
+This gives Quenda a reusable context baseline that works well with prompt
 cache friendly providers and avoids repeated project re-discovery.
 
 ## What a Session Branch Is
@@ -72,7 +72,7 @@ discovery is often:
 - repetitive
 - mostly stable across related tasks
 
-If Kora can preserve that baseline and let later tasks fork from it, the
+If Quenda can preserve that baseline and let later tasks fork from it, the
 system can:
 
 - reduce repeated file-reading cost
@@ -82,7 +82,7 @@ system can:
 
 ## Layer Ownership
 
-Session branching follows the normal Kora architecture:
+Session branching follows the normal Quenda architecture:
 
 ```text
 Interface -> Host -> Runtime -> Kernel
@@ -120,7 +120,7 @@ These features should complement each other, not replace each other.
 
 ## Base Branch and Task Branches
 
-Kora should recognize two practical branch roles:
+Quenda should recognize two practical branch roles:
 
 - **base branch**: the stable project-discovery branch
 - **task branch**: a branch forked from a base or another branch for one
@@ -164,7 +164,7 @@ in Runtime or Kernel.
 
 ## Persistence Model
 
-Session branches should be stored in Kora's own Host persistence model.
+Session branches should be stored in Quenda's own Host persistence model.
 
 They should **not** be implemented by directly editing session files
 through Git operations.
@@ -189,7 +189,7 @@ Session branching may optionally record Git-related metadata, such as:
 - current commit SHA
 - dirty working tree state
 
-This metadata can help the UI explain context, but Kora session
+This metadata can help the UI explain context, but Quenda session
 branching must remain correct even if:
 
 - the workspace is not a Git repository
@@ -279,10 +279,10 @@ Those can be added later if the workflow proves valuable.
 
 ## Recommendation
 
-Kora should adopt Host-level session branching as a reusable project
+Quenda should adopt Host-level session branching as a reusable project
 context feature.
 
-The first version should be implemented in Kora's own persistence model,
+The first version should be implemented in Quenda's own persistence model,
 with optional Git metadata, but not Git as the underlying branch
 mechanism.
 

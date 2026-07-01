@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora needs a clear model for composing agent instructions from multiple sources.
+Quenda needs a clear model for composing agent instructions from multiple sources.
 
 Survey of mainstream agent instruction systems:
 
@@ -19,7 +19,7 @@ Common patterns:
 - Path/agent-level instructions can override
 - Long-term rules separated from task-based skills
 
-Kora should adopt the core pattern but maintain its own layering.
+Quenda should adopt the core pattern but maintain its own layering.
 
 ## Decision
 
@@ -40,12 +40,12 @@ skills/*          = On-demand capability packages
 
 ```markdown
 ---
-name: kora-code
+name: quenda-code
 version: 0.1.0
-description: Kora's official coding agent
+description: Quenda's official coding agent
 ---
 
-You are Kora Code, an expert coding assistant...
+You are Quenda Code, an expert coding assistant...
 
 [Base system prompt continues here]
 ```
@@ -81,7 +81,7 @@ session:
 Instructions compose from multiple scopes:
 
 ```text
-1. Kora framework contract
+1. Quenda framework contract
 2. Agent package AGENT.md
 3. Agent package config.yaml included instructions
 4. User global INSTRUCTIONS.md
@@ -98,7 +98,7 @@ Later scopes are more specific. The model should prioritize more specific instru
 **Agent package** (shipped with agent):
 
 ```text
-agents/kora-code/
+agents/quenda-code/
   AGENT.md
   config.yaml
   instructions/
@@ -110,11 +110,11 @@ agents/kora-code/
 **Workspace-owned** (in target workspace):
 
 ```text
-<workspace>/.kora/
+<workspace>/.quenda/
   workspace.yaml              # Workspace binding (Host-owned)
   INSTRUCTIONS.md             # Workspace-level instructions
   agents/
-    kora-code/
+    quenda-code/
       INSTRUCTIONS.md         # Workspace + agent instructions
       config.yaml             # Workspace-agent config overlay
 ```
@@ -122,10 +122,10 @@ agents/kora-code/
 **User-private** (in user scope):
 
 ```text
-~/.kora/users/<user_id>/
+~/.quenda/users/<user_id>/
   INSTRUCTIONS.md             # User global instructions
   agents/
-    kora-code/
+    quenda-code/
       INSTRUCTIONS.md         # User-agent instructions
       workspaces/
         <workspace_id>/

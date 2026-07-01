@@ -1,13 +1,13 @@
 # API 参考
 
-Kora 框架完整 API 速查表。
+Quenda 框架完整 API 速查表。
 
 ---
 
-## 顶层 API (`kora`)
+## 顶层 API (`quenda`)
 
 ```python
-from kora import (
+from quenda import (
     __version__,                    # str: 版本号
     Agent,                          # class: Agent 类
     Session,                        # class: 会话类
@@ -25,10 +25,10 @@ from kora import (
 
 ---
 
-## Runtime (`kora.runtime`)
+## Runtime (`quenda.runtime`)
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     Agent,          # Agent 类
     AgentConfig,    # Agent 不可变配置
     AgentDefinition,# Agent 协议
@@ -186,12 +186,12 @@ events = run.execute_sync(message)                    # 同步执行
 
 ---
 
-## Kernel (`kora.kernel`)
+## Kernel (`quenda.kernel`)
 
 底层执行引擎，不依赖 Agent/Session 概念：
 
 ```python
-from kora.kernel import (
+from quenda.kernel import (
     Kernel,          # 核心执行引擎
     KernelStep,      # 执行步骤（model/tool）
     Model,           # 模型协议
@@ -216,8 +216,8 @@ steps = kernel.run_to_completion(messages)
 ### 核心类型
 
 ```python
-from kora.kernel.types import Message, ToolCall, ToolResult
-from kora.kernel.types import ModelResponse, StreamChunk, UsageStats
+from quenda.kernel.types import Message, ToolCall, ToolResult
+from quenda.kernel.types import ModelResponse, StreamChunk, UsageStats
 
 Message(role="user|assistant|system", content=str|list)
 
@@ -244,12 +244,12 @@ UsageStats(
 
 ---
 
-## 工具 (`kora.tools`)
+## 工具 (`quenda.tools`)
 
 ### 工具装饰器
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def my_tool(param1: str, param2: int = 10) -> str:
@@ -263,7 +263,7 @@ def my_func(x: str) -> str: ...
 ### 内置工具类
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     ListFilesTool,
     SearchTextTool,
     ReadFileTool,
@@ -288,7 +288,7 @@ tools = get_network_tools()                  # 3 个网络工具
 ### 工具基类
 
 ```python
-from kora.tools.base import BaseTool
+from quenda.tools.base import BaseTool
 
 class MyTool(BaseTool):
     workspace  # Path: 工作空间根目录
@@ -300,7 +300,7 @@ class MyTool(BaseTool):
 ### 交互工具
 
 ```python
-from kora.tools import RequestInteractionTool
+from quenda.tools import RequestInteractionTool
 # request_interaction(kind, title, message, options)
 #   kind: "choice" | "confirm" | "input" | "menu"
 #   options: [{id, label, description, is_default}]
@@ -308,12 +308,12 @@ from kora.tools import RequestInteractionTool
 
 ---
 
-## 模型提供者 (`kora.providers`)
+## 模型提供者 (`quenda.providers`)
 
 ### ProviderRegistry
 
 ```python
-from kora.providers import get_provider_registry
+from quenda.providers import get_provider_registry
 
 registry = get_provider_registry()
 
@@ -366,8 +366,8 @@ ModelSpec(
 ### 错误类型
 
 ```python
-from kora.providers.errors import (
-    KoraError,               # 基类
+from quenda.providers.errors import (
+    QuendaError,               # 基类
     ProviderError,           # 提供商错误
     AuthenticationError,     # 认证错误
     APIError,                # API 错误
@@ -380,12 +380,12 @@ from kora.providers.errors import (
 
 ---
 
-## Host 层 (`kora.host`)
+## Host 层 (`quenda.host`)
 
 ### Agent 加载
 
 ```python
-from kora.host import (
+from quenda.host import (
     load_agent_from_markdown,  # 从 AGENT.md 加载
     load_agent_package,        # 加载 Agent 包
     load_agent_commands,       # 加载自定义命令
@@ -398,7 +398,7 @@ from kora.host import (
 ### 存储
 
 ```python
-from kora.host.storage import (
+from quenda.host.storage import (
     Storage,            # 存储协议
     FileStorage,        # 文件存储实现
     FileStorageConfig,  # 文件存储配置
@@ -409,7 +409,7 @@ from kora.host.storage import (
 ### 命令系统
 
 ```python
-from kora.host.commands import (
+from quenda.host.commands import (
     Command,             # 命令协议
     CommandResult,       # 命令结果
     CommandContext,      # 命令上下文
@@ -433,7 +433,7 @@ from kora.host.commands import (
 ### 交互系统
 
 ```python
-from kora.host.interactions import (
+from quenda.host.interactions import (
     Interaction,
     InteractionKind,
     InteractionRequest,
@@ -450,7 +450,7 @@ from kora.host.interactions import (
 ### 工作空间
 
 ```python
-from kora.host.workspace import (
+from quenda.host.workspace import (
     WorkspaceBinding,
     WorkspaceResolver,
 )
@@ -459,7 +459,7 @@ from kora.host.workspace import (
 ### 身份
 
 ```python
-from kora.host.identity import (
+from quenda.host.identity import (
     User,
     IdentityResolver,
     EnvIdentityResolver,
@@ -471,7 +471,7 @@ from kora.host.identity import (
 ### 指令系统
 
 ```python
-from kora.host.instructions import (
+from quenda.host.instructions import (
     InstructionScope,
     InstructionSource,
     TemplateContext,
@@ -482,10 +482,10 @@ from kora.host.instructions import (
 
 ---
 
-## 界面层 (`kora.interface`)
+## 界面层 (`quenda.interface`)
 
 ```python
-from kora.interface import (
+from quenda.interface import (
     InterfaceTheme,        # 主题配置
     ConsoleRenderer,       # 控制台渲染器
     SpinnerIndicator,      # 加载动画
@@ -503,12 +503,12 @@ from kora.interface import (
 
 ---
 
-## Policy 系统 (`kora.runtime`)
+## Policy 系统 (`quenda.runtime`)
 
 ### TraceSink
 
 ```python
-from kora.runtime import TraceSink, NullTraceSink, JsonlTraceSink
+from quenda.runtime import TraceSink, NullTraceSink, JsonlTraceSink
 
 # 协议
 class TraceSink(Protocol):
@@ -525,7 +525,7 @@ run = Run.create(agent, session, model, trace_sink=sink)
 ### TerminationPolicy
 
 ```python
-from kora.runtime import (
+from quenda.runtime import (
     TerminationPolicy,
     TerminationState,
     TerminationDecision,
@@ -577,7 +577,7 @@ run = Run.create(agent, session, model, termination_policy=policy)
 
 ```python
 # ToolSelectionPolicy - 工具执行审批
-from kora.runtime import (
+from quenda.runtime import (
     ToolSelectionPolicy,
     ToolSelectionRequest,
     ToolSelectionDecision,
@@ -594,7 +594,7 @@ policy = AllowlistToolSelectionPolicy(
 )
 
 # ToolResultProcessingPolicy - 结果处理
-from kora.runtime import (
+from quenda.runtime import (
     ToolResultProcessingPolicy,
     ToolResultEnvelope,
     ProcessedToolResult,
@@ -613,12 +613,12 @@ policy = LineLimitedToolResultProcessingPolicy(max_lines=100)
 
 - Python: 3.12+
 - 当前版本: 0.1.0
-- 包名: `kora-agent`
+- 包名: `quenda`
 - 许可证: 待定
 
 ---
 
-*此 API 参考对应 Kora v0.1.0，会随框架更新而同步更新。*
+*此 API 参考对应 Quenda v0.1.0，会随框架更新而同步更新。*
 
 ---
 

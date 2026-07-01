@@ -7,13 +7,13 @@ Tests the MVP for agents requesting tools and execution capabilities.
 import pytest
 from pathlib import Path
 
-from kora.host.loader import (
+from quenda.host.loader import (
     AgentConfigYaml,
     ToolsConfig,
     ExecutionConfig,
     PythonExecutionConfig,
 )
-from kora.host.runner import _resolve_tools, _resolve_sandbox_config
+from quenda.host.runner import _resolve_tools, _resolve_sandbox_config
 
 
 class TestToolsConfig:

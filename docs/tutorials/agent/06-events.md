@@ -1,6 +1,6 @@
 # 事件系统
 
-Kora 的运行时事件系统让你可以实时监控 Agent 的执行过程。
+Quenda 的运行时事件系统让你可以实时监控 Agent 的执行过程。
 
 ---
 
@@ -138,7 +138,7 @@ result = await session.send(
 ### 收集事件
 
 ```python
-from kora.runtime.events import (
+from quenda.runtime.events import (
     ModelResponded, ToolExecuted, RunCompleted
 )
 
@@ -164,8 +164,8 @@ for event in events:
 
 ```python
 import asyncio
-from kora.runtime import Run
-from kora.runtime.session import SessionState
+from quenda.runtime import Run
+from quenda.runtime.session import SessionState
 
 # 底层 Run 对象可以直接异步迭代
 state = SessionState.create("my-agent")

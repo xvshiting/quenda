@@ -1,6 +1,6 @@
 # 模型提供者
 
-Kora 内置了 26 个模型提供商的支持（共 300+ 个模型），并提供了灵活的扩展机制。
+Quenda 内置了 26 个模型提供商的支持（共 300+ 个模型），并提供了灵活的扩展机制。
 
 ---
 
@@ -27,7 +27,7 @@ Model (运行时实例)
 ### 使用全局注册表
 
 ```python
-from kora import get_provider_registry
+from quenda import get_provider_registry
 
 registry = get_provider_registry()
 
@@ -100,7 +100,7 @@ export OPENAI_API_KEY="sk-xxx"
 export ANTHROPIC_API_KEY="sk-ant-xxx"
 ```
 
-Kora 的 `EnvAuthResolver` 自动从环境变量解析 `${VAR_NAME}` 模式的配置。
+Quenda 的 `EnvAuthResolver` 自动从环境变量解析 `${VAR_NAME}` 模式的配置。
 
 ---
 
@@ -132,7 +132,7 @@ for chunk in model.invoke_stream(messages, tools=tools):
 ## ModelSpec 详解
 
 ```python
-from kora.providers import ModelSpec, ModelCost
+from quenda.providers import ModelSpec, ModelCost
 
 spec = ModelSpec(
     # 标识
@@ -172,7 +172,7 @@ spec = ModelSpec(
 ### 方式一：代码注册
 
 ```python
-from kora.providers import (
+from quenda.providers import (
     ProviderSpec, ModelSpec, ModelCost,
     get_provider_registry,
 )
@@ -225,7 +225,7 @@ registry.register(ProviderSpec(
 
 ## API 协议
 
-Kora 支持两种内置通信协议：
+Quenda 支持两种内置通信协议：
 
 | 协议 ID | 适用提供商 | 说明 |
 |---------|-----------|------|
@@ -235,7 +235,7 @@ Kora 支持两种内置通信协议：
 也可以通过 `ApiRegistry` 注册自定义协议：
 
 ```python
-from kora.providers.api import get_api_registry, Api
+from quenda.providers.api import get_api_registry, Api
 
 registry = get_api_registry()
 
@@ -275,7 +275,7 @@ result = await agent.run("你好", model=new_model)
 ## 错误处理
 
 ```python
-from kora.providers.errors import (
+from quenda.providers.errors import (
     ProviderError,        # 所有提供商错误的基类
     AuthenticationError,  # 认证失败
     RateLimitError,       # 限流

@@ -9,15 +9,15 @@ import asyncio
 import os
 from pathlib import Path
 
-from kora import Agent
-from kora.runtime import (
+from quenda import Agent
+from quenda.runtime import (
     ModelResponded,
     RunCompleted,
     RunStarted,
     ToolExecuted,
 )
-from kora.tools import get_core_tools
-from kora.providers import get_provider_registry
+from quenda.tools import get_core_tools
+from quenda.providers import get_provider_registry
 
 from common import (
     echo,

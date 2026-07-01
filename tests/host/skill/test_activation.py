@@ -5,7 +5,7 @@ Tests for skill activation.
 import pytest
 from pathlib import Path
 
-from kora.host.skill import SkillDiscovery, SkillActivator, SkillPackage
+from quenda.host.skill import SkillDiscovery, SkillActivator, SkillPackage
 
 
 class TestSkillActivator:
@@ -21,7 +21,7 @@ class TestSkillActivator:
             (skill_dir / "SKILL.md").write_text(f"""---
 name: skill-{i}
 description: Skill {i}
-kora:
+quenda:
   activates_on:
     - command: "/cmd{i}"
 ---
@@ -197,7 +197,7 @@ class TestSkillActivationWithDiscovery:
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-kora:
+quenda:
   activates_on:
     - command: "/review"
   resources:

@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora needs one Host model that works for both local TUI usage and future
+Quenda needs one Host model that works for both local TUI usage and future
 server usage.
 
 In local TUI mode, a user starts an agent from a concrete folder. In
@@ -21,7 +21,7 @@ stored in the target folder by default.
 
 ## Decision
 
-Kora should separate:
+Quenda should separate:
 
 - physical folder or server resource
 - Host-owned workspace binding
@@ -40,9 +40,9 @@ Physical Folder or Server Resource
 In local file-backed mode:
 
 ```text
-<workspace>/.kora/workspace.yaml
+<workspace>/.quenda/workspace.yaml
   -> workspace_id
-  -> ~/.kora/users/<user_id>/agents/<agent_name>/workspaces/<workspace_id>/
+  -> ~/.quenda/users/<user_id>/agents/<agent_name>/workspaces/<workspace_id>/
 ```
 
 In server mode:
@@ -60,7 +60,7 @@ The storage backend changes, but the logical model stays the same.
 A workspace folder may contain a Host-owned binding file:
 
 ```text
-<workspace>/.kora/workspace.yaml
+<workspace>/.quenda/workspace.yaml
 ```
 
 Example:
@@ -68,10 +68,10 @@ Example:
 ```yaml
 schema_version: 1
 id: ws_abc123
-name: kora
+name: quenda
 binding:
   created_at: "2026-06-23T00:00:00Z"
-  path_hint: "/Users/example/Workspace/kora"
+  path_hint: "/Users/example/Workspace/quenda"
   resource_fingerprint: "optional-fingerprint"
 ```
 
@@ -92,7 +92,7 @@ write, delete, rename, or replace it.
 At minimum, these paths are protected in local file-backed mode:
 
 ```text
-<workspace>/.kora/workspace.yaml
+<workspace>/.quenda/workspace.yaml
 ```
 
 Future Host-owned metadata paths should follow the same rule.
@@ -112,7 +112,7 @@ keyed by user id, agent name, and workspace id.
 Recommended local layout:
 
 ```text
-~/.kora/
+~/.quenda/
   users/
     <user_id>/
       config.yaml
@@ -176,7 +176,7 @@ TUI and Server are Interface layers.
 They may start or connect to a Host, but they should not duplicate the
 Host resolution model.
 
-Local TUI maps the HostStore to files such as `~/.kora/...`.
+Local TUI maps the HostStore to files such as `~/.quenda/...`.
 
 Server maps the HostStore to service-side storage.
 
@@ -201,7 +201,7 @@ Host.resolve_agent_context(user_id, agent_name, resource)
 ### Negative
 
 - Host must implement binding validation
-- local storage layout becomes more structured than a simple `.kora`
+- local storage layout becomes more structured than a simple `.quenda`
   folder in the workspace
 - users may need an Interface prompt when attaching a new folder to an
   existing workspace id
@@ -213,7 +213,7 @@ This ADR does not define:
 - the exact persistence API
 - the exact server database schema
 - the complete permission system
-- how project-owned shared `.kora` configuration should be merged
+- how project-owned shared `.quenda` configuration should be merged
 - how workspace-level shared Skills are trusted
 
 Those should be handled by later Host ADRs.

@@ -5,7 +5,7 @@ Tests for Host layer identity.
 import os
 import pytest
 
-from kora.host import User, EnvIdentityResolver, StaticIdentityResolver, DefaultUserResolver
+from quenda.host import User, EnvIdentityResolver, StaticIdentityResolver, DefaultUserResolver
 
 
 class TestUser:
@@ -281,7 +281,7 @@ class TestDefaultUserResolver:
         resolver = DefaultUserResolver()
 
         # Patch getpass.getuser to raise exception
-        import kora.host.identity as identity_module
+        import quenda.host.identity as identity_module
         original_getuser = identity_module.getpass.getuser
 
         def mock_getuser() -> str:

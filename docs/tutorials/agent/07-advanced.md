@@ -6,7 +6,7 @@
 
 ## 指令系统 (Instruction System)
 
-Kora 的指令系统允许将 Agent 的提示词拆分为多个文件，按需组合。
+Quenda 的指令系统允许将 Agent 的提示词拆分为多个文件，按需组合。
 
 ### 指令来源
 
@@ -21,7 +21,7 @@ Agent 指令的优先级（从高到低）：
 ### 组装流程
 
 ```python
-from kora.host.instructions import (
+from quenda.host.instructions import (
     InstructionComposer,
     InstructionSource,
     resolve_instruction_sources,
@@ -38,7 +38,7 @@ sources = resolve_instruction_sources(
 )
 
 # 模板上下文
-from kora.host.instructions import TemplateContext
+from quenda.host.instructions import TemplateContext
 context = TemplateContext(
     agent_name="my-agent",
     agent_version="1.0.0",
@@ -91,7 +91,7 @@ my-agent/
 ### 加载 Agent 包
 
 ```python
-from kora.host import load_agent_package
+from quenda.host import load_agent_package
 
 pkg = load_agent_package("/path/to/my-agent")
 
@@ -152,8 +152,8 @@ compression:
 ```python
 # extensions/commands/greet.py
 
-from kora.host.commands import Command, CommandResult, CommandContext
-from kora.runtime.commands import ReplAction
+from quenda.host.commands import Command, CommandResult, CommandContext
+from quenda.runtime.commands import ReplAction
 
 class GreetCommand:
     @property
@@ -190,7 +190,7 @@ commands = [GreetCommand()]
 ```python
 # extensions/interactions/confirm_code.py
 
-from kora.host.interactions import (
+from quenda.host.interactions import (
     Interaction, InteractionKind, InteractionRequest,
     InteractionResponse, InteractionContext,
 )
@@ -223,7 +223,7 @@ interactions = [CodeReviewInteraction()]
 所有文件操作工具（`ReadFileTool`、`WriteFileTool` 等）都强制工作空间边界检查：
 
 ```python
-from kora.tools.base import BaseTool
+from quenda.tools.base import BaseTool
 
 class MyTool(BaseTool):
     def execute(self, **kwargs):
@@ -241,7 +241,7 @@ class MyTool(BaseTool):
 ### 权限策略
 
 ```python
-from kora.host.permission import (
+from quenda.host.permission import (
     create_default_policy,
     HostPermissionPolicy,
     PermissivePolicy,
@@ -270,7 +270,7 @@ policy = PermissivePolicy()
 自定义 CLI 界面外观：
 
 ```python
-from kora.interface.theme import InterfaceTheme
+from quenda.interface.theme import InterfaceTheme
 
 # 内置预设
 theme = InterfaceTheme()        # 默认（彩色 emoji）
@@ -308,7 +308,7 @@ theme:
 如果你需要更底层的控制，可以直接使用 Kernel：
 
 ```python
-from kora.kernel import Kernel, Message
+from quenda.kernel import Kernel, Message
 
 # 创建 Kernel（纯同步，无 Session/AI Agent 概念）
 kernel = Kernel(model=model, tools=my_tools)
@@ -331,7 +331,7 @@ for step in kernel.run(messages):
 ## 下一步
 
 - [API 参考](./08-references.md) — 完整 API 速查表
-- [Kora Code 使用教程](../code/01-quickstart.md) — 使用 Kora Code CLI
+- [Quenda Code 使用教程](../code/01-quickstart.md) — 使用 Quenda Code CLI
 
 ---
 

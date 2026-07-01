@@ -1,6 +1,6 @@
 # 工具系统
 
-Kora 的工具系统是 Agent 能力的核心扩展机制。
+Quenda 的工具系统是 Agent 能力的核心扩展机制。
 
 ---
 
@@ -28,7 +28,7 @@ class Tool(Protocol):
 最简单的工具定义方式：
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def search_docs(query: str, max_results: int = 5) -> str:
@@ -76,7 +76,7 @@ def my_func(x: int) -> str:
 适用于复杂工具：
 
 ```python
-from kora.kernel.types import ToolResult
+from quenda.kernel.types import ToolResult
 
 class MyComplexTool:
     @property
@@ -118,8 +118,8 @@ class MyComplexTool:
 
 ```python
 from pathlib import Path
-from kora.tools.base import BaseTool
-from kora.kernel.types import ToolResult
+from quenda.tools.base import BaseTool
+from quenda.kernel.types import ToolResult
 
 class MyWorkspaceTool(BaseTool):
     @property
@@ -169,7 +169,7 @@ class MyWorkspaceTool(BaseTool):
 #### 文件系统工具
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     ListFilesTool,   # 列出文件/目录
     SearchTextTool,  # 全文搜索
     ReadFileTool,    # 读取文件
@@ -225,7 +225,7 @@ from kora.tools import (
 #### 执行工具
 
 ```python
-from kora.tools import RunShellTool, PythonExecutionTool
+from quenda.tools import RunShellTool, PythonExecutionTool
 ```
 
 **RunShellTool** — 执行 Shell 命令：
@@ -245,7 +245,7 @@ from kora.tools import RunShellTool, PythonExecutionTool
 #### 交互工具
 
 ```python
-from kora.tools import RequestInteractionTool
+from quenda.tools import RequestInteractionTool
 ```
 
 当 Agent 需要用户决策时使用：
@@ -262,7 +262,7 @@ from kora.tools import RequestInteractionTool
 ### 网络工具
 
 ```python
-from kora.tools import (
+from quenda.tools import (
     HTTPRequestTool,  # HTTP 请求（SSRF 保护）
     WebFetchTool,     # 网页内容获取
     WebSearchTool,    # DuckDuckGo 搜索
@@ -273,16 +273,16 @@ from kora.tools import (
 
 ```python
 # 全部核心工具
-from kora.tools import get_core_tools
+from quenda.tools import get_core_tools
 
 # 仅文件系统
-from kora.tools import get_filesystem_tools
+from quenda.tools import get_filesystem_tools
 
 # 仅执行
-from kora.tools import get_execution_tools
+from quenda.tools import get_execution_tools
 
 # 仅网络
-from kora.tools import get_network_tools
+from quenda.tools import get_network_tools
 ```
 
 ---
@@ -292,7 +292,7 @@ from kora.tools import get_network_tools
 工具的返回值，框架会将结果返回给模型：
 
 ```python
-from kora.kernel.types import ToolResult
+from quenda.kernel.types import ToolResult
 
 ToolResult(
     call_id="",       # 框架会设置

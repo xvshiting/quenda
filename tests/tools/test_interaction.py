@@ -2,7 +2,7 @@
 Tests for RequestInteractionTool.
 """
 
-from kora.tools import RequestInteractionTool
+from quenda.tools import RequestInteractionTool
 
 
 class TestRequestInteractionTool:

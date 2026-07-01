@@ -7,10 +7,10 @@ Uses the new Provider-centric architecture.
 
 import os
 
-from kora.kernel import Message
-from kora.providers import get_provider_registry, ProviderSpec, ModelSpec
-from kora.providers.model import Model
-from kora.tools import tool
+from quenda.kernel import Message
+from quenda.providers import get_provider_registry, ProviderSpec, ModelSpec
+from quenda.providers.model import Model
+from quenda.tools import tool
 
 
 # === Common Tools ===
@@ -160,4 +160,4 @@ class GLMModel:
 
 
 # Import for type hint
-from kora.kernel import ModelResponse
+from quenda.kernel import ModelResponse

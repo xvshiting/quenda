@@ -1,6 +1,6 @@
 # 会话管理
 
-理解 Kora 的会话（Session）系统——从创建到持久化。
+理解 Quenda 的会话（Session）系统——从创建到持久化。
 
 ---
 
@@ -56,7 +56,7 @@ save() → 下次可 load_session()
 ## 创建会话
 
 ```python
-from kora import Agent
+from quenda import Agent
 
 agent = Agent(
     name="my-agent",
@@ -104,8 +104,8 @@ session.send_sync("我叫什么名字？")  # 记得上下文：小明
 ### 配置 Storage
 
 ```python
-from kora import Agent
-from kora.host.storage import FileStorage, FileStorageConfig
+from quenda import Agent
+from quenda.host.storage import FileStorage, FileStorageConfig
 
 from pathlib import Path
 
@@ -145,7 +145,7 @@ if session:
 
 ### 自动保存
 
-在 CLI 模式中（如 `kora code`），每次 `send()` 后会自动 `save()`。
+在 CLI 模式中（如 `quenda code`），每次 `send()` 后会自动 `save()`。
 
 ---
 
@@ -176,7 +176,7 @@ session.state.metadata["custom_key"] = "value"
 `SessionState` 是纯数据类，可序列化，不包含执行逻辑：
 
 ```python
-from kora.runtime import SessionState
+from quenda.runtime import SessionState
 
 # 手动创建
 state = SessionState.create(
@@ -217,7 +217,7 @@ usage.last_compressed_at      # 最后压缩时间
 ## 消息格式
 
 ```python
-from kora.kernel.types import Message
+from quenda.kernel.types import Message
 
 # 系统消息
 Message(role="system", content="你是一个助手")
@@ -244,8 +244,8 @@ Message(role="user", content=results)
 长会话的上下文管理：
 
 ```python
-from kora.host.compression_policy import DefaultCompressionPolicy
-from kora.runtime.compressor import SummarizerCompressor
+from quenda.host.compression_policy import DefaultCompressionPolicy
+from quenda.runtime.compressor import SummarizerCompressor
 
 agent = Agent(
     name="my-agent",

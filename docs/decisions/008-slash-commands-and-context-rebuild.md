@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-Kora is being shaped as a Unix-style agent framework:
+Quenda is being shaped as a Unix-style agent framework:
 
 - small, composable units
 - explicit state instead of hidden framework magic
@@ -29,7 +29,7 @@ Today, such controls are often implemented as ad hoc command checks in a CLI or 
 - state changes become implicit
 - the next turn reuses stale context unless every caller remembers to rebuild it
 
-Kora should avoid that shape.
+Quenda should avoid that shape.
 
 ## Decision
 
@@ -141,9 +141,9 @@ It only sees:
 
 This keeps the model-tool loop pure and avoids framework-specific exceptions inside the core executor.
 
-## Why This Fits Kora
+## Why This Fits Quenda
 
-This pattern matches the framework boundary model already used in Kora:
+This pattern matches the framework boundary model already used in Quenda:
 
 ```text
 Interface -> Host -> Runtime -> Kernel
@@ -199,7 +199,7 @@ This ADR does not define:
 - automatic command discovery from arbitrary files
 - command execution inside Kernel or tools
 
-It also does not require every Kora deployment to expose slash commands.
+It also does not require every Quenda deployment to expose slash commands.
 Non-interactive SDK and batch use cases may ignore this system entirely.
 
 ## Consequences
@@ -233,6 +233,6 @@ When this ADR is implemented, prefer:
 
 ## Recommendation
 
-Kora should adopt this principle.
+Quenda should adopt this principle.
 
-It is not required for every consumer, but it is valuable for the framework because it keeps interactive control composable, inspectable, and aligned with Kora's layer boundaries.
+It is not required for every consumer, but it is valuable for the framework because it keeps interactive control composable, inspectable, and aligned with Quenda's layer boundaries.

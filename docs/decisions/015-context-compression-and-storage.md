@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Kora sessions can grow long enough that the full raw message history no
+Quenda sessions can grow long enough that the full raw message history no
 longer fits comfortably inside the active context window.
 
 If the framework simply keeps appending messages forever, several
@@ -29,7 +29,7 @@ The key questions are:
 
 ## Decision
 
-Kora should use **summary-based compression** with **local layered
+Quenda should use **summary-based compression** with **local layered
 storage**.
 
 ### 0. Layer ownership
@@ -242,7 +242,7 @@ The simplest initial policy is:
 
 ## Token Accounting
 
-Kora should distinguish between two different token concepts:
+Quenda should distinguish between two different token concepts:
 
 - **estimated tokens** used to decide whether compression is needed
 - **actual tokens** reported by the provider and accumulated for session
@@ -462,7 +462,7 @@ Avoid:
 
 ## Recommendation
 
-Kora should adopt summary-based compression with local layered storage.
+Quenda should adopt summary-based compression with local layered storage.
 
 This gives the project a practical default that preserves continuity,
 keeps costs bounded, and fits the existing Host-owned persistence model.

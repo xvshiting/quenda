@@ -6,12 +6,12 @@ Draft (2026-06-26)
 
 ## Purpose
 
-This document proposes the first implementation wave for Kora's
+This document proposes the first implementation wave for Quenda's
 lifecycle hook and policy system.
 
 It focuses on one practical question:
 
-- if Kora should become a hookable, policy-driven agent framework,
+- if Quenda should become a hookable, policy-driven agent framework,
   which seams should be implemented first
 
 The goal is not to define the full long-term hook surface. The goal is
@@ -19,7 +19,7 @@ to identify the smallest high-value set that:
 
 - is useful for downstream agent builders
 - matches current agent research practice
-- fits Kora's current architecture
+- fits Quenda's current architecture
 - can be implemented without destabilizing the core runtime
 
 ## Recommendation
@@ -32,9 +32,9 @@ The first MVP wave should prioritize these four seams:
 4. `ToolResultProcessingPolicy`
 
 In addition, the existing `CompressionPolicy` should be treated as the
-reference pattern for policy-style extension in Kora.
+reference pattern for policy-style extension in Quenda.
 
-This gives Kora one seam in each of four important categories:
+This gives Quenda one seam in each of four important categories:
 
 - observability
 - runtime control
@@ -42,7 +42,7 @@ This gives Kora one seam in each of four important categories:
 - tool feedback shaping
 
 Together, they create a useful minimum platform for experimentation
-without forcing Kora to solve the entire lifecycle at once.
+without forcing Quenda to solve the entire lifecycle at once.
 
 ## Why These Four First
 
@@ -87,7 +87,7 @@ A tool-selection seam supports:
 - learned or heuristic tool preferences
 - environment-specific tool gating
 
-It is also a natural fit for Kora because tools are already explicit
+It is also a natural fit for Quenda because tools are already explicit
 runtime objects.
 
 ### 4. `ToolResultProcessingPolicy` improves the observation loop
@@ -109,7 +109,7 @@ workflows.
 
 ### 5. `CompressionPolicy` already demonstrates the right pattern
 
-Kora already has a useful policy seam in compression:
+Quenda already has a useful policy seam in compression:
 
 ```text
 Runtime -> compression_policy.should_compress(stats) -> CompressionDecision
@@ -324,7 +324,7 @@ Recommended first implementations:
 - truncation policy
 - line-limit or character-limit policy
 
-## Mapping to Kora Layers
+## Mapping to Quenda Layers
 
 The first MVP should align with existing layer responsibilities.
 
@@ -377,7 +377,7 @@ Why:
 
 The MVP should reuse the general policy-registration direction already
 described in
-[policy-registration-and-hook-configuration.md](/Users/xushiting/Workspace/kora/docs/architecture/policy-registration-and-hook-configuration.md).
+[policy-registration-and-hook-configuration.md](/Users/xushiting/Workspace/quenda/docs/architecture/policy-registration-and-hook-configuration.md).
 
 Recommended programmatic shape:
 
@@ -440,7 +440,7 @@ to:
 3. deny or filter tools through a small policy object
 4. truncate or reshape tool output before it returns to the model
 
-If these four are possible, Kora will already have a credible first
+If these four are possible, Quenda will already have a credible first
 policy platform.
 
 ## Risks

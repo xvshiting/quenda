@@ -6,7 +6,7 @@ Draft (2026-06-26)
 
 ## Purpose
 
-This document combines Kora's current architecture with recent agent
+This document combines Quenda's current architecture with recent agent
 research trends to propose a hook and policy surface that is more useful
 for the agent research community.
 
@@ -36,7 +36,7 @@ to prioritize are:
 9. `Trace Export / Evaluation`
 
 These nine categories cover most active agent-research themes while
-still mapping cleanly onto Kora's current `Host -> Runtime -> Kernel`
+still mapping cleanly onto Quenda's current `Host -> Runtime -> Kernel`
 layering.
 
 ## Research Signals
@@ -168,7 +168,7 @@ Source:
 
 ## Design Goals
 
-Based on those signals, Kora's hook design should satisfy the following
+Based on those signals, Quenda's hook design should satisfy the following
 goals.
 
 ### 1. Research-friendly
@@ -354,7 +354,7 @@ Recommended form:
 
 - policy
 
-Kora already has an initial version of this seam. It is a strong signal
+Quenda already has an initial version of this seam. It is a strong signal
 for the broader direction.
 
 ### 6. Planner / Workflow Hook
@@ -612,7 +612,7 @@ These are important, but depend more on stable lower-level contracts.
 
 These should consume core hooks rather than force core abstractions.
 
-## Mapping to Kora Layers
+## Mapping to Quenda Layers
 
 ### Host
 
@@ -662,9 +662,9 @@ Recommended style:
 These are semantically clearer and scale better than generic callback
 collections.
 
-## What This Means for Kora
+## What This Means for Quenda
 
-If Kora follows this direction, it is more valuable to build:
+If Quenda follows this direction, it is more valuable to build:
 
 - a generalized form of `CompressionPolicy`
 - `MemoryPolicy`
@@ -713,7 +713,7 @@ the highest-value investments are:
 - structured traces
 - simple defaults
 
-Kora has already moved in the right direction through its compression
+Quenda has already moved in the right direction through its compression
 strategy seam.
 
 The next step is to make that philosophy systematic across memory,

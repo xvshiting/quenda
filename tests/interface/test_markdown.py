@@ -2,9 +2,9 @@
 Tests for markdown-lite terminal wrapping.
 """
 
-from kora.interface.console import ConsoleRenderer
-from kora.interface.markdown import render_markdown_lite, wrap_terminal_text
-from kora.runtime.events import ModelResponded, RunCompleted
+from quenda.interface.console import ConsoleRenderer
+from quenda.interface.markdown import render_markdown_lite, wrap_terminal_text
+from quenda.runtime.events import ModelResponded, RunCompleted
 
 
 def test_wrap_terminal_text_wraps_long_plain_line() -> None:

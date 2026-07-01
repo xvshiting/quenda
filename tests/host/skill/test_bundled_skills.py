@@ -5,8 +5,8 @@ Tests for agent package bundled skills.
 import pytest
 from pathlib import Path
 
-from kora.host.skill import SkillDiscovery, SkillActivator
-from kora.host.runner import setup_agent
+from quenda.host.skill import SkillDiscovery, SkillActivator
+from quenda.host.runner import setup_agent
 
 
 class TestAgentPackageBundledSkills:
@@ -198,7 +198,7 @@ Test agent.
         (skill_dir / "SKILL.md").write_text("""---
 name: docs-gen
 description: Documentation generator
-kora:
+quenda:
   resources:
     references:
       - path: "templates/api.md"

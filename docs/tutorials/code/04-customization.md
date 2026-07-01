@@ -1,6 +1,6 @@
-# 自定义 Kora Code
+# 自定义 Quenda Code
 
-学会配置和扩展 Kora Code，打造属于你自己的编码 Agent。
+学会配置和扩展 Quenda Code，打造属于你自己的编码 Agent。
 
 ---
 
@@ -10,25 +10,25 @@
 
 ```bash
 # 指定工作空间
-kora code --workspace /path/to/project
+quenda code --workspace /path/to/project
 
 # 指定模型
-kora code --provider deepseek --model deepseek-v4-flash
+quenda code --provider deepseek --model deepseek-v4-flash
 
 # 恢复会话
-kora code --session abc123
+quenda code --session abc123
 
 # 一次性任务
-kora code "帮我重构这个项目"
+quenda code "帮我重构这个项目"
 ```
 
 ### 2. 配置文件
 
-Kora Code 的配置在内置 Agent 包的 `config.yaml` 中：
+Quenda Code 的配置在内置 Agent 包的 `config.yaml` 中：
 
 ```
-# 内置 Kora Code 配置路径
-kora_code/agent/config.yaml
+# 内置 Quenda Code 配置路径
+quenda_code/agent/config.yaml
 ```
 
 #### 模型配置
@@ -79,7 +79,7 @@ compression:
 
 ## 主题自定义
 
-Kora Code 支持四种内置主题预设：
+Quenda Code 支持四种内置主题预设：
 
 ### 默认主题 (Default)
 
@@ -134,7 +134,7 @@ theme:
 
 ## 创建自定义 Agent
 
-你可以基于 Kora Code 的架构创建自己的 Agent。
+你可以基于 Quenda Code 的架构创建自己的 Agent。
 
 ### 目录结构
 
@@ -192,13 +192,13 @@ compression:
 
 ```bash
 # 单次执行
-kora run --agent /path/to/my-agent "帮我做个事情"
+quenda run --agent /path/to/my-agent "帮我做个事情"
 
 # 交互模式
-kora run --agent /path/to/my-agent
+quenda run --agent /path/to/my-agent
 
 # 指定模型
-kora run --agent /path/to/my-agent --provider openai --model gpt-4o
+quenda run --agent /path/to/my-agent --provider openai --model gpt-4o
 ```
 
 ---
@@ -212,7 +212,7 @@ Agent 包支持通过 `extensions/commands/` 扩展斜杠命令。
 ```python
 # my-agent/extensions/commands/deploy.py
 
-from kora.host.commands import Command, CommandResult, CommandContext
+from quenda.host.commands import Command, CommandResult, CommandContext
 
 class DeployCommand:
     @property
@@ -253,7 +253,7 @@ my-agent/
 
 ## 工作空间配置
 
-Kora 使用 `.kora/workspace.yaml` 管理工作空间绑定：
+Quenda 使用 `.quenda/workspace.yaml` 管理工作空间绑定：
 
 ```yaml
 schema_version: 1
@@ -271,7 +271,7 @@ binding:
 ## 下一步
 
 - [使用技巧](./05-tips.md) — 最佳实践与常见问题
-- [Kora Agent 教程](../agent/01-quickstart.md) — 深入 SDK 开发
+- [Quenda Agent 教程](../agent/01-quickstart.md) — 深入 SDK 开发
 
 ---
 

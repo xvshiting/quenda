@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/logo.png" alt="Kora" width="420">
+  <img src="assets/branding/logo.png" alt="Quenda" width="420">
 </p>
 
 <h3 align="center">A lightweight, layered Agent framework for Python</h3>
@@ -25,21 +25,21 @@
 
 ---
 
-## Kora Code
+## Quenda Code
 
-**Kora Code** is an AI coding agent that runs in your terminal. It reads your codebase, writes code, runs commands, and helps you ship.
+**Quenda Code** is an AI coding agent that runs in your terminal. It reads your codebase, writes code, runs commands, and helps you ship.
 
-> 📖 **[Kora Code Documentation →](agents/kora-code/README.md)**
+> 📖 **[Quenda Code Documentation →](agents/quenda-code/README.md)**
 
 ```bash
 # Install
-pip install kora-agent kora-code
+pip install quenda quenda-code
 
 # Start interactive session
-kora code
+quenda code
 
 # One-shot task
-kora code "Add error handling to the API client"
+quenda code "Add error handling to the API client"
 ```
 
 ### Features
@@ -71,11 +71,11 @@ kora code "Add error handling to the API client"
 
 I'll read the main entry point...
 
-[Reads src/kora/cli.py]
+[Reads src/quenda/cli.py]
 
 The entry point is `cli.py:main()`. It defines two subcommands:
-- `kora run --agent <path>` — Run a custom agent from AGENT.md
-- `kora code` — Run Kora Code Agent (built-in)
+- `quenda run --agent <path>` — Run a custom agent from AGENT.md
+- `quenda code` — Run Quenda Code Agent (built-in)
 
 Each command supports one-shot mode (with a message) or REPL mode (without).
 
@@ -96,14 +96,14 @@ All 42 tests passed.
 
 ---
 
-## Kora SDK
+## Quenda SDK
 
 Build agents in Python with a minimal API:
 
 ```python
-from kora import Agent, tool
-from kora.providers import get_provider_registry
-from kora.tools import get_core_tools
+from quenda import Agent, tool
+from quenda.providers import get_provider_registry
+from quenda.tools import get_core_tools
 import asyncio
 
 @tool
@@ -137,11 +137,11 @@ asyncio.run(main())
 ## Installation
 
 ```bash
-# Kora Code — AI coding assistant (CLI)
-pip install kora-agent kora-code
+# Quenda Code — AI coding assistant (CLI)
+pip install quenda quenda-code
 
-# Kora SDK — Build agents in Python
-pip install kora-agent
+# Quenda SDK — Build agents in Python
+pip install quenda
 ```
 
 **Requires Python 3.12+.** Zero required runtime dependencies.
@@ -162,7 +162,7 @@ pip install kora-agent
 
 ## Model Providers
 
-Kora ships with **26 built-in providers** covering 300+ models:
+Quenda ships with **26 built-in providers** covering 300+ models:
 
 | Provider | Example Models | API Key Env |
 |----------|---------------|-------------|
@@ -181,7 +181,7 @@ Kora ships with **26 built-in providers** covering 300+ models:
 Add a custom provider in 5 lines:
 
 ```python
-from kora.providers import ProviderSpec, ModelSpec, get_provider_registry
+from quenda.providers import ProviderSpec, ModelSpec, get_provider_registry
 
 registry = get_provider_registry()
 registry.register(ProviderSpec(
@@ -242,14 +242,14 @@ Each layer depends only on the layer inside it. The Kernel is fully testable wit
 | **[Skills Guide](docs/skills.md)** | Capability packages system |
 | **[API Reference](docs/api.md)** | Complete API reference |
 | **[SDK Tutorials](docs/tutorials/agent/01-quickstart.md)** | Step-by-step Python SDK guide (8 chapters) |
-| **[CLI Tutorials](docs/tutorials/code/01-quickstart.md)** | Step-by-step Kora Code guide (5 chapters) |
+| **[CLI Tutorials](docs/tutorials/code/01-quickstart.md)** | Step-by-step Quenda Code guide (5 chapters) |
 | **[Architecture Decisions](docs/decisions/)** | ADR records |
 
 ---
 
 ## Contributing
 
-Kora is intentionally small. Before making a change, read [`CLAUDE.md`](CLAUDE.md) and the [ADR records](docs/decisions/).
+Quenda is intentionally small. Before making a change, read [`CLAUDE.md`](CLAUDE.md) and the [ADR records](docs/decisions/).
 
 1. Identify which architectural layer owns the change.
 2. Prefer the smallest complete change; add tests with behavior changes.
@@ -258,7 +258,7 @@ Kora is intentionally small. Before making a change, read [`CLAUDE.md`](CLAUDE.m
 ```bash
 pip install -e ".[dev]"   # editable install with dev tooling
 pytest                    # run tests
-ruff check src/kora       # lint
+ruff check src/quenda       # lint
 ```
 
 ---

@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from kora.host.skill import SkillDiscovery, SkillPackage
+from quenda.host.skill import SkillDiscovery, SkillPackage
 
 
 class TestSkillDiscovery:
@@ -23,7 +23,7 @@ class TestSkillDiscovery:
 name: test-skill
 description: A test skill
 version: "1.0.0"
-kora:
+quenda:
   activates_on:
     - command: "/test"
   resources:
@@ -141,7 +141,7 @@ description: User-workspace version
 ---""")
 
         # Create user skill with same name
-        user_skill_dir = Path.home() / ".kora" / "skills" / "override-test"
+        user_skill_dir = Path.home() / ".quenda" / "skills" / "override-test"
         user_skill_dir.mkdir(parents=True, exist_ok=True)
         user_skill = user_skill_dir / "SKILL.md"
         user_skill.write_text("""---
@@ -213,7 +213,7 @@ class TestSkillPackage:
         (skill_dir / "SKILL.md").write_text("""---
 name: resource-skill
 description: Skill with resources
-kora:
+quenda:
   resources:
     references:
       - path: "docs/guide.md"

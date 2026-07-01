@@ -6,8 +6,8 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from kora.host import load_agent_from_markdown
-from kora.runtime import AgentConfig
+from quenda.host import load_agent_from_markdown
+from quenda.runtime import AgentConfig
 
 
 class TestLoadAgentFromMarkdown:

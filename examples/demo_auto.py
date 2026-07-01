@@ -5,7 +5,7 @@ Automated Kernel Demo - No user interaction required.
 This demonstrates the Kernel running with a scripted model.
 """
 
-from kora.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
 
 
 class EchoTool:

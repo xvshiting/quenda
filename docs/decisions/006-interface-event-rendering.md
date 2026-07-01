@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Kora Runtime 发出结构化事件（`RunStarted`, `ToolExecuted`, `ModelResponded`, `RunCompleted` 等），但当前 CLI 对这些事件的渲染过于简陋：
+Quenda Runtime 发出结构化事件（`RunStarted`, `ToolExecuted`, `ModelResponded`, `RunCompleted` 等），但当前 CLI 对这些事件的渲染过于简陋：
 
 ```text
 ✓ list_files
@@ -119,7 +119,7 @@ class ToolExecuted(Event):
 创建 `ConsoleRenderer` 类负责将事件渲染成人能理解的输出：
 
 ```python
-# src/kora/interface/console.py
+# src/quenda/interface/console.py
 
 class ConsoleRenderer:
     """
@@ -177,7 +177,7 @@ summary (display_hint)
 Reading config file (pyproject.toml)
 Searching for SessionState (src/)
 Running tests (pytest -q tests/test_runtime.py)
-Updating runtime loop (src/kora/kernel/loop.py)
+Updating runtime loop (src/quenda/kernel/loop.py)
 ```
 
 `display_hint` 的来源规则：
@@ -191,9 +191,9 @@ Updating runtime loop (src/kora/kernel/loop.py)
 #### Tool Call（成功）
 
 ```text
-✓ read_file src/kora/cli.py
+✓ read_file src/quenda/cli.py
 ✓ list_files .
-✓ search_text "def main" src/kora/
+✓ search_text "def main" src/quenda/
 ✓ run_shell pytest -q tests/
 ```
 
@@ -201,7 +201,7 @@ Updating runtime loop (src/kora/kernel/loop.py)
 
 ```text
 ❌ run_shell pytest -q
-   exit 2: ModuleNotFoundError: No module named 'kora'
+   exit 2: ModuleNotFoundError: No module named 'quenda'
 
 ❌ read_file nonexistent.txt
    FileNotFoundError: No such file or directory
@@ -266,7 +266,7 @@ Updating runtime loop (src/kora/kernel/loop.py)
 
 🔍 Finding entry point
    ✓ search_text "def main" src/
-   ✓ read_file src/kora/cli.py
+   ✓ read_file src/quenda/cli.py
 ```
 
 #### Run 完成
@@ -282,7 +282,7 @@ ConsoleRenderer 支持两种模式：
 **Compact（默认）**：适合 REPL，单行工具摘要
 
 ```text
-✓ read_file src/kora/cli.py
+✓ read_file src/quenda/cli.py
 ✓ run_shell pytest -q
 ```
 
@@ -295,10 +295,10 @@ ConsoleRenderer 支持两种模式：
 
 🔧 Using tools: search_text, read_file
 
-✓ search_text "def main" src/kora/
+✓ search_text "def main" src/quenda/
    Found 3 matches in 2 files
 
-✓ read_file src/kora/cli.py
+✓ read_file src/quenda/cli.py
    251 lines, main entry at line 156
 
 ✅ Completed in 4 steps
@@ -396,7 +396,7 @@ ConsoleRenderer 支持两种模式：
 
 ### Phase 2: ConsoleRenderer ✅
 
-1. ✅ 创建 `src/kora/interface/console.py`
+1. ✅ 创建 `src/quenda/interface/console.py`
 2. ✅ 实现 `ConsoleRenderer` 类
 3. ✅ 更新 `cli.py` 使用 `ConsoleRenderer`
 

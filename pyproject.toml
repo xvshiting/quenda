@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kora-agent"
+name = "quenda"
 version = "0.1.7"
 description = "A lightweight Agent framework with extensible model providers"
 readme = "README.md"
@@ -34,7 +34,7 @@ dev = [
     "ruff>=0.3.0",
 ]
 code = [
-    "kora-code>=0.1.0",
+    "quenda-code>=0.1.0",
 ]
 openai = [
     "openai>=1.0.0",
@@ -46,26 +46,26 @@ network = [
     "httpx[socks]>=0.25.0",
 ]
 all = [
-    "kora-agent[dev,code,openai,anthropic,network]",
+    "quenda[dev,code,openai,anthropic,network]",
 ]
 
 [project.scripts]
-kora = "kora.cli:main"
+quenda = "quenda.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/xvshiting/kora"
-Repository = "https://github.com/xvshiting/kora"
-Documentation = "https://github.com/xvshiting/kora#readme"
-Issues = "https://github.com/xvshiting/kora/issues"
+Homepage = "https://github.com/xvshiting/quenda"
+Repository = "https://github.com/xvshiting/quenda"
+Documentation = "https://github.com/xvshiting/quenda#readme"
+Issues = "https://github.com/xvshiting/quenda/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kora"]
+packages = ["src/quenda"]
 
 [tool.hatch.build.targets.sdist]
-# Only include source code and essential files for kora-agent
+# Only include source code and essential files for quenda
 # Use only-include to strictly limit what goes into the source distribution
 only-include = [
-    "src/kora",
+    "src/quenda",
     "pyproject.toml",
     "README.md",
     "LICENSE",

@@ -1,10 +1,10 @@
-# Kora Development Constitution
+# Quenda Development Constitution
 
-Kora is a lightweight Agent framework with an official Code Agent built on top of the same public APIs available to external developers.
+Quenda is a lightweight Agent framework with an official Code Agent built on top of the same public APIs available to external developers.
 
 ## Core principles
 
-* Keep Kora simple to use, even when its internal architecture is layered.
+* Keep Quenda simple to use, even when its internal architecture is layered.
 * The framework must absorb common complexity instead of transferring it to Agent authors.
 * Prefer convention over configuration.
 * Prefer composition over inheritance.
@@ -15,7 +15,7 @@ Kora is a lightweight Agent framework with an official Code Agent built on top o
 
 ## Architectural boundaries
 
-Kora separates execution into three conceptual layers:
+Quenda separates execution into three conceptual layers:
 
 * **Kernel** executes one model–tool loop.
 * **Runtime** manages Agent, Workspace, Session, Prompt, and Run semantics.
@@ -75,7 +75,7 @@ A minimal Agent should be definable with an `AGENT.md` file.
 
 ## Agent equality
 
-The official Kora Code Agent must use the same public loading and execution mechanisms as external Agents.
+The official Quenda Code Agent must use the same public loading and execution mechanisms as external Agents.
 
 Do not introduce privileged private APIs or special execution branches for the official Code Agent.
 

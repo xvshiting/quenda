@@ -7,7 +7,7 @@ This connects to a real LLM and runs the Kernel with actual model responses.
 import os
 from openai import OpenAI
 
-from kora.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.kernel import Kernel, Message, Model, ModelResponse, Tool, ToolCall, ToolResult
 
 
 class EchoTool:

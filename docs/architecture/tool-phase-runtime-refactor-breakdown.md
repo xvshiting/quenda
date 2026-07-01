@@ -7,7 +7,7 @@ Draft (2026-06-29)
 ## Purpose
 
 This document turns
-[tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/kora/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
+[tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/quenda/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
 into an implementation-oriented breakdown.
 
 It answers:
@@ -80,7 +80,7 @@ Before implementation begins, the team should confirm:
 - `ADR-020`, `ADR-021`, and `ADR-022` are the agreed vocabulary and
   boundary
 - the target design in
-  [tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/kora/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
+  [tool-phase-runtime-ownership-and-policy-control.md](/Users/xushiting/Workspace/quenda/docs/architecture/tool-phase-runtime-ownership-and-policy-control.md)
   is accepted as the implementation direction
 - `Option B` is the chosen approach:
   Runtime becomes explicit loop owner

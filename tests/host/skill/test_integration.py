@@ -5,8 +5,8 @@ Tests for skill integration with runner and instruction composition.
 import pytest
 from pathlib import Path
 
-from kora.host.runner import setup_agent, AgentSetup
-from kora.host.skill import SkillDiscovery, SkillActivator
+from quenda.host.runner import setup_agent, AgentSetup
+from quenda.host.skill import SkillDiscovery, SkillActivator
 
 
 class TestSkillIntegrationWithRunner:
@@ -109,7 +109,7 @@ This is the {skill_name} instruction content.
         self, agent_with_skills: Path
     ) -> None:
         """Test that instruction sources include only active skill instructions."""
-        from kora.host.instructions import InstructionScope
+        from quenda.host.instructions import InstructionScope
 
         agent_dir = agent_with_skills / "agents" / "test-agent"
         workspace = agent_with_skills / "workspace"
@@ -214,7 +214,7 @@ class TestSkillConfigParsing:
 
     def test_skills_list_format(self, tmp_path: Path) -> None:
         """Test simple list format for skills config."""
-        from kora.host.loader import AgentConfigYaml
+        from quenda.host.loader import AgentConfigYaml
 
         config = AgentConfigYaml.from_dict({
             "skills": ["skill-1", "skill-2"]
@@ -224,7 +224,7 @@ class TestSkillConfigParsing:
 
     def test_skills_structured_format(self, tmp_path: Path) -> None:
         """Test structured format for skills config."""
-        from kora.host.loader import AgentConfigYaml
+        from quenda.host.loader import AgentConfigYaml
 
         config = AgentConfigYaml.from_dict({
             "skills": {
@@ -238,7 +238,7 @@ class TestSkillConfigParsing:
 
     def test_no_skills_config(self, tmp_path: Path) -> None:
         """Test config without skills."""
-        from kora.host.loader import AgentConfigYaml
+        from quenda.host.loader import AgentConfigYaml
 
         config = AgentConfigYaml.from_dict({})
 
@@ -247,7 +247,7 @@ class TestSkillConfigParsing:
 
     def test_catalog_can_be_enabled(self, tmp_path: Path) -> None:
         """Structured skills config can expose the catalog to the model."""
-        from kora.host.loader import AgentConfigYaml
+        from quenda.host.loader import AgentConfigYaml
 
         config = AgentConfigYaml.from_dict({
             "skills": {

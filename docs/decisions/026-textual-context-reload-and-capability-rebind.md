@@ -6,7 +6,7 @@ Proposed (2026-06-30)
 
 ## Context
 
-Kora now has enough architecture around Sessions, Runs, Skills, and
+Quenda now has enough architecture around Sessions, Runs, Skills, and
 instruction layering that reload behavior needs to be made explicit.
 
 Several recent questions all point to the same underlying ambiguity:
@@ -17,7 +17,7 @@ Several recent questions all point to the same underlying ambiguity:
 - should `config.yaml` tool grants also change automatically on the next
   turn?
 
-If Kora answers all of these with the same rule, the model becomes
+If Quenda answers all of these with the same rule, the model becomes
 confusing.
 
 Some inputs are primarily:
@@ -44,7 +44,7 @@ This ADR builds on:
 
 ## Decision
 
-Kora should adopt a **two-class reload model**:
+Quenda should adopt a **two-class reload model**:
 
 1. **Textual context reload at turn boundary**
 2. **Capability rebind by explicit refresh**
@@ -67,7 +67,7 @@ A multi-turn conversation container.
 
 A user-facing conversational unit.
 
-In current Kora usage, a new user message normally starts a new turn.
+In current Quenda usage, a new user message normally starts a new turn.
 
 ### Run
 
@@ -145,7 +145,7 @@ Once a run starts:
 - its instruction snapshot is fixed
 - its active capability bindings are fixed
 
-Kora should not live-mutate prompt sources or capability grants halfway
+Quenda should not live-mutate prompt sources or capability grants halfway
 through a run.
 
 ### Rule 4. New textual content should become visible on the next user
@@ -237,7 +237,7 @@ So the framework should prefer:
 
 ## Future Extension
 
-Later, Kora may split `config.yaml` itself into finer categories, such
+Later, Quenda may split `config.yaml` itself into finer categories, such
 as:
 
 - textual agent presentation config

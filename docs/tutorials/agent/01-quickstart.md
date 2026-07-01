@@ -1,20 +1,20 @@
-# 快速开始 — Kora Agent
+# 快速开始 — Quenda Agent
 
-本章教你从零搭建第一个 Kora Agent。
+本章教你从零搭建第一个 Quenda Agent。
 
 ---
 
 ## 安装
 
 ```bash
-pip install kora-agent
+pip install quenda
 ```
 
 验证安装：
 
 ```python
-import kora
-print(kora.__version__)
+import quenda
+print(quenda.__version__)
 # 输出: 0.1.0
 ```
 
@@ -26,10 +26,10 @@ print(kora.__version__)
 
 ### 1. 获取模型
 
-Kora 内置了 20+ 个模型提供商的支持。通过 registry 获取模型实例：
+Quenda 内置了 20+ 个模型提供商的支持。通过 registry 获取模型实例：
 
 ```python
-from kora import get_provider_registry
+from quenda import get_provider_registry
 
 registry = get_provider_registry()
 model = registry.get_model("deepseek", "deepseek-v4-flash")
@@ -46,7 +46,7 @@ export DEEPSEEK_API_KEY="sk-xxx"
 使用 `@tool` 装饰器快速定义工具：
 
 ```python
-from kora import tool
+from quenda import tool
 
 @tool
 def echo(msg: str) -> str:
@@ -62,7 +62,7 @@ def add(a: int, b: int = 0) -> int:
 ### 3. 创建 Agent
 
 ```python
-from kora import Agent
+from quenda import Agent
 
 agent = Agent(
     name="my-agent",
@@ -105,11 +105,11 @@ asyncio.run(chat())
 
 ## 使用内置工具
 
-Kora 提供了开箱即用的核心工具集：
+Quenda 提供了开箱即用的核心工具集：
 
 ```python
-from kora.tools import get_core_tools
-from kora import Agent, get_provider_registry
+from quenda.tools import get_core_tools
+from quenda import Agent, get_provider_registry
 
 registry = get_provider_registry()
 model = registry.get_model("deepseek", "deepseek-v4-flash")
@@ -146,7 +146,7 @@ agent = Agent(
 
 ```python
 import asyncio
-from kora import Agent, tool, get_provider_registry
+from quenda import Agent, tool, get_provider_registry
 
 # 1. 定义工具
 @tool

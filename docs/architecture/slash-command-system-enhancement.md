@@ -6,7 +6,7 @@ Draft (2026-06-26)
 
 ## Purpose
 
-This document aligns terminology and direction for improving Kora's
+This document aligns terminology and direction for improving Quenda's
 slash command system, so later discussions do not mix up `menu`,
 `interaction`, `completion`, and `command` concerns.
 
@@ -19,7 +19,7 @@ It answers four questions:
 
 ## Problem Statement
 
-Kora already has a functioning slash command system:
+Quenda already has a functioning slash command system:
 
 - `Command` protocol
 - `CommandRegistry`

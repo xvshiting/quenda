@@ -5,7 +5,7 @@ Tests for the new provider architecture.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from kora.providers import (
+from quenda.providers import (
     Model,
     ModelCost,
     ModelSpec,
@@ -14,8 +14,8 @@ from kora.providers import (
     ProviderRegistry,
     get_provider_registry,
 )
-from kora.providers.api import ApiRegistry, OpenAICompletionsApi, AnthropicMessagesApi
-from kora.kernel.types import Message
+from quenda.providers.api import ApiRegistry, OpenAICompletionsApi, AnthropicMessagesApi
+from quenda.kernel.types import Message
 
 
 # =============================================================================
@@ -184,7 +184,7 @@ class TestProviderRegistry:
     @pytest.fixture
     def registry(self) -> ProviderRegistry:
         """Create a fresh registry."""
-        from kora.providers.api import get_api_registry
+        from quenda.providers.api import get_api_registry
         return ProviderRegistry(api_registry=get_api_registry())
 
     def test_register_provider(self, registry: ProviderRegistry) -> None:
@@ -251,7 +251,7 @@ class TestBuiltinProviders:
 
     def test_openai_spec(self) -> None:
         """Test OpenAI spec."""
-        from kora.providers.builtins import OPENAI_SPEC
+        from quenda.providers.builtins import OPENAI_SPEC
 
         assert OPENAI_SPEC.id == "openai"
         assert len(OPENAI_SPEC.models) > 0
@@ -259,7 +259,7 @@ class TestBuiltinProviders:
 
     def test_anthropic_spec(self) -> None:
         """Test Anthropic spec."""
-        from kora.providers.builtins import ANTHROPIC_SPEC
+        from quenda.providers.builtins import ANTHROPIC_SPEC
 
         assert ANTHROPIC_SPEC.id == "anthropic"
         assert ANTHROPIC_SPEC.api == "anthropic-messages"
@@ -267,14 +267,14 @@ class TestBuiltinProviders:
 
     def test_dashscope_spec(self) -> None:
         """Test DashScope spec."""
-        from kora.providers.builtins import DASHSCOPE_SPEC
+        from quenda.providers.builtins import DASHSCOPE_SPEC
 
         assert DASHSCOPE_SPEC.id == "dashscope"
         assert any(m.id == "qwen-max" for m in DASHSCOPE_SPEC.models)
 
     def test_deepseek_spec(self) -> None:
         """Test DeepSeek spec."""
-        from kora.providers.builtins import DEEPSEEK_SPEC
+        from quenda.providers.builtins import DEEPSEEK_SPEC
 
         assert DEEPSEEK_SPEC.id == "deepseek"
         assert DEEPSEEK_SPEC.api == "openai-completions"
@@ -282,7 +282,7 @@ class TestBuiltinProviders:
 
     def test_deepseek_anthropic_spec(self) -> None:
         """Test DeepSeek Anthropic-compatible spec."""
-        from kora.providers.builtins import DEEPSEEK_ANTHROPIC_SPEC
+        from quenda.providers.builtins import DEEPSEEK_ANTHROPIC_SPEC
 
         assert DEEPSEEK_ANTHROPIC_SPEC.id == "deepseek-anthropic"
         assert DEEPSEEK_ANTHROPIC_SPEC.api == "anthropic-messages"
@@ -291,21 +291,21 @@ class TestBuiltinProviders:
 
     def test_moonshot_spec(self) -> None:
         """Test Moonshot spec."""
-        from kora.providers.builtins import MOONSHOT_SPEC
+        from quenda.providers.builtins import MOONSHOT_SPEC
 
         assert MOONSHOT_SPEC.id == "moonshot"
         assert any(m.id == "moonshot-v1-8k" for m in MOONSHOT_SPEC.models)
 
     def test_jdcloud_spec(self) -> None:
         """Test JD Cloud spec."""
-        from kora.providers.builtins import JDCLOUD_SPEC
+        from quenda.providers.builtins import JDCLOUD_SPEC
 
         assert JDCLOUD_SPEC.id == "jdcloud"
         assert any(m.id == "glm-5" for m in JDCLOUD_SPEC.models)
 
     def test_ollama_spec(self) -> None:
         """Test Ollama spec."""
-        from kora.providers.builtins import OLLAMA_SPEC
+        from quenda.providers.builtins import OLLAMA_SPEC
 
         assert OLLAMA_SPEC.id == "ollama"
         assert "localhost" in OLLAMA_SPEC.base_url

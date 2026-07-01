@@ -6,12 +6,12 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from kora.host.commands import (
+from quenda.host.commands import (
     CommandContext,
     CommandResult,
     SkillCommand,
 )
-from kora.host.skill import SkillDiscovery, SkillActivator
+from quenda.host.skill import SkillDiscovery, SkillActivator
 
 
 class TestSkillCommand:
@@ -25,7 +25,7 @@ class TestSkillCommand:
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-kora:
+quenda:
   resources:
     references:
       - path: "checklist.md"

@@ -6,7 +6,7 @@ Draft (2026-06-30)
 
 ## Purpose
 
-This document defines how Kora should handle skill file changes after a
+This document defines how Quenda should handle skill file changes after a
 skill has already been activated.
 
 The core question is:
@@ -22,7 +22,7 @@ This document recommends a clear answer:
 
 ## Current Behavior
 
-Today, Kora does **not** behave like a hot-reload system.
+Today, Quenda does **not** behave like a hot-reload system.
 
 The current flow is approximately:
 
@@ -73,7 +73,7 @@ it at arbitrary times, reproducing a prior run becomes much harder.
 
 ## Recommended Semantics
 
-Kora should adopt the following rule:
+Quenda should adopt the following rule:
 
 > Skills are not live hot-reloaded during a running turn, but active
 > skill contents should be re-resolved at turn boundaries.
@@ -242,7 +242,7 @@ But skills differ in one important way:
 - skills have activation state
 - workspace instruction files do not
 
-That is why Kora should refresh **skill content** at turn boundaries,
+That is why Quenda should refresh **skill content** at turn boundaries,
 while keeping **activation state** explicit and stable.
 
 ## REPL Behavior Recommendation
@@ -277,7 +277,7 @@ Those would add more complexity than value at this stage.
 
 ## Final Recommendation
 
-Kora should treat skills as:
+Quenda should treat skills as:
 
 - **activation-stable across a session**
 - **content-refreshable at turn boundaries**

@@ -8,7 +8,7 @@ Draft (2026-06-26)
 
 This document defines concrete interface drafts for the first four hook
 seams proposed in
-[hook-mvp-prioritization.md](/Users/xushiting/Workspace/kora/docs/architecture/hook-mvp-prioritization.md):
+[hook-mvp-prioritization.md](/Users/xushiting/Workspace/quenda/docs/architecture/hook-mvp-prioritization.md):
 
 - `TraceSink`
 - `TerminationPolicy`
@@ -17,7 +17,7 @@ seams proposed in
 
 The goal is not only to describe the desired interfaces, but also to
 state clearly which seams are directly implementable on top of the
-current Kora runtime, and which seams require a preceding Runtime /
+current Quenda runtime, and which seams require a preceding Runtime /
 Kernel ownership refactor.
 
 This is an architecture draft, not an ADR. It should guide API review
@@ -37,7 +37,7 @@ These four seams all follow the same design rules:
 
 ## Current Implementation Constraints
 
-The current Kora execution flow creates an important constraint.
+The current Quenda execution flow creates an important constraint.
 
 Today:
 
@@ -71,7 +71,7 @@ Recommended interpretation:
 
 ## Kernel Guard vs Runtime Policy
 
-Kora should keep a clear distinction between:
+Quenda should keep a clear distinction between:
 
 - Kernel hard guards
 - Runtime strategy policies
@@ -118,7 +118,7 @@ run lifecycle.
 
 ```python
 from typing import Protocol
-from kora.runtime.events import AnyEvent
+from quenda.runtime.events import AnyEvent
 
 
 class TraceSink(Protocol):
@@ -328,8 +328,8 @@ shape yet.
 ```python
 from dataclasses import dataclass
 from typing import Protocol
-from kora.kernel.tool import Tool
-from kora.kernel.types import ToolCall
+from quenda.kernel.tool import Tool
+from quenda.kernel.types import ToolCall
 
 
 @dataclass(frozen=True)
@@ -576,7 +576,7 @@ be implemented correctly.
 ## Registration Direction
 
 These seams should follow the registration model described in
-[policy-registration-and-hook-configuration.md](/Users/xushiting/Workspace/kora/docs/architecture/policy-registration-and-hook-configuration.md).
+[policy-registration-and-hook-configuration.md](/Users/xushiting/Workspace/quenda/docs/architecture/policy-registration-and-hook-configuration.md).
 
 Recommended direction:
 
@@ -602,7 +602,7 @@ them smoothly.
 
 Recommended conceptual split:
 
-- Kora Core defines lifecycle stages, protocols, and wiring
+- Quenda Core defines lifecycle stages, protocols, and wiring
 - official implementations provide default strategies
 - downstream users provide their own replacements through code or config
 
