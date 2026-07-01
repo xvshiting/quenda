@@ -13,10 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import patch, MagicMock
 
-from quenda.cli import (
-    _extract_interaction_requests,
-    _handle_interaction_request,
-)
+from quenda.cli import _handle_interaction_request
 from quenda.host import (
     InteractionContext,
     InteractionOption,
@@ -57,92 +54,6 @@ class FakeAgent:
     @property
     def tools(self) -> list:
         return self._tools
-
-
-class TestExtractInteractionRequests:
-    """Tests for extracting interaction requests from events."""
-
-    def test_no_requests(self) -> None:
-        """Test with no request_interaction tool calls."""
-        events = [
-            ModelResponded(content="Hello!", tool_calls=[], tool_call_details=[], tool_arguments=[]),
-        ]
-        requests = _extract_interaction_requests(events)
-        assert requests == []
-
-    def test_single_request(self) -> None:
-        """Test with a single request_interaction tool call."""
-        events = [
-            ModelResponded(
-                content="",
-                tool_calls=["call_1"],
-                tool_call_details=[{
-                    "id": "call_1",
-                    "name": "request_interaction",
-                    "arguments": {
-                        "kind": "choice",
-                        "title": "Pick one",
-                        "message": "Which option?",
-                        "options": [
-                            {"id": "a", "label": "Option A"},
-                            {"id": "b", "label": "Option B"},
-                        ],
-                    },
-                }],
-                tool_arguments=[{
-                    "kind": "choice",
-                    "title": "Pick one",
-                    "message": "Which option?",
-                    "options": [
-                        {"id": "a", "label": "Option A"},
-                        {"id": "b", "label": "Option B"},
-                    ],
-                }],
-            ),
-        ]
-        requests = _extract_interaction_requests(events)
-        assert len(requests) == 1
-        assert requests[0]["kind"] == "choice"
-        assert requests[0]["title"] == "Pick one"
-
-    def test_mixed_tool_calls(self) -> None:
-        """Test with mixed tool calls including request_interaction."""
-        events = [
-            ModelResponded(
-                content="",
-                tool_calls=["call_1", "call_2"],
-                tool_call_details=[
-                    {"id": "call_1", "name": "read_file", "arguments": {"path": "test.py"}},
-                    {"id": "call_2", "name": "request_interaction", "arguments": {"kind": "confirm", "title": "Proceed?"}},
-                ],
-                tool_arguments=[
-                    {"path": "test.py"},
-                    {"kind": "confirm", "title": "Proceed?"},
-                ],
-            ),
-        ]
-        requests = _extract_interaction_requests(events)
-        assert len(requests) == 1
-        assert requests[0]["kind"] == "confirm"
-
-    def test_multiple_requests(self) -> None:
-        """Test with multiple request_interaction calls."""
-        events = [
-            ModelResponded(
-                content="",
-                tool_calls=["call_1"],
-                tool_call_details=[{"id": "call_1", "name": "request_interaction", "arguments": {"kind": "choice", "title": "First choice"}}],
-                tool_arguments=[{"kind": "choice", "title": "First choice"}],
-            ),
-            ModelResponded(
-                content="",
-                tool_calls=["call_2"],
-                tool_call_details=[{"id": "call_2", "name": "request_interaction", "arguments": {"kind": "confirm", "title": "Second confirm"}}],
-                tool_arguments=[{"kind": "confirm", "title": "Second confirm"}],
-            ),
-        ]
-        requests = _extract_interaction_requests(events)
-        assert len(requests) == 2
 
 
 class TestExtractSkillActivationRequests:

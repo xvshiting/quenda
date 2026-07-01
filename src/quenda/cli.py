@@ -115,99 +115,46 @@ def run_agent(
     )
     phase_handler = CompositeEventHandler([activity_handler, progress_handler])
 
-    def inspect_skill_phase(events: list[AnyEvent]) -> FollowupPhaseDecision | None:
-        skill_requests = extract_skill_activation_requests(events)
-        if not skill_requests:
+    # Create skill activation handler (ADR-027)
+    def skill_activation_handler(skill_names: list[str]) -> str | None:
+        if not skill_names or setup.skill_activator is None:
             return None
-        available_names = {skill.name for skill in setup.skill_discovery.discover_skills()}
-        active_names = set(setup.skill_activator.list_active())
 
-        def activate(skill_names: list[str]) -> list[str]:
-            activated: list[str] = []
-            for name in skill_names:
-                if setup.skill_activator.is_active(name):
-                    continue
-                if setup.skill_activator.activate_skill(name, transient=True) is not None:
-                    activated.append(name)
-            if activated:
-                setup.binding.active_skill_names = setup.skill_activator.list_persistent()
-                setup.binding.transient_skill_names = setup.skill_activator.list_transient()
-                snapshot = refresh_run_context(setup.binding, session_id=session.id)
-                setup.context_snapshot = snapshot
-                setup.instruction_sources = snapshot.instruction_sources
-                session.set_system_prompt(snapshot.composed_prompt)
-                agent.set_system_prompt(snapshot.composed_prompt)
-            return activated
+        activated: list[str] = []
+        for name in skill_names:
+            if setup.skill_activator.is_active(name):
+                continue
+            skill = setup.skill_activator.activate_skill(name, transient=True)
+            if skill is not None:
+                activated.append(name)
 
-        resolution = resolve_skill_activation_requests(
-            skill_requests,
-            available_skill_names=available_names,
-            active_skill_names=active_names,
-            activate=activate,
-            original_user_message=user_message,
-        )
-        return FollowupPhaseDecision(
-            next_message=resolution.followup_message,
-            rollback_to_checkpoint=bool(resolution.followup_message),
-        )
+        if not activated:
+            return None
 
-    phase_result = run_followup_phases(
-        session,
-        user_message,
-        inspect_skill_phase,
-        on_event=phase_handler.on_event,
-        max_phases=5,
-    )
-    _render_final_phase_events(renderer, phase_result.final_events)
-
-    if setup.skill_activator.list_transient():
-        setup.skill_activator.clear_transient()
+        # Update binding and refresh context
         setup.binding.active_skill_names = setup.skill_activator.list_persistent()
-        setup.binding.transient_skill_names = []
+        setup.binding.transient_skill_names = setup.skill_activator.list_transient()
         snapshot = refresh_run_context(setup.binding, session_id=session.id)
         setup.context_snapshot = snapshot
         setup.instruction_sources = snapshot.instruction_sources
         session.set_system_prompt(snapshot.composed_prompt)
         agent.set_system_prompt(snapshot.composed_prompt)
 
+        return snapshot.composed_prompt
+
+    try:
+        session.send_sync(
+            user_message,
+            on_event=phase_handler.on_event,
+            skill_activation_handler=skill_activation_handler,
+        )
+    finally:
+        indicator.stop()
+
     # Save session after execution
     session.save()
 
     return 0
-
-
-def _extract_interaction_requests(events: list[AnyEvent]) -> list[dict]:
-    """
-    Extract request_interaction tool calls from events.
-
-    Returns a list of interaction request payloads (the tool arguments).
-    """
-    requests: list[dict] = []
-    for event in events:
-        if isinstance(event, ModelResponded):
-            # Use tool_call_details (new API)
-            for detail in event.tool_call_details:
-                if detail.get("name") == "request_interaction":
-                    requests.append(detail.get("arguments", {}))
-    return requests
-
-
-def _render_events(renderer: ConsoleRenderer, events: list[AnyEvent]) -> None:
-    """Render a pre-collected event stream."""
-    for event in events:
-        rendered = renderer.render(event)
-        if rendered:
-            print(rendered)
-
-
-def _render_final_phase_events(renderer: ConsoleRenderer, events: list[AnyEvent]) -> None:
-    """Render only final-answer events after live progress has streamed."""
-    for event in events:
-        if event.type not in ("model_responded", "run_completed"):
-            continue
-        rendered = renderer.render(event)
-        if rendered:
-            print(rendered)
 
 
 def _handle_interaction_request(
