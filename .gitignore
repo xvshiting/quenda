@@ -48,3 +48,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Workspace state
+.kora/
