@@ -1,5 +1,5 @@
 """
-Agent definition for Kora.
+Agent definition for Quenda.
 
 An Agent is defined by:
 - A name

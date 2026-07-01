@@ -1,5 +1,5 @@
 """
-Welcome message provider for Kora Interface layer.
+Welcome message provider for Quenda Interface layer.
 
 Provides customizable startup messages for agents.
 """

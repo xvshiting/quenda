@@ -1,5 +1,5 @@
 """
-Tool Protocol for Kora Kernel.
+Tool Protocol for Quenda Kernel.
 
 Defines the interface that all tools must implement.
 Tools are the primary way for agents to interact with the world.

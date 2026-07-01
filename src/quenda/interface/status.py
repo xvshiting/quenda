@@ -1,5 +1,5 @@
 """
-Status text provider for Kora REPL.
+Status text provider for Quenda REPL.
 
 The status bar is intentionally presentation-only:
 - It exposes text for prompt_toolkit's bottom toolbar

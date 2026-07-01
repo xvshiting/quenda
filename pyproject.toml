@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quenda"
-version = "0.1.8"
+version = "0.1.9"
 description = "A lightweight Agent framework with extensible model providers"
 readme = "README.md"
 license = {text = "MIT"}

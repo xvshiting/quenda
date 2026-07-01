@@ -1,5 +1,5 @@
 """
-Instruction layer for Kora Host.
+Instruction layer for Quenda Host.
 
 Implements ADR-007: Instruction Layer and Scope Overlay.
 
@@ -29,11 +29,11 @@ if TYPE_CHECKING:
 
 # Framework contract - always included as the base context
 FRAMEWORK_CONTRACT = """
-## Kora Framework Conventions
+## Quenda Framework Conventions
 
 ### Workspace Structure
 
-Kora distinguishes between **physical workspace** (the project folder) and **logical workspace** (user-specific state).
+Quenda distinguishes between **physical workspace** (the project folder) and **logical workspace** (user-specific state).
 
 Physical workspace (shared):
 ```
@@ -91,7 +91,7 @@ Example `SKILL.md`:
 name: <skill-name>
 description: <what this skill does>
 version: "1.0.0"
-quenda:                           # Optional Kora-specific config
+quenda:                           # Optional Quenda-specific config
   activates_on:
     - command: "/<command>"     # Slash command trigger
   resources:
@@ -174,7 +174,7 @@ class InstructionScope(IntEnum):
     Higher numbers = more specific (loaded later, can override).
     """
 
-    FRAMEWORK = 0       # Kora framework contract
+    FRAMEWORK = 0       # Quenda framework contract
     AGENT_PACKAGE = 1   # Agent package AGENT.md
     AGENT_INSTRUCTIONS = 2  # Agent package instructions/*.md
     USER_GLOBAL = 3     # ~/.quenda/users/<user>/INSTRUCTIONS.md

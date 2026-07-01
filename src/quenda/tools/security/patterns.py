@@ -1,5 +1,5 @@
 """
-Security patterns for Kora tools.
+Security patterns for Quenda tools.
 """
 
 from __future__ import annotations

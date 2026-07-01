@@ -254,7 +254,7 @@ class OpenAICompletionsApi(Api):
             raise APIError(f"OpenAI API error: {e}")
 
     def _convert_response(self, response) -> ModelResponse:
-        """Convert OpenAI response to Kora format."""
+        """Convert OpenAI response to Quenda format."""
         choice = response.choices[0]
         tool_calls = []
 

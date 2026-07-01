@@ -25,7 +25,7 @@ class HTTPConfig:
     max_timeout: int = 60
     max_output_chars: int = 100000
     max_redirects: int = 5
-    user_agent: str = "Kora-Agent/1.0"
+    user_agent: str = "Quenda-Agent/1.0"
 
 
 # SSRF protection

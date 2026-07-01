@@ -1,5 +1,5 @@
 """
-Identity management for Kora Host layer.
+Identity management for Quenda Host layer.
 
 Provides user identity resolution and multi-tenancy support.
 """

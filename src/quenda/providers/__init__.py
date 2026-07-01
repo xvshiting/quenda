@@ -1,5 +1,5 @@
 """
-Model providers for Kora.
+Model providers for Quenda.
 
 ## Architecture
 
@@ -98,7 +98,7 @@ from quenda.providers.registry import ProviderRegistry, get_provider_registry
 
 # Errors
 from quenda.providers.errors import (
-    KoraError,
+    QuendaError,
     ProviderError,
     AuthenticationError,
     APIError,
@@ -161,7 +161,7 @@ __all__ = [
     "ProviderRegistry",
     "get_provider_registry",
     # Errors
-    "KoraError",
+    "QuendaError",
     "ProviderError",
     "AuthenticationError",
     "APIError",

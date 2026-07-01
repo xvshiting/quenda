@@ -1,5 +1,5 @@
 """
-Compressor for Kora Runtime.
+Compressor for Quenda Runtime.
 
 This module provides the compression mechanism that Runtime uses
 to compress session history when Host policy decides compression is needed.

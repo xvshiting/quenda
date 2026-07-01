@@ -1,5 +1,5 @@
 """
-Agent loader for Kora.
+Agent loader for Quenda.
 
 Provides functions to load agents from files.
 Implements ADR-007: Agent package loading with AGENT.md + config.yaml.

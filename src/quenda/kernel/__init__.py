@@ -1,5 +1,5 @@
 """
-Kora Kernel Layer.
+Quenda Kernel Layer.
 
 The kernel executes a single model-tool loop.
 It has no knowledge of Agents, Sessions, or persistence.

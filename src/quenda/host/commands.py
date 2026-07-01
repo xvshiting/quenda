@@ -1,5 +1,5 @@
 """
-Slash Command system for Kora Host.
+Slash Command system for Quenda Host.
 
 Implements ADR-008: Slash Commands as Registered Small Commands
 with Explicit State and Host Context Rebuild.

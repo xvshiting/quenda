@@ -1,5 +1,5 @@
 """
-Console renderer for Kora Runtime events.
+Console renderer for Quenda Runtime events.
 
 Renders events to human-readable console output with:
 - Tool calls with summaries (from LLM-generated _summary)

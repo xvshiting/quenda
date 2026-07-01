@@ -1,5 +1,5 @@
 """
-Event handling protocols and implementations for Kora Interface layer.
+Event handling protocols and implementations for Quenda Interface layer.
 
 Provides abstractions for handling Runtime events in different ways:
 - StreamingEventHandler: Real-time output as events arrive

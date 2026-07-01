@@ -1,5 +1,5 @@
 """
-Custom exception types for Kora providers.
+Custom exception types for Quenda providers.
 
 This module defines a hierarchy of exceptions for handling errors
 in the provider layer.
@@ -8,17 +8,17 @@ in the provider layer.
 from __future__ import annotations
 
 
-class KoraError(Exception):
+class QuendaError(Exception):
     """
-    Base exception for all Kora errors.
+    Base exception for all Quenda errors.
 
-    All custom exceptions in Kora inherit from this class.
+    All custom exceptions in Quenda inherit from this class.
     """
 
     pass
 
 
-class ProviderError(KoraError):
+class ProviderError(QuendaError):
     """
     Base exception for provider-related errors.
 
@@ -116,7 +116,7 @@ class UnsupportedFeatureError(ProviderError):
 
 
 __all__ = [
-    "KoraError",
+    "QuendaError",
     "ProviderError",
     "AuthenticationError",
     "APIError",

@@ -1,5 +1,5 @@
 """
-Network tools for Kora.
+Network tools for Quenda.
 
 - http_request: Make HTTP requests with SSRF protection
 - web_fetch: Fetch content from web pages

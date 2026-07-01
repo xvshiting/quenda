@@ -11,7 +11,7 @@ OPENROUTER_SPEC = ProviderSpec(
     base_url="https://openrouter.ai/api/v1",
     api="openai-completions",
     api_key="${OPENROUTER_API_KEY}",
-    headers={"HTTP-Referer": "https://github.com/xvshiting/kora", "X-Title": "Kora"},
+    headers={"HTTP-Referer": "https://github.com/xvshiting/kora", "X-Title": "Quenda"},
     models=(
         # Anthropic via OpenRouter
         ModelSpec(

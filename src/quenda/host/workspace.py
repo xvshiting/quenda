@@ -1,5 +1,5 @@
 """
-Workspace binding for Kora Host layer.
+Workspace binding for Quenda Host layer.
 
 Provides workspace identity and binding resolution as defined in ADR-004.
 

@@ -1,7 +1,7 @@
 """
 Kernel - The core model-tool loop executor.
 
-The Kernel is the heart of Kora's execution. It runs a synchronous
+The Kernel is the heart of Quenda's execution. It runs a synchronous
 model-tool loop, calling the model and executing tools until completion.
 """
 

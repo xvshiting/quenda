@@ -1,5 +1,5 @@
 """
-Context rebuilding for Kora Host layer.
+Context rebuilding for Quenda Host layer.
 
 Provides ContextRebuilder that re-composes the Agent's system prompt
 when runtime state changes (model switch, etc.).

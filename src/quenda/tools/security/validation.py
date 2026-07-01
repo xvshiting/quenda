@@ -1,5 +1,5 @@
 """
-Security validation utilities for Kora tools.
+Security validation utilities for Quenda tools.
 """
 
 from __future__ import annotations

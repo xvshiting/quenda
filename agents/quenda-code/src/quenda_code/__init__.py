@@ -1,8 +1,8 @@
 """
-Kora Code Agent - official coding agent for the Kora framework.
+Quenda Code Agent - official coding agent for the Quenda framework.
 
 This package provides the agent definition (AGENT.md, instructions, extensions)
-for the Kora Code Agent. It is discovered by the ``kora`` framework via the
+for the Quenda Code Agent. It is discovered by the ``kora`` framework via the
 ``kora.agents`` entry point group.
 """
 

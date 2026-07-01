@@ -1,5 +1,5 @@
 """
-Interface layer for Kora.
+Interface layer for Quenda.
 
 The interface layer is responsible for:
 - Rendering Runtime events to human-readable output

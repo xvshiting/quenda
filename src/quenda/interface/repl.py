@@ -1,5 +1,5 @@
 """
-REPL with status bar for Kora.
+REPL with status bar for Quenda.
 
 Uses prompt_toolkit's bottom toolbar for a proper status bar that sits
 below the input area, with dynamic thinking animation.

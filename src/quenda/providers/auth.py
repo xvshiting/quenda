@@ -1,5 +1,5 @@
 """
-Authentication resolver for Kora providers.
+Authentication resolver for Quenda providers.
 
 Handles resolution of API keys and other authentication credentials.
 """

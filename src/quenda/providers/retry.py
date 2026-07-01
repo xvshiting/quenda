@@ -1,5 +1,5 @@
 """
-Retry mechanism for Kora providers.
+Retry mechanism for Quenda providers.
 
 Provides decorators for retrying API calls with exponential backoff.
 """

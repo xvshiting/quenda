@@ -1,5 +1,5 @@
 """
-Run execution for Kora Runtime.
+Run execution for Quenda Runtime.
 
 A Run represents a single execution of an agent within a session.
 It bridges async Runtime with sync Kernel, and emits events for observability.

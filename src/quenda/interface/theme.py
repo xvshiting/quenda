@@ -1,5 +1,5 @@
 """
-Theme configuration for Kora Interface layer.
+Theme configuration for Quenda Interface layer.
 
 Provides configurable visual elements and behavior for terminal output.
 """
@@ -125,7 +125,7 @@ class InterfaceTheme:
         Uses ASCII-safe characters and reduced output.
         """
         return cls(
-            agent_icon="[Kora]",
+            agent_icon="[Quenda]",
             success_icon="[OK]",
             error_icon="[ERR]",
             complete_icon="[DONE]",
@@ -148,7 +148,7 @@ class InterfaceTheme:
         Uses only ASCII characters but maintains visual structure.
         """
         return cls(
-            agent_icon="[Kora]",
+            agent_icon="[Quenda]",
             success_icon="[+]",
             error_icon="[!]",
             complete_icon="[OK]",

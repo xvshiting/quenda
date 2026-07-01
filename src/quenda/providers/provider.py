@@ -1,5 +1,5 @@
 """
-Provider specification for Kora.
+Provider specification for Quenda.
 
 A Provider represents a model service provider (e.g., DashScope, JDCloud, OpenRouter).
 It owns authentication, base URL, and a list of available models.

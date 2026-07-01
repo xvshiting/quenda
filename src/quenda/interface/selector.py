@@ -1,5 +1,5 @@
 """
-Interactive selection UI for Kora Interface.
+Interactive selection UI for Quenda Interface.
 
 Provides rich selection interfaces for interaction requests:
 - Arrow-key navigation with highlighting

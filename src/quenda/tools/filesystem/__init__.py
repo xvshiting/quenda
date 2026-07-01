@@ -1,5 +1,5 @@
 """
-Filesystem tools for Kora.
+Filesystem tools for Quenda.
 
 The 5 core filesystem tools:
 - list_files: See what exists (covers ls, find, tree)

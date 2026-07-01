@@ -1,5 +1,5 @@
 """
-Provider registry for Kora.
+Provider registry for Quenda.
 
 The registry manages available providers and provides model lookup.
 """

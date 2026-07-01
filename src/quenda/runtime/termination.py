@@ -1,5 +1,5 @@
 """
-TerminationPolicy for Kora Runtime.
+TerminationPolicy for Quenda Runtime.
 
 This module defines the termination policy interface for Runtime-level
 execution control. TerminationPolicy decides whether a run should stop

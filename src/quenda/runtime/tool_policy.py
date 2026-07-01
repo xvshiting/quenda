@@ -1,5 +1,5 @@
 """
-Tool policies for Kora Runtime.
+Tool policies for Quenda Runtime.
 
 This module defines policy interfaces for tool execution control.
 

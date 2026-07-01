@@ -1,7 +1,7 @@
 """
 Message and tool format converters.
 
-Converts Kora's internal format to provider-specific formats.
+Converts Quenda's internal format to provider-specific formats.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def convert_messages_to_openai(messages: list[Message]) -> list[dict]:
     """
-    Convert Kora messages to OpenAI-compatible format.
+    Convert Quenda messages to OpenAI-compatible format.
 
     This format is used by:
     - OpenAI
@@ -31,7 +31,7 @@ def convert_messages_to_openai(messages: list[Message]) -> list[dict]:
     1. assistant message with tool_calls
     2. tool message with tool_call_id and content (one per tool call)
 
-    Kora format:
+    Quenda format:
     - assistant: content=ToolCall list
     - user: content=ToolResult list
     """
@@ -86,7 +86,7 @@ def convert_messages_to_openai(messages: list[Message]) -> list[dict]:
 
 def convert_tools_to_openai(tools: list[Tool]) -> list[dict]:
     """
-    Convert Kora tools to OpenAI-compatible format.
+    Convert Quenda tools to OpenAI-compatible format.
 
     Automatically injects a _summary parameter for display purposes.
     The LLM is encouraged to fill this with a brief description of what it's doing.

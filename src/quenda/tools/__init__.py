@@ -1,5 +1,5 @@
 """
-Built-in tools for Kora.
+Built-in tools for Quenda.
 
 ## Organization
 
@@ -104,7 +104,7 @@ __all__ = [
 
 def get_core_tools(workspace_root: str) -> list:
     """
-    Get the 9 core tools for Kora Coding Agent.
+    Get the 9 core tools for Quenda Coding Agent.
 
     The minimal tool set following capability semantics:
     - list_files: See what exists

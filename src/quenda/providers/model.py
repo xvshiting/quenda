@@ -1,5 +1,5 @@
 """
-Model specification and runtime Model for Kora providers.
+Model specification and runtime Model for Quenda providers.
 
 ModelSpec describes a model's capabilities, limitations, and pricing.
 Model binds a ModelSpec to a Provider for actual invocation.

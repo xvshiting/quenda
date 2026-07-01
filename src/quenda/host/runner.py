@@ -1,5 +1,5 @@
 """
-Agent runner for Kora Host layer.
+Agent runner for Quenda Host layer.
 
 Provides high-level API to setup and run agents, encapsulating
 the orchestration of all Host layer components.

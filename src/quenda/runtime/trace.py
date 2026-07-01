@@ -1,5 +1,5 @@
 """
-TraceSink for Kora Runtime observability.
+TraceSink for Quenda Runtime observability.
 
 This module defines the TraceSink protocol for observing runtime events.
 TraceSink is an observer-only interface - it cannot affect control flow.

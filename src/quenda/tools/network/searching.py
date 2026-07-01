@@ -20,7 +20,7 @@ class WebSearchConfig:
 
     default_timeout: int = 30
     max_results: int = 10
-    user_agent: str = "Kora-Agent/1.0"
+    user_agent: str = "Quenda-Agent/1.0"
 
 
 class WebSearchTool(Tool):

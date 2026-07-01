@@ -1,5 +1,5 @@
 """
-Kora Runtime Layer.
+Quenda Runtime Layer.
 
 The runtime manages Agent, Workspace, Session, Prompt, and Run semantics.
 It coordinates Kernel execution but does not handle persistence.

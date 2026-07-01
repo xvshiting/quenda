@@ -1,5 +1,5 @@
 """
-Interaction request system for Kora Host.
+Interaction request system for Quenda Host.
 
 This provides a structured way for Host/LLM flows to request user
 interaction such as choices, confirmations, or free-form input.
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 class InteractionKind(StrEnum):
-    """Built-in interaction kinds supported by Kora."""
+    """Built-in interaction kinds supported by Quenda."""
 
     CHOICE = "choice"
     CONFIRM = "confirm"

@@ -1,5 +1,5 @@
 """
-Host layer for Kora.
+Host layer for Quenda.
 
 The host layer manages persistence, file system access, identity, and resources.
 """

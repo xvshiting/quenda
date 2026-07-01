@@ -1,5 +1,5 @@
 """
-Configuration for Kora tools.
+Configuration for Quenda tools.
 """
 
 from __future__ import annotations

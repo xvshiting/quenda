@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quenda-code"
-version = "0.1.6"
+version = "0.1.9"
 description = "Quenda's official coding agent"
 readme = "README.md"
 license = {text = "MIT"}

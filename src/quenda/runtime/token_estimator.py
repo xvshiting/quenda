@@ -1,5 +1,5 @@
 """
-Token estimation for Kora Runtime.
+Token estimation for Quenda Runtime.
 
 Provides simple token counting estimation for compression decisions.
 Estimated tokens are used before model invocation to decide compression.

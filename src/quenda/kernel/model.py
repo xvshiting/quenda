@@ -1,5 +1,5 @@
 """
-Model Provider Protocol for Kora Kernel.
+Model Provider Protocol for Quenda Kernel.
 
 Defines the interface that all model providers must implement.
 This is a synchronous interface - async handling is done at the Runtime layer.

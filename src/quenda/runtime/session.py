@@ -1,5 +1,5 @@
 """
-Session management for Kora Runtime.
+Session management for Quenda Runtime.
 
 Provides:
 - SessionState: Pure data state (serializable, persistable)

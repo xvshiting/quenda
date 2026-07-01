@@ -61,8 +61,8 @@ class TrustMetadata(BaseModel):
     permissions: list[str] = Field(default_factory=list)
 
 
-class SkillKoraMetadata(BaseModel):
-    """Kora-specific skill configuration."""
+class SkillQuendaMetadata(BaseModel):
+    """Quenda-specific skill configuration."""
 
     activates_on: list[ActivationTrigger] = Field(default_factory=list)
     resources: ResourceCatalog = Field(default_factory=ResourceCatalog)
@@ -80,13 +80,13 @@ class SkillFrontmatter(BaseModel):
 
     Optional fields:
     - version: Semantic version (default: "0.1.0")
-    - quenda: Kora-specific metadata
+    - quenda: Quenda-specific metadata
     """
 
     name: str = Field(..., pattern=r"^[a-z0-9-_]+$")
     description: str
     version: str = Field(default="0.1.0")
-    quenda: SkillKoraMetadata | None = None
+    quenda: SkillQuendaMetadata | None = None
 
 
 __all__ = [
@@ -96,6 +96,6 @@ __all__ = [
     "ResourceCatalog",
     "ToolRequirements",
     "TrustMetadata",
-    "SkillKoraMetadata",
+    "SkillQuendaMetadata",
     "SkillFrontmatter",
 ]

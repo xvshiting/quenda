@@ -1,5 +1,5 @@
 """
-Storage interface and implementations for Kora Host layer.
+Storage interface and implementations for Quenda Host layer.
 
 Provides pluggable persistence for Session and Run state.
 """

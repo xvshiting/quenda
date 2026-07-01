@@ -1,5 +1,5 @@
 """
-Terminal activity indicator for Kora Interface layer.
+Terminal activity indicator for Quenda Interface layer.
 
 Provides protocols and implementations for activity indicators that keep
 the terminal feeling alive while the model is thinking or tools are running.

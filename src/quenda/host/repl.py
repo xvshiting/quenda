@@ -1,5 +1,5 @@
 """
-REPL runtime for Kora Host layer.
+REPL runtime for Quenda Host layer.
 
 Encapsulates all REPL state management and command dispatch,
 keeping the CLI layer thin and focused on I/O.

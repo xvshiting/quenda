@@ -1,5 +1,5 @@
 """
-Compression policy for Kora Host layer.
+Compression policy for Quenda Host layer.
 
 This module defines the compression policy interface that Host provides
 to Runtime for deciding when and how to compress context.

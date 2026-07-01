@@ -1,5 +1,5 @@
 """
-API implementations for Kora providers.
+API implementations for Quenda providers.
 """
 
 from quenda.providers.api.base import Api

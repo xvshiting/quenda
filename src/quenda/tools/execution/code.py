@@ -1,5 +1,5 @@
 """
-Python code execution tool for Kora.
+Python code execution tool for Quenda.
 
 Executes Python code in a sandboxed environment with:
 - AST validation

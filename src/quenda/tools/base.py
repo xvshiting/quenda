@@ -1,5 +1,5 @@
 """
-Base class for Kora tools with common functionality.
+Base class for Quenda tools with common functionality.
 """
 
 from __future__ import annotations

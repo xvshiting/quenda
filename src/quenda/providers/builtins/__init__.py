@@ -1,5 +1,5 @@
 """
-Built-in provider specifications for Kora.
+Built-in provider specifications for Quenda.
 
 These are pre-configured providers that come with the framework.
 Each provider is defined in its own module for maintainability.

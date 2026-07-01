@@ -1,5 +1,5 @@
 """
-Base API protocol for Kora providers.
+Base API protocol for Quenda providers.
 
 An API defines the communication protocol (e.g., OpenAI completions, Anthropic messages).
 Multiple providers can share the same API implementation.

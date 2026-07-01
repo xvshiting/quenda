@@ -1,5 +1,5 @@
 """
-Security module for Kora tools.
+Security module for Quenda tools.
 """
 
 from quenda.tools.security.patterns import (

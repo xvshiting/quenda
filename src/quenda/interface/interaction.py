@@ -1,5 +1,5 @@
 """
-Interaction rendering helpers for Kora Interface.
+Interaction rendering helpers for Quenda Interface.
 
 These helpers turn structured interaction requests into readable
 terminal output. They stay intentionally thin so different interfaces

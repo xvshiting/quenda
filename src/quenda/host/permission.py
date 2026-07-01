@@ -1,5 +1,5 @@
 """
-Permission control for Kora Host layer.
+Permission control for Quenda Host layer.
 
 Provides permission policies to protect Host-owned metadata and resources.
 

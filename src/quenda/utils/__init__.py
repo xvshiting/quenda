@@ -1,5 +1,5 @@
 """
-Kora utility modules.
+Quenda utility modules.
 """
 
 from quenda.utils.interrupt import (

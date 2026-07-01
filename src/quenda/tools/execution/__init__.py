@@ -1,5 +1,5 @@
 """
-Execution tools for Kora.
+Execution tools for Quenda.
 
 - run_shell: Execute shell commands (escape hatch for tests, git, npm, etc.)
 - execute_python: Execute Python code in a sandboxed environment

@@ -1,5 +1,5 @@
 """
-Events for Kora Runtime observability.
+Events for Quenda Runtime observability.
 
 Events are emitted during Run execution to allow observation
 of the agent's behavior in real-time.

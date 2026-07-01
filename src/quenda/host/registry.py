@@ -1,5 +1,5 @@
 """
-Tool registry for Kora Host layer.
+Tool registry for Quenda Host layer.
 
 Provides a Host-owned tool registration and resolution mechanism for:
 - built-in named tools

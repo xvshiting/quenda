@@ -1,5 +1,5 @@
 """
-Interrupt mechanism for Kora.
+Interrupt mechanism for Quenda.
 
 Provides a way to interrupt long-running agent executions from the UI layer.
 """

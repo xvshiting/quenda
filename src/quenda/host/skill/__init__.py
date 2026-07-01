@@ -41,7 +41,7 @@ from quenda.host.skill.models import (
     ResourceCatalog,
     ResourceReference,
     SkillFrontmatter,
-    SkillKoraMetadata,
+    SkillQuendaMetadata,
     ToolRequirements,
     TrustMetadata,
 )
@@ -67,7 +67,7 @@ __all__ = [
     "ResourceCatalog",
     "ResourceReference",
     "SkillFrontmatter",
-    "SkillKoraMetadata",
+    "SkillQuendaMetadata",
     "ToolRequirements",
     "TrustMetadata",
     # Package

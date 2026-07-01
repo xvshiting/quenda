@@ -21,7 +21,7 @@ class WebFetchConfig:
     default_timeout: int = 30
     max_timeout: int = 60
     max_content_chars: int = 50000
-    user_agent: str = "Kora-Agent/1.0"
+    user_agent: str = "Quenda-Agent/1.0"
 
 
 def _truncate(text: str, max_chars: int) -> tuple[str, bool]:

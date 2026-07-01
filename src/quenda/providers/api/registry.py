@@ -1,5 +1,5 @@
 """
-API registry for Kora providers.
+API registry for Quenda providers.
 
 The registry manages available API implementations.
 Multiple providers can share the same API.

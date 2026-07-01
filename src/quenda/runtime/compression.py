@@ -1,5 +1,5 @@
 """
-Compression protocol interfaces for Kora.
+Compression protocol interfaces for Quenda.
 
 This module defines the data structures for communication between
 Runtime and Host layers during context compression, as defined in ADR-015.

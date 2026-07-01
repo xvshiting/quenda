@@ -1,10 +1,10 @@
 """
-CLI for Kora Agent Framework.
+CLI for Quenda Agent Framework.
 
 Provides commands to run agents:
-- kora run --agent <path> "message"  # One-shot execution
-- kora code "message"                 # One-shot with quenda-code agent
-- kora code                           # Interactive REPL mode
+- quenda run --agent <path> "message"  # One-shot execution
+- quenda code "message"                 # One-shot with quenda-code agent
+- quenda code                           # Interactive REPL mode
 """
 
 from __future__ import annotations
@@ -387,7 +387,7 @@ def run_repl(
     # Print welcome message using WelcomeProvider
     welcome_provider = DefaultWelcomeProvider(theme)
     welcome_ctx = WelcomeContext(
-        agent_name="Kora Code Agent",
+        agent_name=setup.agent_package.name,
         workspace_id=workspace_id,
         workspace_path=workspace,
         session_id=session.id,
@@ -636,7 +636,7 @@ def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         prog="quenda",
-        description="Kora Agent Framework",
+        description="Quenda Agent Framework",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -673,7 +673,7 @@ def main() -> int:
     )
 
     # kora code [message]
-    code_parser = subparsers.add_parser("code", help="Run Kora Code Agent")
+    code_parser = subparsers.add_parser("code", help="Run Quenda Code Agent")
     code_parser.add_argument(
         "--workspace",
         type=Path,
@@ -723,7 +723,7 @@ def main() -> int:
     elif args.command == "code":
         agent_dir = find_builtin_agent("quenda-code")
         if agent_dir is None:
-            print("Error: Kora Code Agent not found", file=sys.stderr)
+            print("Error: Quenda Code Agent not found", file=sys.stderr)
             print("Install it:  pip install quenda quenda-code", file=sys.stderr)
             print("Or:          pip install quenda[code]", file=sys.stderr)
             return 1

@@ -203,7 +203,7 @@ class AnthropicMessagesApi(Api):
         messages: list[Message],
     ) -> tuple[list[dict], str | None]:
         """
-        Convert Kora messages to Anthropic format.
+        Convert Quenda messages to Anthropic format.
 
         Returns:
             Tuple of (anthropic_messages, system_prompt)
@@ -274,7 +274,7 @@ class AnthropicMessagesApi(Api):
         return anthropic_messages, system_prompt
 
     def _convert_tools(self, tools: list[Tool]) -> list[dict]:
-        """Convert Kora tools to Anthropic format."""
+        """Convert Quenda tools to Anthropic format."""
         converted_tools = []
         for tool in tools:
             # Inject _summary parameter into the schema
@@ -298,7 +298,7 @@ class AnthropicMessagesApi(Api):
         return converted_tools
 
     def _convert_response(self, response) -> ModelResponse:
-        """Convert Anthropic response to Kora format."""
+        """Convert Anthropic response to Quenda format."""
         tool_calls = []
         content = None
 
