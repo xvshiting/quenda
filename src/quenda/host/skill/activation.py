@@ -137,11 +137,38 @@ class SkillActivator:
         sections: list[str] = []
 
         for skill in self.active_skills:  # Uses property for on-demand resolution
+            # Build resource path info for assets (scripts, templates, etc.)
+            resource_info = self._build_resource_info(skill)
+
             # Each skill's instructions are wrapped in a section
-            section = f"<Skill:{skill.name}>\n{skill.instructions}\n</Skill:{skill.name}>"
+            section = f"<Skill:{skill.name}>\n{skill.instructions}"
+            if resource_info:
+                section += f"\n\n{resource_info}"
+            section += f"\n</Skill:{skill.name}>"
             sections.append(section)
 
         return "\n\n".join(sections)
+
+    def _build_resource_info(self, skill: SkillPackage) -> str:
+        """
+        Build resource path information for a skill.
+
+        Returns a formatted string with absolute paths for each resource,
+        allowing the model to execute scripts or access files correctly.
+        """
+        if not skill.resources:
+            return ""
+
+        lines = ["## Skill Resources", ""]
+        lines.append("The following resources are available at these absolute paths:")
+        lines.append("")
+
+        for resource in skill.resources:
+            resource_type = resource.type
+            desc = f" - {resource.description}" if resource.description else ""
+            lines.append(f"- `{resource.path}` ({resource_type}){desc}")
+
+        return "\n".join(lines)
 
     def is_active(self, name: str) -> bool:
         """Check if a skill is currently active."""
