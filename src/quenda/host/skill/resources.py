@@ -5,6 +5,7 @@ ResourceResolver provides:
 - Loading resource content on demand
 - Listing available resources
 - Template rendering for template assets
+- URI-based resource access (skill://<skill-name>/<resource-path>)
 """
 
 from __future__ import annotations
@@ -14,7 +15,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from quenda.host.skill.uri import SkillResourceURI
+
 if TYPE_CHECKING:
+    from quenda.host.skill.activation import SkillActivator
     from quenda.host.skill.package import SkillPackage, SkillResource
 
 
@@ -30,11 +34,22 @@ class ResourceInfo:
     """
 
     skill_name: str
-    resource_name: str
+    resource_name: str  # Filename only (e.g., "checklist.md")
     resource_type: str  # "reference" or "asset"
-    path: Path
+    path: Path  # Absolute filesystem path
+    resource_path: str = ""  # Relative path within skill (e.g., "references/checklist.md")
     description: str = ""
     exists: bool = True
+    safe_to_execute: bool = False  # For script assets
+
+    def __post_init__(self) -> None:
+        """Derive resource_path from path if not provided."""
+        if not self.resource_path:
+            self.resource_path = self.path.name
+
+    def uri(self) -> str:
+        """Return the skill:// URI for this resource."""
+        return f"skill://{self.skill_name}/{self.resource_path}"
 
 
 @dataclass
@@ -46,11 +61,22 @@ class LoadedResource:
     """
 
     skill_name: str
-    resource_name: str
+    resource_name: str  # Filename only
     resource_type: str
     content: str
     path: Path
+    resource_path: str = ""  # Relative path within skill
     description: str = ""
+    safe_to_execute: bool = False
+
+    def __post_init__(self) -> None:
+        """Derive resource_path from path if not provided."""
+        if not self.resource_path:
+            self.resource_path = self.path.name
+
+    def uri(self) -> str:
+        """Return the skill:// URI for this resource."""
+        return f"skill://{self.skill_name}/{self.resource_path}"
 
 
 class ResourceResolver:
@@ -63,9 +89,21 @@ class ResourceResolver:
     - Load specific resource content
     - Render template assets with context
 
+    The resolver can be constructed with either:
+    - A static list of skills (for simple use cases)
+    - A SkillActivator for dynamic skill access (recommended)
+
+    When using a SkillActivator, the resolver always sees the current
+    active skills, even if skills are activated/deactivated after
+    the resolver is created.
+
     Usage:
+        # Static mode:
         resolver = ResourceResolver(active_skills)
         resources = resolver.list_resources()
+
+        # Dynamic mode (recommended):
+        resolver = ResourceResolver.from_activator(skill_activator)
         content = resolver.load_resource("code-review", "checklist.md")
     """
 
@@ -76,7 +114,43 @@ class ResourceResolver:
         Args:
             skills: List of active skill packages.
         """
-        self.skills = skills
+        self._skills = skills
+        self._activator: SkillActivator | None = None
+
+    @classmethod
+    def from_activator(cls, activator: SkillActivator) -> "ResourceResolver":
+        """
+        Create a resolver that dynamically accesses active skills.
+
+        This is the recommended way to create a resolver when skills
+        may be activated or deactivated during the session.
+
+        Args:
+            activator: The SkillActivator managing active skills.
+
+        Returns:
+            A ResourceResolver that always sees current active skills.
+        """
+        resolver = cls([])
+        resolver._activator = activator
+        return resolver
+
+    @property
+    def skills(self) -> list[SkillPackage]:
+        """
+        Get the current list of active skills.
+
+        If using dynamic mode with an activator, this returns the
+        current active skills. Otherwise, returns the static list.
+        """
+        if self._activator is not None:
+            return self._activator.active_skills
+        return self._skills
+
+    @skills.setter
+    def skills(self, value: list[SkillPackage]) -> None:
+        """Set the list of active skills (for static mode)."""
+        self._skills = value
 
     def list_resources(self) -> list[ResourceInfo]:
         """
@@ -89,13 +163,22 @@ class ResourceResolver:
 
         for skill in self.skills:
             for resource in skill.resources:
+                # Compute relative path within skill
+                try:
+                    relative_path = str(resource.path.relative_to(skill.path))
+                except ValueError:
+                    # Fallback if path is not under skill.path
+                    relative_path = resource.path.name
+
                 resources.append(ResourceInfo(
                     skill_name=skill.name,
                     resource_name=resource.path.name,
+                    resource_path=relative_path,
                     resource_type=resource.type,
                     path=resource.path,
                     description=resource.description,
                     exists=resource.path.exists(),
+                    safe_to_execute=resource.safe_to_execute,
                 ))
 
         return resources
@@ -139,13 +222,20 @@ class ResourceResolver:
 
         content = skill.load_resource_content(resource)
 
+        try:
+            relative_path = str(resource.path.relative_to(skill.path))
+        except ValueError:
+            relative_path = resource.path.name
+
         return LoadedResource(
             skill_name=skill.name,
             resource_name=resource.path.name,
+            resource_path=relative_path,
             resource_type=resource.type,
             content=content,
             path=resource.path,
             description=resource.description,
+            safe_to_execute=resource.safe_to_execute,
         )
 
     def render_template(
@@ -202,6 +292,136 @@ class ResourceResolver:
             return None
 
         return resource.path
+
+    def resolve_uri(self, uri: str) -> LoadedResource | None:
+        """
+        Resolve a skill:// URI to loaded content.
+
+        This is the primary method for accessing resources by URI.
+
+        Args:
+            uri: A skill:// URI (e.g., "skill://code-review/checklist.md")
+
+        Returns:
+            LoadedResource with content, or None if not found.
+        """
+        parsed = SkillResourceURI.parse(uri)
+        if parsed is None:
+            logger.warning(f"Invalid skill URI: {uri}")
+            return None
+
+        return self._resolve_parsed_uri(parsed)
+
+    def resolve_uri_to_info(self, uri: str) -> ResourceInfo | None:
+        """
+        Resolve a skill:// URI to ResourceInfo (without loading content).
+
+        Args:
+            uri: A skill:// URI
+
+        Returns:
+            ResourceInfo, or None if not found.
+        """
+        parsed = SkillResourceURI.parse(uri)
+        if parsed is None:
+            return None
+
+        skill = self._get_skill(parsed.skill_name)
+        if skill is None:
+            return None
+
+        resource = self._find_resource_by_path(skill, parsed.resource_path)
+        if resource is None:
+            return None
+
+        try:
+            relative_path = str(resource.path.relative_to(skill.path))
+        except ValueError:
+            relative_path = resource.path.name
+
+        return ResourceInfo(
+            skill_name=skill.name,
+            resource_name=resource.path.name,
+            resource_path=relative_path,
+            resource_type=resource.type,
+            path=resource.path,
+            description=resource.description,
+            exists=resource.path.exists(),
+            safe_to_execute=resource.safe_to_execute,
+        )
+
+    def list_resource_uris(self, skill_name: str | None = None) -> list[str]:
+        """
+        List available resources as skill:// URIs.
+
+        Args:
+            skill_name: Optional filter to a specific skill.
+
+        Returns:
+            List of skill:// URI strings.
+        """
+        resources = self.list_resources()
+        if skill_name is not None:
+            resources = [r for r in resources if r.skill_name == skill_name]
+        return [r.uri() for r in resources]
+
+    def _resolve_parsed_uri(self, parsed: SkillResourceURI) -> LoadedResource | None:
+        """Resolve a parsed URI to loaded content."""
+        skill = self._get_skill(parsed.skill_name)
+        if skill is None:
+            logger.warning(f"Skill '{parsed.skill_name}' not found in active skills")
+            return None
+
+        resource = self._find_resource_by_path(skill, parsed.resource_path)
+        if resource is None:
+            logger.warning(f"Resource '{parsed.resource_path}' not found in skill '{parsed.skill_name}'")
+            return None
+
+        if not resource.path.exists():
+            logger.warning(f"Resource path does not exist: {resource.path}")
+            return None
+
+        content = skill.load_resource_content(resource)
+
+        try:
+            relative_path = str(resource.path.relative_to(skill.path))
+        except ValueError:
+            relative_path = resource.path.name
+
+        return LoadedResource(
+            skill_name=skill.name,
+            resource_name=resource.path.name,
+            resource_path=relative_path,
+            resource_type=resource.type,
+            content=content,
+            path=resource.path,
+            description=resource.description,
+            safe_to_execute=resource.safe_to_execute,
+        )
+
+    def _find_resource_by_path(
+        self,
+        skill: SkillPackage,
+        relative_path: str,
+    ) -> SkillResource | None:
+        """Find a resource by its relative path within the skill."""
+        # Normalize the path
+        normalized = relative_path.lstrip("/")
+
+        for resource in skill.resources:
+            # Try exact relative path match
+            try:
+                resource_relative = str(resource.path.relative_to(skill.path))
+                if resource_relative == normalized:
+                    return resource
+            except ValueError:
+                pass
+
+            # Try filename match for simple cases
+            if resource.path.name == normalized or resource.path.name == Path(normalized).name:
+                return resource
+
+        return None
 
     def _get_skill(self, name: str) -> SkillPackage | None:
         """Find a skill by name in active skills."""

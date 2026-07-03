@@ -410,10 +410,34 @@ def resolve_instruction_sources(
             path=None,
         ))
 
-    # 9. Activated skills (full instructions)
+    # 9. Activated skills (full instructions with structured wrapping per Agent Skills spec)
+    # Uses <skill_content> tags for:
+    # - Clear identification during context compaction
+    # - Distinguishing skill instructions from other content
+    # - Surfacing bundled resources without eager loading
     if active_skills:
         for skill in active_skills:
-            skill_content = f"## Active Skill: {skill.name}\n\n{skill.instructions}"
+            # Build resource listing (not loaded, just enumerated)
+            resource_listing = ""
+            if skill.resources:
+                resource_lines = ["\n\n<skill_resources>"]
+                for r in skill.resources:
+                    try:
+                        relative = str(r.path.relative_to(skill.path))
+                    except ValueError:
+                        relative = r.path.name
+                    safe_marker = " [executable]" if r.safe_to_execute else ""
+                    resource_lines.append(f"  <file>{relative}{safe_marker}</file>")
+                resource_lines.append("</skill_resources>")
+                resource_listing = "\n".join(resource_lines)
+
+            # Structured wrapping per Agent Skills specification
+            skill_content = f"""<skill_content name="{skill.name}">
+{skill.instructions}
+
+Skill directory: {skill.path}
+Relative paths in this skill are relative to the skill directory.{resource_listing}
+</skill_content>"""
             sources.append(InstructionSource(
                 scope=InstructionScope.SKILL,
                 content=skill_content,

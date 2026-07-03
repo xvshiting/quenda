@@ -194,7 +194,10 @@ Focus on test quality and coverage.
             if s.scope == InstructionScope.SKILL
         ]
         assert len(skill_sources) == 2
-        assert any("Active Skill:" in s.content for s in skill_sources)
+        # Updated for Agent Skills spec structured format
+        # Skills are 'code-review' and 'testing' (from config.yaml)
+        assert any('<skill_content name="code-review">' in s.content for s in skill_sources)
+        assert any('<skill_content name="testing">' in s.content for s in skill_sources)
         assert all("Available Skills" not in s.content for s in skill_sources)
 
     def test_skill_with_missing_resource(self, tmp_path: Path) -> None:

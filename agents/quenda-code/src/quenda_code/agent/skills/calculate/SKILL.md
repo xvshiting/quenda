@@ -9,15 +9,19 @@ quenda:
       - path: "scripts/add.py"
         description: "Add two or more numbers"
         type: script
+        safe: true
       - path: "scripts/subtract.py"
         description: "Subtract numbers"
         type: script
+        safe: true
       - path: "scripts/multiply.py"
         description: "Multiply two or more numbers"
         type: script
+        safe: true
       - path: "scripts/divide.py"
         description: "Divide numbers"
         type: script
+        safe: true
 ---
 
 # Calculate
@@ -37,50 +41,47 @@ Use this skill when the user asks you to:
 
 1. **Identify the operation** - Determine if the user wants add, subtract, multiply, or divide
 2. **Extract the numbers** - Get all numbers from the user's request
-3. **Run the appropriate script** - Check the "Skill Resources" section below for the **absolute path** of each script, then execute it
+3. **Execute the script** - Use `execute_skill_asset` with the skill:// URI
 
 ### Available Scripts
 
-| Script | Operation | Usage |
-|--------|-----------|-------|
-| `add.py` | Addition | `python <path_to_add.py> 1 2 3` |
-| `subtract.py` | Subtraction | `python <path_to_subtract.py> 10 3 2` |
-| `multiply.py` | Multiplication | `python <path_to_multiply.py> 2 3 4` |
-| `divide.py` | Division | `python <path_to_divide.py> 20 4` |
-
-**Important**: Use the absolute paths from the "Skill Resources" section, NOT relative paths like `scripts/add.py`.
+| Script | Operation | URI |
+|--------|-----------|-----|
+| `add.py` | Addition | `skill://calculate-nums/scripts/add.py` |
+| `subtract.py` | Subtraction | `skill://calculate-nums/scripts/subtract.py` |
+| `multiply.py` | Multiplication | `skill://calculate-nums/scripts/multiply.py` |
+| `divide.py` | Division | `skill://calculate-nums/scripts/divide.py` |
 
 ### Usage Pattern
 
-```bash
-python <absolute_script_path> <number1> <number2> [number3...]
+```
+execute_skill_asset(uri="skill://calculate-nums/scripts/add.py", arguments=["15", "27", "8"])
 ```
 
 ## Examples
 
 **User**: "What is 15 + 27 + 8?"
-```bash
-# Use the absolute path from Skill Resources section
-python /path/to/add.py 15 27 8
+```
+execute_skill_asset(uri="skill://calculate-nums/scripts/add.py", arguments=["15", "27", "8"])
 # Result: 50
 ```
 
 **User**: "Calculate 100 minus 35 minus 12"
-```bash
-python /path/to/subtract.py 100 35 12
+```
+execute_skill_asset(uri="skill://calculate-nums/scripts/subtract.py", arguments=["100", "35", "12"])
 # Result: 53
 ```
 
 **User**: "Multiply 7, 8, and 9"
-```bash
-python /path/to/multiply.py 7 8 9
+```
+execute_skill_asset(uri="skill://calculate-nums/scripts/multiply.py", arguments=["7", "8", "9"])
 # Result: 504
 ```
 
 **User**: "What's 144 divided by 12?"
-```bash
-python /path/to/divide.py 144 12
-# Result: 12.0
+```
+execute_skill_asset(uri="skill://calculate-nums/scripts/divide.py", arguments=["144", "12"])
+# Result: 12
 ```
 
 ## Notes

@@ -59,6 +59,7 @@ from quenda.host.skill.resources import (
     LoadedResource,
     ResourceResolver,
 )
+from quenda.host.skill.uri import SkillResourceURI
 
 __all__ = [
     # Models
@@ -85,4 +86,6 @@ __all__ = [
     "ResourceInfo",
     "LoadedResource",
     "ResourceResolver",
+    # URI
+    "SkillResourceURI",
 ]

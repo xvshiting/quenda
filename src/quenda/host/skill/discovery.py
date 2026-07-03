@@ -101,10 +101,12 @@ class SkillDiscovery:
     def _skill_directories(self) -> list[Path]:
         """Get skill directories in priority order.
 
-        Priority order:
+        Priority order (per Agent Skills specification):
         1. User-workspace: ~/.quenda/users/<user>/workspaces/<ws_id>/skills/ (highest)
-        2. Agent package: <agent_package>/skills/ (bundled skills)
-        3. User: ~/.quenda/skills/ (shared, lowest priority)
+        2. Project-level .agents/skills/ (cross-client interoperability)
+        3. Agent package: <agent_package>/skills/ (bundled skills)
+        4. User-level ~/.agents/skills/ (cross-client interoperability)
+        5. User-level ~/.quenda/skills/ (client-specific, lowest priority)
         """
         dirs: list[Path] = []
 
@@ -112,14 +114,38 @@ class SkillDiscovery:
         if self.user_workspace_skills_path:
             dirs.append(self.user_workspace_skills_path)
 
+        # Project-level .agents/skills/ (cross-client interoperability)
+        if self.agent_package_path:
+            # Agent package is typically in project, check for .agents/skills/
+            project_root = self._find_project_root(self.agent_package_path)
+            if project_root:
+                agents_skills = project_root / ".agents" / "skills"
+                if agents_skills.exists():
+                    dirs.append(agents_skills)
+
         # Agent package bundled skills
         if self.agent_package_path:
             dirs.append(self.agent_package_path / "skills")
 
-        # User-level skills (lowest priority)
+        # User-level ~/.agents/skills/ (cross-client interoperability)
+        user_agents_skills = Path.home() / ".agents" / "skills"
+        if user_agents_skills.exists():
+            dirs.append(user_agents_skills)
+
+        # User-level ~/.quenda/skills/ (client-specific, lowest priority)
         dirs.append(Path.home() / ".quenda" / "skills")
 
         return dirs
+
+    def _find_project_root(self, start_path: Path) -> Path | None:
+        """Find project root by looking for .git or other project markers."""
+        # Walk up from start_path to find project root
+        current = start_path
+        while current != current.parent:
+            if (current / ".git").exists():
+                return current
+            current = current.parent
+        return None
 
     def _parse_skill(self, skill_dir: Path, skill_file: Path) -> SkillPackage | None:
         """Parse a skill from its directory.

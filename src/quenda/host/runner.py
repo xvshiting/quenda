@@ -35,7 +35,7 @@ from quenda.host.loader import (
     load_agent_tools,
 )
 from quenda.host.registry import LoadedToolCatalog, NamedToolSpec, ToolRegistryBuilder
-from quenda.host.skill import SkillDiscovery, SkillActivator
+from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
 from quenda.host.storage import FileStorage, FileStorageConfig
 from quenda.host.workspace import WorkspaceResolver
 
@@ -81,6 +81,7 @@ class StableHostBinding:
         transient_skill_names: Transient model-selected skills for current task.
         loaded_tool_catalog: Catalog of custom tools.
         agent_package: Loaded agent package (for config access).
+        skill_activator: Skill activation manager.
     """
 
     agent_package_path: Path
@@ -99,6 +100,7 @@ class StableHostBinding:
     transient_skill_names: list[str] = field(default_factory=list)
     loaded_tool_catalog: LoadedToolCatalog | None = None
     agent_package: AgentPackage | None = None
+    skill_activator: SkillActivator | None = None
 
 
 @dataclass
@@ -130,6 +132,7 @@ def _resolve_tools(
     workspace: Path,
     config: AgentConfigYaml | None,
     loaded_tool_catalog: LoadedToolCatalog | None = None,
+    skill_resource_resolver: ResourceResolver | None = None,
 ) -> list[Tool]:
     """
     Resolve tools based on agent capability declaration.
@@ -151,6 +154,7 @@ def _resolve_tools(
         workspace: Workspace path for file operations.
         config: Agent configuration from config.yaml.
         loaded_tool_catalog: Catalog of agent-local custom tools.
+        skill_resource_resolver: Optional resolver for skill resource tools.
 
     Returns:
         List of resolved Tool instances.
@@ -223,13 +227,18 @@ def _resolve_tools(
                     )
             builder._catalog.add(spec)
 
+    # Register skill resource tools if resolver is provided
+    if skill_resource_resolver is not None:
+        builder.register_skill_resource_tools(skill_resource_resolver)
+
     # Resolve requested include names
     resolved_tools: list[Tool] = []
     seen_names: set[str] = set()
 
-    # First, add all bundle tools (already registered)
+    # Add all registered tools (builtin + skill_resource + agent_local)
+    # Note: skill_resource tools are always available when skills are configured
     for name, spec in builder._catalog.tools.items():
-        if spec.source == "builtin":
+        if spec.source in ("builtin", "skill_resource"):
             tool = _instantiate_tool(spec, workspace)
             if tool.name not in seen_names:
                 resolved_tools.append(tool)
@@ -395,14 +404,37 @@ def setup_host_binding(
         except KeyError:
             return None
 
-        # 8. Load agent-local custom tools
+        # 8. Setup skill discovery and activator
+        user_workspace_skills_path = resolver.get_user_workspace_skills_path(
+            user, binding
+        )
+        skill_discovery = SkillDiscovery(
+            user_workspace_skills_path=user_workspace_skills_path,
+            agent_package_path=agent_dir,
+        )
+        skill_activator = SkillActivator(discovery=skill_discovery)
+
+        # 9. Activate initial skills from config
+        if agent_package.config and agent_package.config.skills:
+            for skill_name in agent_package.config.skills:
+                skill_activator.activate_skill(skill_name, transient=False)
+
+        # 10. Create resource resolver for skill resource tools
+        skill_resource_resolver = ResourceResolver.from_activator(skill_activator)
+
+        # 11. Load agent-local custom tools
         tool_builder = ToolRegistryBuilder()
         load_agent_tools(agent_dir, tool_builder)
         loaded_tool_catalog = tool_builder.build()
 
-        # 9. Resolve tools (capability grant)
+        # 12. Resolve tools (capability grant)
         if tools is None:
-            tools = _resolve_tools(workspace, agent_package.config, loaded_tool_catalog)
+            tools = _resolve_tools(
+                workspace,
+                agent_package.config,
+                loaded_tool_catalog,
+                skill_resource_resolver,
+            )
 
         # 10. Resolve sandbox config
         sandbox_config = _resolve_sandbox_config(agent_package.config)
@@ -441,11 +473,6 @@ def setup_host_binding(
 
             compressor = SummarizerCompressor(model=summary_model, storage=storage)
 
-        # 13. Determine initial active skill names (from config only)
-        active_skill_names: list[str] = []
-        if agent_package.config and agent_package.config.skills:
-            active_skill_names = list(agent_package.config.skills)
-
         return StableHostBinding(
             agent_package_path=agent_dir,
             workspace_path=workspace,
@@ -459,10 +486,11 @@ def setup_host_binding(
             compression_policy=compression_policy,
             compressor=compressor,
             storage=storage,
-            active_skill_names=active_skill_names,
-            transient_skill_names=[],
+            active_skill_names=skill_activator.list_persistent(),
+            transient_skill_names=skill_activator.list_transient(),
             loaded_tool_catalog=loaded_tool_catalog,
             agent_package=agent_package,
+            skill_activator=skill_activator,
         )
 
     except Exception:
@@ -689,24 +717,9 @@ def setup_agent(
             user=binding.user,
         )
 
-        # Create SkillActivator with discovered skills
-        resolver = WorkspaceResolver()
-        user_workspace_skills_path = resolver.get_user_workspace_skills_path(
-            binding.user,
-            resolver.resolve(binding.workspace_path),
-        )
-
-        skill_discovery = SkillDiscovery(
-            user_workspace_skills_path=user_workspace_skills_path,
-            agent_package_path=binding.agent_package_path,
-        )
-        skill_activator = SkillActivator(skill_discovery)
-
-        # Activate skills by name
-        for skill_name in binding.active_skill_names:
-            skill_activator.activate_skill(skill_name)
-        for skill_name in binding.transient_skill_names:
-            skill_activator.activate_skill(skill_name, transient=True)
+        # Use skill components from binding (already initialized)
+        skill_discovery = binding.skill_activator.discovery if binding.skill_activator else None
+        skill_activator = binding.skill_activator
 
         # =====================================================================
         # Return AgentSetup (with both new and legacy fields)

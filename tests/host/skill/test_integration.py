@@ -124,8 +124,9 @@ This is the {skill_name} instruction content.
             if s.scope == InstructionScope.SKILL
         ]
         assert len(skill_sources) == 2
-        assert any("Active Skill: test-skill" in s.content for s in skill_sources)
-        assert any("Active Skill: another-skill" in s.content for s in skill_sources)
+        # Updated for Agent Skills spec structured format
+        assert any('<skill_content name="test-skill">' in s.content for s in skill_sources)
+        assert any('<skill_content name="another-skill">' in s.content for s in skill_sources)
         assert all("Available Skills" not in s.content for s in skill_sources)
 
     def test_agent_without_skills_config(self, tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ Provides a Host-owned tool registration and resolution mechanism for:
 - built-in named tools
 - built-in bundles
 - agent-local custom tools
-- future skill-provided tools
+- skill resource tools
 
 This is a Host concern, not Runtime or Kernel.
 """
@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from quenda.kernel.tool import Tool
+    from quenda.host.skill.resources import ResourceResolver
 
 
 @dataclass
@@ -167,6 +168,43 @@ class ToolRegistryBuilder:
             The LoadedToolCatalog with all registered tools.
         """
         return self._catalog
+
+    def register_skill_resource_tools(
+        self,
+        resolver: ResourceResolver,
+    ) -> None:
+        """
+        Register skill resource tools with the given resolver.
+
+        These tools allow the model to access skill resources:
+        - read_skill_resource: Read content from skill:// URI
+        - list_skill_resources: List available resources
+        - execute_skill_asset: Execute safe scripts
+
+        Args:
+            resolver: The ResourceResolver for active skills.
+
+        Raises:
+            ValueError: If any tool name is already registered.
+        """
+        from quenda.tools.skill_resources import (
+            ReadSkillResourceTool,
+            ListSkillResourcesTool,
+            ExecuteSkillAssetTool,
+        )
+
+        self.register(
+            ReadSkillResourceTool(resolver),
+            source="skill_resource",
+        )
+        self.register(
+            ListSkillResourcesTool(resolver),
+            source="skill_resource",
+        )
+        self.register(
+            ExecuteSkillAssetTool(resolver),
+            source="skill_resource",
+        )
 
 
 __all__ = [

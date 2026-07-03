@@ -151,22 +151,36 @@ class SkillActivator:
 
     def _build_resource_info(self, skill: SkillPackage) -> str:
         """
-        Build resource path information for a skill.
+        Build resource information for a skill using skill:// URIs.
 
-        Returns a formatted string with absolute paths for each resource,
-        allowing the model to execute scripts or access files correctly.
+        Returns a formatted string with URIs for each resource,
+        allowing the model to use skill resource tools.
         """
         if not skill.resources:
             return ""
 
         lines = ["## Skill Resources", ""]
-        lines.append("The following resources are available at these absolute paths:")
+        lines.append("Access resources using skill:// URIs:")
         lines.append("")
 
         for resource in skill.resources:
+            # Compute relative path within skill
+            try:
+                relative_path = str(resource.path.relative_to(skill.path))
+            except ValueError:
+                relative_path = resource.path.name
+
+            uri = f"skill://{skill.name}/{relative_path}"
             resource_type = resource.type
+            safe_marker = " [executable]" if resource.safe_to_execute else ""
             desc = f" - {resource.description}" if resource.description else ""
-            lines.append(f"- `{resource.path}` ({resource_type}){desc}")
+            lines.append(f"- `{uri}` ({resource_type}){safe_marker}{desc}")
+
+        lines.append("")
+        lines.append("Use tools to access resources:")
+        lines.append("- `read_skill_resource(uri)` - Read resource content")
+        lines.append("- `execute_skill_asset(uri, args)` - Execute executable assets")
+        lines.append("- `list_skill_resources()` - List all available resources")
 
         return "\n".join(lines)
 

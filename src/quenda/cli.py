@@ -543,6 +543,13 @@ def _run_repl(
                     indicator.stop()
                     in_run = False
 
+                # Note: Per Agent Skills specification, skill instructions are
+                # "durable behavioral guidance" and should persist throughout the
+                # session. We do NOT auto-offload transient skills after each Run.
+                # Transient skills are cleared only when:
+                # 1. User explicitly deactivates them
+                # 2. Session ends (they're not persisted to session metadata)
+
                 session.save()
                 status_bar.set_mode(session.mode)
 
