@@ -288,8 +288,8 @@ class MyKimiCompletionsApi(Api):
 
         # Inject tool descriptions if tools are available
         if tools:
-            tool_descriptions = self._format_tool_descriptions(tools)
-            tool_prompt = f"\n\n你可以使用以下工具：\n{tool_descriptions}"
+            tool_names = [t.name for t in tools]
+            tool_prompt = f"\n\n你有以下工具可以使用：{', '.join(tool_names)}"
 
             # Find system message and append
             for msg in converted_messages:
@@ -300,17 +300,10 @@ class MyKimiCompletionsApi(Api):
                 # No system message, prepend one
                 converted_messages.insert(0, {
                     "role": "system",
-                    "content": f"你可以使用以下工具：\n{tool_descriptions}",
+                    "content": f"你有以下工具可以使用：{', '.join(tool_names)}",
                 })
 
         return converted_messages
-
-    def _format_tool_descriptions(self, tools: list[Tool]) -> str:
-        """Format tool descriptions for system prompt."""
-        lines = []
-        for tool in tools:
-            lines.append(f"- {tool.name}: {tool.description}")
-        return "\n".join(lines)
 
     def _convert_response(self, response, tools: list[Tool] | None) -> ModelResponse:
         """Convert response to Quenda format."""
