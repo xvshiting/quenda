@@ -246,10 +246,12 @@ class MyKimiCompletionsApi(Api):
         Kimi endpoint doesn't support:
         - role: tool messages
         - assistant messages with tool_calls field
+        - tools parameter in request
 
-        So we convert:
-        - tool result -> user message
-        - assistant tool_calls -> XML format in content
+        So we need to:
+        1. Inject tool descriptions in system prompt
+        2. Convert tool result -> user message
+        3. Convert assistant tool_calls -> XML format in content
         """
         openai_messages = convert_messages_to_openai(messages)
 
@@ -284,7 +286,31 @@ class MyKimiCompletionsApi(Api):
             else:
                 converted_messages.append(msg)
 
+        # Inject tool descriptions if tools are available
+        if tools:
+            tool_descriptions = self._format_tool_descriptions(tools)
+            tool_prompt = f"\n\n你可以使用以下工具：\n{tool_descriptions}"
+
+            # Find system message and append
+            for msg in converted_messages:
+                if msg.get("role") == "system":
+                    msg["content"] = msg.get("content", "") + tool_prompt
+                    break
+            else:
+                # No system message, prepend one
+                converted_messages.insert(0, {
+                    "role": "system",
+                    "content": f"你可以使用以下工具：\n{tool_descriptions}",
+                })
+
         return converted_messages
+
+    def _format_tool_descriptions(self, tools: list[Tool]) -> str:
+        """Format tool descriptions for system prompt."""
+        lines = []
+        for tool in tools:
+            lines.append(f"- {tool.name}: {tool.description}")
+        return "\n".join(lines)
 
     def _convert_response(self, response, tools: list[Tool] | None) -> ModelResponse:
         """Convert response to Quenda format."""
