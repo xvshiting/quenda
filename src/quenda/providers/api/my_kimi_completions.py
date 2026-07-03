@@ -608,17 +608,31 @@ class MyKimiCompletionsApi(Api):
                         arguments=args if isinstance(args, dict) else {},
                     ))
 
-        # Strategy 4: Parse XML-style tool calls
+        # Strategy 4: Parse XML-style tool calls (Kimi format)
+        # Format: <tool>tool_name</tool>\n<parameter>{"arg": "value"}</parameter>
         if not tool_calls:
             for tool_name in tool_names:
                 tool_pattern = rf'<tool>\s*{re.escape(tool_name)}\s*</tool>'
                 if re.search(tool_pattern, content, re.IGNORECASE):
                     args = {}
-                    param_pattern = r'<(\w+)>([^<]*)</\1>'
-                    for match in re.finditer(param_pattern, content):
-                        param_name = match.group(1)
-                        if param_name.lower() not in ('tool', 'function'):
-                            args[param_name] = match.group(2).strip()
+
+                    # Try to parse <parameter> with JSON content
+                    param_match = re.search(r'<parameter>\s*(.*?)\s*</parameter>', content, re.DOTALL)
+                    if param_match:
+                        param_content = param_match.group(1).strip()
+                        # Try to parse as JSON
+                        try:
+                            args = json.loads(param_content)
+                        except json.JSONDecodeError:
+                            # If not JSON, treat as plain value
+                            args = {"value": param_content}
+                    else:
+                        # Fallback: parse individual <param>value</param> tags
+                        param_pattern = r'<(\w+)>([^<]*)</\1>'
+                        for match in re.finditer(param_pattern, content):
+                            param_name = match.group(1)
+                            if param_name.lower() not in ('tool', 'function', 'parameter'):
+                                args[param_name] = match.group(2).strip()
 
                     tool_calls.append(ToolCall(
                         id=f"call_{len(tool_calls)}",
