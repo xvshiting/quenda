@@ -41,18 +41,14 @@ if TYPE_CHECKING:
 
 
 # System prompt to inject when tools are available (for servers without tool-call-parser)
-TOOL_CALL_INSTRUCTION = """When you need to use a tool, respond ONLY with a JSON object in this exact format:
+TOOL_CALL_INSTRUCTION = """When you need to use a tool, output in one of these formats:
+
+JSON format:
 {"name": "tool_name", "arguments": {"param": "value"}}
 
-For multiple tool calls, respond ONLY with a JSON array:
-[{"name": "tool_name1", "arguments": {...}}, {"name": "tool_name2", "arguments": {...}}]
-
-CRITICAL RULES:
-1. Output ONLY the JSON - no text before, no text after
-2. Do NOT say "I will..." or "Let me..." - just output the JSON
-3. Do NOT use markdown code blocks - just raw JSON
-4. If you need information or want to perform an action, you MUST call a tool
-5. Only respond with text when you have the final answer for the user"""
+Or XML format:
+<tool>tool_name</tool>
+<parameter>{"param": "value"}</parameter>"""
 
 
 class MyKimiCompletionsApi(Api):
@@ -269,18 +265,17 @@ class MyKimiCompletionsApi(Api):
         for msg in openai_messages:
             if msg.get("role") == "tool":
                 # Convert tool result to user message format
-                # Clear instruction: continue with tool call or give final answer
                 tool_call_id = msg.get("tool_call_id", "unknown")
                 content = msg.get("content", "")
                 converted_messages.append({
                     "role": "user",
-                    "content": f"[Tool result for {tool_call_id}]:\n{content}\n\nIf you need more information, call another tool with JSON. If you have the answer, respond directly.",
+                    "content": f"[Tool result for {tool_call_id}]:\n{content}",
                 })
             elif msg.get("role") == "assistant" and msg.get("tool_calls"):
-                # Convert assistant tool_calls to JSON format
+                # Convert assistant tool_calls to XML format (Kimi style)
                 # This "teaches" the model what format to output next
                 tool_calls = msg.get("tool_calls", [])
-                calls_json = []
+                xml_parts = []
                 for tc in tool_calls:
                     name = tc.get("function", {}).get("name", "unknown")
                     args_str = tc.get("function", {}).get("arguments", "{}")
@@ -288,12 +283,13 @@ class MyKimiCompletionsApi(Api):
                         args = json.loads(args_str) if isinstance(args_str, str) else args_str
                     except json.JSONDecodeError:
                         args = {}
-                    calls_json.append({"name": name, "arguments": args})
+                    # Output in Kimi XML format
+                    xml_parts.append(f"<tool>{name}</tool>")
+                    xml_parts.append(f"<parameter>{json.dumps(args, ensure_ascii=False)}</parameter>")
 
-                # Output as JSON array - model will mimic this format
                 converted_messages.append({
                     "role": "assistant",
-                    "content": json.dumps(calls_json, ensure_ascii=False),
+                    "content": "\n".join(xml_parts),
                 })
             else:
                 converted_messages.append(msg)
