@@ -47,10 +47,12 @@ TOOL_CALL_INSTRUCTION = """When you need to use a tool, respond ONLY with a JSON
 For multiple tool calls, respond ONLY with a JSON array:
 [{"name": "tool_name1", "arguments": {...}}, {"name": "tool_name2", "arguments": {...}}]
 
-IMPORTANT RULES:
-1. Output ONLY the JSON, no other text before or after
-2. Do NOT describe what you will do in text - just output the JSON
-3. Do NOT include markdown code blocks - just the raw JSON object/array"""
+CRITICAL RULES:
+1. Output ONLY the JSON - no text before, no text after
+2. Do NOT say "I will..." or "Let me..." - just output the JSON
+3. Do NOT use markdown code blocks - just raw JSON
+4. If you need information or want to perform an action, you MUST call a tool
+5. Only respond with text when you have the final answer for the user"""
 
 
 class MyKimiCompletionsApi(Api):
@@ -267,11 +269,12 @@ class MyKimiCompletionsApi(Api):
         for msg in openai_messages:
             if msg.get("role") == "tool":
                 # Convert tool result to user message format
+                # Clear instruction: continue with tool call or give final answer
                 tool_call_id = msg.get("tool_call_id", "unknown")
                 content = msg.get("content", "")
                 converted_messages.append({
                     "role": "user",
-                    "content": f"[Tool result for {tool_call_id}]:\n{content}",
+                    "content": f"[Tool result for {tool_call_id}]:\n{content}\n\nIf you need more information, call another tool with JSON. If you have the answer, respond directly.",
                 })
             elif msg.get("role") == "assistant" and msg.get("tool_calls"):
                 # Convert assistant tool_calls to JSON format
