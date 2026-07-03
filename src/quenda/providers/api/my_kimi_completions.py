@@ -288,8 +288,10 @@ class MyKimiCompletionsApi(Api):
 
         # Inject tool descriptions if tools are available
         if tools:
-            tool_names = [t.name for t in tools]
-            tool_prompt = f"\n\n你有以下工具可以使用：{', '.join(tool_names)}"
+            tool_parts = []
+            for tool in tools:
+                tool_parts.append(f"你有 {tool.name} 工具可以{tool.description}")
+            tool_prompt = "\n" + "\n".join(tool_parts)
 
             # Find system message and append
             for msg in converted_messages:
@@ -300,7 +302,7 @@ class MyKimiCompletionsApi(Api):
                 # No system message, prepend one
                 converted_messages.insert(0, {
                     "role": "system",
-                    "content": f"你有以下工具可以使用：{', '.join(tool_names)}",
+                    "content": "\n".join(tool_parts),
                 })
 
         return converted_messages
