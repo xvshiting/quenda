@@ -40,17 +40,6 @@ if TYPE_CHECKING:
     pass
 
 
-# System prompt to inject when tools are available (for servers without tool-call-parser)
-TOOL_CALL_INSTRUCTION = """When you need to use a tool, output in one of these formats:
-
-JSON format:
-{"name": "tool_name", "arguments": {"param": "value"}}
-
-Or XML format:
-<tool>tool_name</tool>
-<parameter>{"param": "value"}</parameter>"""
-
-
 class MyKimiCompletionsApi(Api):
     """
     Custom Kimi-style completions API implementation.
@@ -104,7 +93,7 @@ class MyKimiCompletionsApi(Api):
             # Convert messages - inject tool instructions if needed
             # NOTE: For endpoints without tool-call-parser, we don't send 'tools' parameter
             # Instead, we inject tool descriptions in the system prompt
-            openai_messages = self._convert_messages_with_tool_instructions(messages, tools)
+            openai_messages = self._convert_messages_for_kimi(messages, tools)
 
             try:
                 # Make request WITHOUT tools parameter (endpoint doesn't support OpenAI tool format)
@@ -246,18 +235,21 @@ class MyKimiCompletionsApi(Api):
         except openai.APIError as e:
             raise APIError(f"API error: {e}")
 
-    def _convert_messages_with_tool_instructions(
+    def _convert_messages_for_kimi(
         self,
         messages: list[Message],
         tools: list[Tool] | None,
     ) -> list[dict]:
         """
-        Convert messages and inject tool call instructions if needed.
+        Convert messages to Kimi-compatible format.
 
-        For endpoints without tool-call-parser, we need to:
-        1. Inject explicit instructions in the system message about how to format tool calls
-        2. Convert tool result messages to user messages (API doesn't support role: tool)
-        3. Handle assistant messages with tool calls (convert to JSON format)
+        Kimi endpoint doesn't support:
+        - role: tool messages
+        - assistant messages with tool_calls field
+
+        So we convert:
+        - tool result -> user message
+        - assistant tool_calls -> XML format in content
         """
         openai_messages = convert_messages_to_openai(messages)
 
@@ -273,7 +265,6 @@ class MyKimiCompletionsApi(Api):
                 })
             elif msg.get("role") == "assistant" and msg.get("tool_calls"):
                 # Convert assistant tool_calls to XML format (Kimi style)
-                # This "teaches" the model what format to output next
                 tool_calls = msg.get("tool_calls", [])
                 xml_parts = []
                 for tc in tool_calls:
@@ -283,7 +274,6 @@ class MyKimiCompletionsApi(Api):
                         args = json.loads(args_str) if isinstance(args_str, str) else args_str
                     except json.JSONDecodeError:
                         args = {}
-                    # Output in Kimi XML format
                     xml_parts.append(f"<tool>{name}</tool>")
                     xml_parts.append(f"<parameter>{json.dumps(args, ensure_ascii=False)}</parameter>")
 
@@ -294,49 +284,7 @@ class MyKimiCompletionsApi(Api):
             else:
                 converted_messages.append(msg)
 
-        if not tools:
-            return converted_messages
-
-        # Always inject tool instructions (model may need to make more tool calls)
-        tool_instruction_added = False
-        tool_descriptions = self._format_tool_descriptions(tools)
-
-        for msg in converted_messages:
-            if msg.get("role") == "system":
-                # Append tool instructions to existing system message
-                existing_content = msg.get("content", "")
-                msg["content"] = f"{existing_content}\n\n{TOOL_CALL_INSTRUCTION}\n\nAvailable tools:\n{tool_descriptions}"
-                tool_instruction_added = True
-                break
-
-        # If no system message, prepend one
-        if not tool_instruction_added:
-            converted_messages.insert(0, {
-                "role": "system",
-                "content": f"{TOOL_CALL_INSTRUCTION}\n\nAvailable tools:\n{tool_descriptions}",
-            })
-
         return converted_messages
-
-    def _format_tool_descriptions(self, tools: list[Tool]) -> str:
-        """Format tool descriptions for the system prompt."""
-        descriptions = []
-        for tool in tools:
-            params_desc = ""
-            if tool.parameters and "properties" in tool.parameters:
-                params = []
-                for name, prop in tool.parameters["properties"].items():
-                    if name == "_summary":
-                        continue
-                    param_type = prop.get("type", "any")
-                    param_desc = prop.get("description", "")
-                    params.append(f"  - {name} ({param_type}): {param_desc}")
-                if params:
-                    params_desc = "\n".join(params)
-
-            descriptions.append(f"- {tool.name}: {tool.description}\n  Arguments:\n{params_desc}")
-
-        return "\n".join(descriptions)
 
     def _convert_response(self, response, tools: list[Tool] | None) -> ModelResponse:
         """Convert response to Quenda format."""
