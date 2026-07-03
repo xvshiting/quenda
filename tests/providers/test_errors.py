@@ -5,7 +5,7 @@ Tests for provider error types.
 import pytest
 
 from quenda.providers.errors import (
-    KoraError,
+    QuendaError,
     ProviderError,
     APIError,
     RateLimitError,
@@ -20,12 +20,12 @@ class TestErrorHierarchy:
     """Tests for error inheritance."""
 
     def test_quenda_error_is_exception(self) -> None:
-        """KoraError should inherit from Exception."""
-        assert issubclass(KoraError, Exception)
+        """QuendaError should inherit from Exception."""
+        assert issubclass(QuendaError, Exception)
 
     def test_provider_error_inherits_quenda_error(self) -> None:
-        """ProviderError should inherit from KoraError."""
-        assert issubclass(ProviderError, KoraError)
+        """ProviderError should inherit from QuendaError."""
+        assert issubclass(ProviderError, QuendaError)
 
     def test_api_error_inherits_provider_error(self) -> None:
         """APIError should inherit from ProviderError."""
@@ -94,7 +94,7 @@ class TestErrorCatching:
             raise error
 
     def test_catch_auth_as_quenda_error(self) -> None:
-        """AuthenticationError should be catchable as KoraError."""
+        """AuthenticationError should be catchable as QuendaError."""
         error = AuthenticationError("Invalid API key")
-        with pytest.raises(KoraError):
+        with pytest.raises(QuendaError):
             raise error

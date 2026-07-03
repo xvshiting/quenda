@@ -730,6 +730,73 @@ def load_agent_tools(
     return loaded
 
 
+def load_agent_providers(
+    agent_path: Path,
+) -> int:
+    """
+    Load provider extensions from an agent package.
+
+    Scans `extensions/providers/*.py` in the agent package directory,
+    loads each module, and registers providers to the global registry.
+
+    Loading contract (one of):
+    1. `providers` list - list of ProviderSpec objects
+    2. `register(registry)` function - called to register providers
+
+    Args:
+        agent_path: Path to the agent package directory.
+
+    Returns:
+        Number of provider files loaded (not individual providers).
+
+    Raises:
+        ValueError: If a provider ID conflicts with an already registered provider.
+    """
+    from quenda.providers import get_provider_registry
+
+    providers_dir = agent_path / "extensions" / "providers"
+    if not providers_dir.exists():
+        return 0
+
+    registry = get_provider_registry()
+    loaded = 0
+
+    for py_file in providers_dir.glob("*.py"):
+        # Skip private/internal modules
+        if py_file.name.startswith("_"):
+            continue
+
+        try:
+            module = _load_extension_module(py_file, namespace="providers")
+            if module is None:
+                continue
+
+            # Priority 1: providers list
+            if hasattr(module, "providers"):
+                for spec in module.providers:
+                    registry.register(spec)
+                loaded += 1
+
+            # Priority 2: register function
+            elif hasattr(module, "register"):
+                module.register(registry)
+                loaded += 1
+
+        except ValueError:
+            # Re-raise ValueError (duplicate provider ID)
+            raise
+        except Exception as e:
+            # Log warning but don't fail agent loading
+            import warnings
+            warnings.warn(
+                f"Failed to load provider extension {py_file}: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    return loaded
+
+
 def _load_extension_module(py_file: Path, *, namespace: str):
     """
     Dynamically load a Python module from a file.
@@ -825,5 +892,6 @@ __all__ = [
     "load_agent_commands",
     "load_agent_interactions",
     "load_agent_tools",
+    "load_agent_providers",
     "find_builtin_agent",
 ]

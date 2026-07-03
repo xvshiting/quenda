@@ -73,6 +73,8 @@ def _register_default_apis(registry: ApiRegistry) -> None:
     """Register built-in API implementations."""
     from quenda.providers.api.openai_completions import OpenAICompletionsApi
     from quenda.providers.api.anthropic_messages import AnthropicMessagesApi
+    from quenda.providers.api.my_kimi_completions import MyKimiCompletionsApi
 
     registry.register("openai-completions", OpenAICompletionsApi())
     registry.register("anthropic-messages", AnthropicMessagesApi())
+    registry.register("my-kimi-completions", MyKimiCompletionsApi())

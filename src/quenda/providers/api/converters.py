@@ -67,18 +67,23 @@ def convert_messages_to_openai(messages: list[Message]) -> list[dict]:
                     }
                     for tc in items
                 ]
+                # Some providers require content to be a string or omitted entirely
+                # Use empty string for compatibility
                 openai_messages.append({
                     "role": "assistant",
+                    "content": "",  # Empty string for better compatibility
                     "tool_calls": tool_calls,
                 })
 
             elif isinstance(first_item, ToolResult):
                 # Tool results (from user message)
                 for tr in items:
+                    # Ensure content is a string (some providers require non-null content)
+                    content = tr.content if tr.content is not None else ""
                     openai_messages.append({
                         "role": "tool",
                         "tool_call_id": tr.call_id,
-                        "content": tr.content,
+                        "content": content,
                     })
 
     return openai_messages

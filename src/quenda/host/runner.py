@@ -33,6 +33,7 @@ from quenda.host.loader import (
     ExecutionConfig,
     load_agent_package,
     load_agent_tools,
+    load_agent_providers,
 )
 from quenda.host.registry import LoadedToolCatalog, NamedToolSpec, ToolRegistryBuilder
 from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
@@ -388,7 +389,10 @@ def setup_host_binding(
         # 5. Resolve user
         user = DefaultUserResolver().resolve()
 
-        # 6. Resolve provider/model
+        # 6. Load agent-local custom providers (before resolving provider/model)
+        load_agent_providers(agent_dir)
+
+        # 7. Resolve provider/model
         provider_name = provider or (
             agent_package.config.model_provider if agent_package.config else None
         ) or "deepseek"
@@ -396,7 +400,7 @@ def setup_host_binding(
             agent_package.config.model_name if agent_package.config else None
         ) or "deepseek-v4-flash"
 
-        # 7. Get model instance
+        # 8. Get model instance
         from quenda.providers import get_provider_registry
         registry = get_provider_registry()
         try:
@@ -404,7 +408,7 @@ def setup_host_binding(
         except KeyError:
             return None
 
-        # 8. Setup skill discovery and activator
+        # 9. Setup skill discovery and activator
         user_workspace_skills_path = resolver.get_user_workspace_skills_path(
             user, binding
         )
@@ -414,20 +418,20 @@ def setup_host_binding(
         )
         skill_activator = SkillActivator(discovery=skill_discovery)
 
-        # 9. Activate initial skills from config
+        # 10. Activate initial skills from config
         if agent_package.config and agent_package.config.skills:
             for skill_name in agent_package.config.skills:
                 skill_activator.activate_skill(skill_name, transient=False)
 
-        # 10. Create resource resolver for skill resource tools
+        # 11. Create resource resolver for skill resource tools
         skill_resource_resolver = ResourceResolver.from_activator(skill_activator)
 
-        # 11. Load agent-local custom tools
+        # 12. Load agent-local custom tools
         tool_builder = ToolRegistryBuilder()
         load_agent_tools(agent_dir, tool_builder)
         loaded_tool_catalog = tool_builder.build()
 
-        # 12. Resolve tools (capability grant)
+        # 13. Resolve tools (capability grant)
         if tools is None:
             tools = _resolve_tools(
                 workspace,
@@ -436,14 +440,14 @@ def setup_host_binding(
                 skill_resource_resolver,
             )
 
-        # 10. Resolve sandbox config
+        # 14. Resolve sandbox config
         sandbox_config = _resolve_sandbox_config(agent_package.config)
 
-        # 11. Setup storage
+        # 15. Setup storage
         storage_path = resolver.get_user_workspace_path(user, agent_package.name, binding)
         storage = FileStorage(config=FileStorageConfig(base_dir=storage_path))
 
-        # 12. Setup compression (if configured)
+        # 16. Setup compression (if configured)
         compression_policy = None
         compressor = None
 

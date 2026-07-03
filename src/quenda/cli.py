@@ -104,16 +104,13 @@ def run_agent(
     # Create components with theme
     renderer = ConsoleRenderer(theme=theme, verbose=True)
     indicator = SpinnerIndicator(theme=theme, stream=sys.stderr)
-    activity_handler = ActivityEventHandler(
+    # Use StreamingEventHandler to show model responses
+    from quenda.interface.events import StreamingEventHandler
+    streaming_handler = StreamingEventHandler(
+        renderer=renderer,
         indicator=indicator,
         theme=theme,
-        renderer=renderer,
     )
-    progress_handler = ProgressEventHandler(
-        renderer=renderer,
-        indicator=indicator,
-    )
-    phase_handler = CompositeEventHandler([activity_handler, progress_handler])
 
     # Create skill activation handler (ADR-027)
     def skill_activation_handler(skill_names: list[str]) -> str | None:
@@ -145,7 +142,7 @@ def run_agent(
     try:
         session.send_sync(
             user_message,
-            on_event=phase_handler.on_event,
+            on_event=streaming_handler.on_event,
             skill_activation_handler=skill_activation_handler,
         )
     finally:
