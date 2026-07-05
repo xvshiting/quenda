@@ -239,7 +239,7 @@ class FileStorage:
 
     def save_session(self, state: SessionState) -> None:
         """Persist session state to JSON file."""
-        from quenda.kernel.types import Message, ToolCall, ToolResult
+        from quenda.kernel.types import ImageContent, Message, TextContent, ToolCall, ToolResult
 
         path = self._sessions_dir / f"{state.id}.json"
 
@@ -252,9 +252,13 @@ class FileStorage:
                     "content": msg.content,
                 })
             else:
-                # Handle ToolCall and ToolResult lists
+                # Handle ToolCall, ToolResult, TextContent, ImageContent lists
                 items = list(msg.content)
-                if items and isinstance(items[0], ToolCall):
+                if not items:
+                    continue
+
+                first_item = items[0]
+                if isinstance(first_item, ToolCall):
                     messages_data.append({
                         "role": msg.role,
                         "tool_calls": [
@@ -266,7 +270,7 @@ class FileStorage:
                             for tc in items
                         ],
                     })
-                elif items and isinstance(items[0], ToolResult):
+                elif isinstance(first_item, ToolResult):
                     messages_data.append({
                         "role": msg.role,
                         "tool_results": [
@@ -275,9 +279,36 @@ class FileStorage:
                                 "name": tr.name,
                                 "content": tr.content,
                                 "is_error": tr.is_error,
+                                "image_content": {
+                                    "image_url": tr.image_content.image_url,
+                                    "media_type": tr.image_content.media_type,
+                                    "data": tr.image_content.data,
+                                } if tr.image_content else None,
                             }
                             for tr in items
                         ],
+                    })
+                elif isinstance(first_item, (TextContent, ImageContent)):
+                    # Multimodal content
+                    content_blocks = []
+                    for item in items:
+                        if isinstance(item, TextContent):
+                            content_blocks.append({
+                                "type": "text",
+                                "text": item.text,
+                            })
+                        elif isinstance(item, ImageContent):
+                            block = {"type": "image"}
+                            if item.image_url:
+                                block["image_url"] = item.image_url
+                            if item.media_type:
+                                block["media_type"] = item.media_type
+                            if item.data:
+                                block["data"] = item.data
+                            content_blocks.append(block)
+                    messages_data.append({
+                        "role": msg.role,
+                        "content_blocks": content_blocks,
                     })
 
         # Serialize usage
@@ -302,6 +333,20 @@ class FileStorage:
             for block in state.summary_blocks
         ]
 
+        # Serialize image refs (ADR-027)
+        image_refs_data = {}
+        for ref_id, ref in state.image_refs.items():
+            image_refs_data[ref_id] = {
+                "id": ref.id,
+                "source": {
+                    "scheme": ref.source.scheme,
+                    "uri": ref.source.uri,
+                    "media_type": ref.source.media_type,
+                    "filename": ref.source.filename,
+                },
+                "size_bytes": ref.size_bytes,
+            }
+
         data = {
             "id": state.id,
             "agent_name": state.agent_name,
@@ -311,13 +356,22 @@ class FileStorage:
             "usage": usage_data,
             "summary_blocks": summary_blocks_data,
             "archive_refs": state.archive_refs,
+            "image_refs": image_refs_data,
         }
 
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def load_session(self, session_id: str) -> SessionState | None:
         """Load session state from JSON file."""
-        from quenda.kernel.types import Message, ToolCall, ToolResult
+        from quenda.kernel.types import (
+            ImageContent,
+            ImageRef,
+            ImageSource,
+            Message,
+            TextContent,
+            ToolCall,
+            ToolResult,
+        )
         from quenda.runtime.session import SessionState, SessionUsage, SummaryBlock
 
         path = self._sessions_dir / f"{session_id}.json"
@@ -350,10 +404,32 @@ class FileStorage:
                         name=tr["name"],
                         content=tr["content"],
                         is_error=tr.get("is_error", False),
+                        image_content=(
+                            ImageContent(
+                                image_url=tr["image_content"].get("image_url"),
+                                media_type=tr["image_content"].get("media_type"),
+                                data=tr["image_content"].get("data"),
+                            )
+                            if tr.get("image_content")
+                            else None
+                        ),
                     )
                     for tr in msg_data["tool_results"]
                 ]
                 messages.append(Message(role=role, content=tool_results))
+            elif "content_blocks" in msg_data:
+                # Multimodal content
+                content_blocks = []
+                for block in msg_data["content_blocks"]:
+                    if block["type"] == "text":
+                        content_blocks.append(TextContent(text=block.get("text", "")))
+                    elif block["type"] == "image":
+                        content_blocks.append(ImageContent(
+                            image_url=block.get("image_url"),
+                            media_type=block.get("media_type"),
+                            data=block.get("data"),
+                        ))
+                messages.append(Message(role=role, content=content_blocks))
 
         # Deserialize usage
         usage_data = data.get("usage", {})
@@ -379,6 +455,21 @@ class FileStorage:
             for block_data in data.get("summary_blocks", [])
         ]
 
+        # Deserialize image refs (ADR-027)
+        image_refs = {}
+        for ref_id, ref_data in data.get("image_refs", {}).items():
+            source_data = ref_data.get("source", {})
+            image_refs[ref_id] = ImageRef(
+                id=ref_data["id"],
+                source=ImageSource(
+                    scheme=source_data["scheme"],
+                    uri=source_data["uri"],
+                    media_type=source_data["media_type"],
+                    filename=source_data.get("filename"),
+                ),
+                size_bytes=ref_data.get("size_bytes"),
+            )
+
         state = SessionState(
             id=data["id"],
             agent_name=data["agent_name"],
@@ -391,6 +482,7 @@ class FileStorage:
         state.usage = usage
         state.summary_blocks = summary_blocks
         state.archive_refs = data.get("archive_refs", [])
+        state.image_refs = image_refs
 
         return state
 
@@ -464,7 +556,7 @@ class FileStorage:
         """
         from uuid import uuid4
 
-        from quenda.kernel.types import ToolCall, ToolResult
+        from quenda.kernel.types import ImageContent, TextContent, ToolCall, ToolResult
 
         archive_id = archive_id or str(uuid4())
         archive_dir = self.config.base_dir / "archives" / session_id
@@ -481,7 +573,11 @@ class FileStorage:
                 })
             else:
                 items = list(msg.content)
-                if items and isinstance(items[0], ToolCall):
+                if not items:
+                    continue
+
+                first_item = items[0]
+                if isinstance(first_item, ToolCall):
                     messages_data.append({
                         "role": msg.role,
                         "tool_calls": [
@@ -493,7 +589,7 @@ class FileStorage:
                             for tc in items
                         ],
                     })
-                elif items and isinstance(items[0], ToolResult):
+                elif isinstance(first_item, ToolResult):
                     messages_data.append({
                         "role": msg.role,
                         "tool_results": [
@@ -505,6 +601,28 @@ class FileStorage:
                             }
                             for tr in items
                         ],
+                    })
+                elif isinstance(first_item, (TextContent, ImageContent)):
+                    # Multimodal content
+                    content_blocks = []
+                    for item in items:
+                        if isinstance(item, TextContent):
+                            content_blocks.append({
+                                "type": "text",
+                                "text": item.text,
+                            })
+                        elif isinstance(item, ImageContent):
+                            block = {"type": "image"}
+                            if item.image_url:
+                                block["image_url"] = item.image_url
+                            if item.media_type:
+                                block["media_type"] = item.media_type
+                            if item.data:
+                                block["data"] = item.data
+                            content_blocks.append(block)
+                    messages_data.append({
+                        "role": msg.role,
+                        "content_blocks": content_blocks,
                     })
 
         archive_data = {
@@ -532,7 +650,13 @@ class FileStorage:
         Returns:
             The archived messages, or None if not found.
         """
-        from quenda.kernel.types import Message, ToolCall, ToolResult
+        from quenda.kernel.types import (
+            ImageContent,
+            Message,
+            TextContent,
+            ToolCall,
+            ToolResult,
+        )
 
         archive_path = self.config.base_dir / "archives" / session_id / f"{archive_id}.json"
         if not archive_path.exists():
@@ -568,6 +692,19 @@ class FileStorage:
                     for tr in msg_data["tool_results"]
                 ]
                 messages.append(Message(role=role, content=tool_results))
+            elif "content_blocks" in msg_data:
+                # Multimodal content
+                content_blocks = []
+                for block in msg_data["content_blocks"]:
+                    if block["type"] == "text":
+                        content_blocks.append(TextContent(text=block.get("text", "")))
+                    elif block["type"] == "image":
+                        content_blocks.append(ImageContent(
+                            image_url=block.get("image_url"),
+                            media_type=block.get("media_type"),
+                            data=block.get("data"),
+                        ))
+                messages.append(Message(role=role, content=content_blocks))
 
         return messages
 

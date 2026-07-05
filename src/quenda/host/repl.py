@@ -13,9 +13,12 @@ This follows the architecture:
 
 from __future__ import annotations
 
+import base64
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from quenda.host.commands import (
     CommandCandidate,
@@ -27,6 +30,7 @@ from quenda.host.commands import (
     create_default_registry,
 )
 from quenda.host.runner import refresh_run_context
+from quenda.kernel.types import ImageContent, ImageRef, ImageSource, TextContent
 
 if TYPE_CHECKING:
     from quenda.runtime.agent import Agent
@@ -35,6 +39,23 @@ if TYPE_CHECKING:
     from quenda.host.context import ContextRebuilder
     from quenda.host.skill import SkillActivator, SkillDiscovery
     from quenda.kernel.model import Model
+
+
+# 图片引用模式: [img0], [img1], [img0: filename], etc.
+IMAGE_REF_PATTERN = re.compile(r'\[img(\d+)(?::\s*[^\]]+)?\]')
+
+
+def _infer_media_type(path: str) -> str:
+    """从文件扩展名推断媒体类型。"""
+    ext = Path(path).suffix.lower()
+    media_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
+    return media_types.get(ext, "image/png")
 
 
 @dataclass(frozen=True)
@@ -445,6 +466,135 @@ class ReplRuntime:
     def is_exit_requested(self, result: CommandResult) -> bool:
         """Check if a command result requests exit."""
         return result.action == ReplAction.EXIT
+
+    # -------------------------------------------------------------------------
+    # Image reference handling (ADR-027)
+    # -------------------------------------------------------------------------
+
+    def create_image_ref(self, path: str) -> ImageRef | None:
+        """
+        从本地文件路径创建 ImageRef。
+
+        Args:
+            path: 本地文件路径（可以是 ~ 开头或相对路径）
+
+        Returns:
+            ImageRef 如果文件存在且是图片，否则 None
+        """
+        expanded_path = Path(path).expanduser()
+        if not expanded_path.exists():
+            return None
+
+        # 检查是否是图片文件
+        media_type = _infer_media_type(path)
+        filename = expanded_path.name
+
+        # 生成引用 ID
+        ref_id = f"img{len(self._session.state.image_refs)}"
+
+        # 获取文件大小
+        size_bytes = expanded_path.stat().st_size
+
+        # 创建 ImageRef
+        ref = ImageRef(
+            id=ref_id,
+            source=ImageSource(
+                scheme="file",
+                uri=f"file://{expanded_path.absolute()}",
+                media_type=media_type,
+                filename=filename,
+            ),
+            size_bytes=size_bytes,
+        )
+
+        # 注册到 session
+        self._session.state.add_image_ref(ref)
+
+        return ref
+
+    def parse_image_refs(self, text: str) -> tuple[str, list[str]]:
+        """
+        解析文本中的图片引用。
+
+        Args:
+            text: 用户输入的文本
+
+        Returns:
+            (清理后的文本, 引用 ID 列表)
+        """
+        refs = IMAGE_REF_PATTERN.findall(text)
+        return text, [f"img{r}" for r in refs]
+
+    def resolve_image_ref(self, ref_id: str) -> ImageContent | None:
+        """
+        将图片引用解析为 ImageContent。
+
+        Args:
+            ref_id: 图片引用 ID，如 "img0"
+
+        Returns:
+            ImageContent 如果引用存在，否则 None
+        """
+        ref = self._session.state.get_image_ref(ref_id)
+        if ref is None:
+            return None
+
+        source = ref.source
+
+        if source.scheme == "file":
+            # 本地文件：读取并编码为 base64
+            path = source.uri[7:]  # 移除 "file://" 前缀
+            try:
+                with open(path, "rb") as f:
+                    data = base64.b64encode(f.read()).decode("utf-8")
+                return ImageContent(
+                    media_type=source.media_type,
+                    data=data,
+                )
+            except Exception:
+                return None
+
+        elif source.scheme in ("https", "http"):
+            # 远程 URL：直接使用
+            return ImageContent(image_url=source.uri)
+
+        elif source.scheme == "data":
+            # 内嵌数据：直接使用
+            return ImageContent(
+                media_type=source.media_type,
+                data=source.uri.split(",", 1)[1] if "," in source.uri else "",
+            )
+
+        return None
+
+    def build_multimodal_message(
+        self,
+        text: str,
+    ) -> str | Sequence[TextContent | ImageContent]:
+        """
+        构建可能包含图片的多模态消息。
+
+        Args:
+            text: 用户输入的文本（可能包含 [img0] 等引用）
+
+        Returns:
+            如果没有图片引用，返回原始字符串
+            如果有图片引用，返回 TextContent + ImageContent 列表
+        """
+        _, ref_ids = self.parse_image_refs(text)
+
+        if not ref_ids:
+            return text
+
+        # 构建多模态内容
+        content: list[TextContent | ImageContent] = [TextContent(text=text)]
+
+        for ref_id in ref_ids:
+            image_content = self.resolve_image_ref(ref_id)
+            if image_content:
+                content.append(image_content)
+
+        return content
 
 
 __all__ = [

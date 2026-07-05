@@ -56,5 +56,6 @@ Thumbs.db
 # Workspace state
 .kora/
 
+claude-code/
 # Custom providers (may contain company-specific configuration)
 agents/quenda-code/src/quenda_code/agent/extensions/providers/

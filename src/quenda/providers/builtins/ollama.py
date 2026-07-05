@@ -10,6 +10,7 @@ OLLAMA_SPEC = ProviderSpec(
     name="Ollama",
     base_url="http://localhost:11434/v1",
     api="openai-completions",
+    api_key="ollama",  # Ollama doesn't require real API keys
     models=(
         # Llama 3.x family
         ModelSpec(
@@ -48,6 +49,11 @@ OLLAMA_SPEC = ProviderSpec(
             tool_calling=True,
         ),
         # Qwen family
+        ModelSpec(
+            id="qwen3.6:35b-mlx",
+            name="qwen3.6:35b-mlx",
+            tool_calling=True,
+        ),
         ModelSpec(
             id="qwen3:14b",
             name="Qwen3 14B",

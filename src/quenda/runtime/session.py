@@ -9,13 +9,13 @@ Provides:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from quenda.kernel.types import Message
+from quenda.kernel.types import ImageContent, ImageRef, Message, TextContent
 
 if TYPE_CHECKING:
     from quenda.kernel.model import Model
@@ -83,6 +83,9 @@ class SessionState:
     summary_blocks: list[SummaryBlock] = field(default_factory=list)
     archive_refs: list[str] = field(default_factory=list)
 
+    # ADR-027: Image references (multimodal support)
+    image_refs: dict[str, ImageRef] = field(default_factory=dict)
+
     @classmethod
     def create(cls, agent_name: str, *, session_id: str | None = None) -> SessionState:
         """Create a new session state."""
@@ -95,9 +98,20 @@ class SessionState:
         """Add a message to history."""
         self.messages.append(message)
 
-    def add_user_message(self, content: str) -> None:
-        """Add a user message."""
-        self.messages.append(Message(role="user", content=content))
+    def add_user_message(self, content: str | Sequence[TextContent | ImageContent]) -> None:
+        """Add a user message (text or multimodal)."""
+        if isinstance(content, str):
+            self.messages.append(Message(role="user", content=content))
+        else:
+            self.messages.append(Message(role="user", content=content))
+
+    def add_image_ref(self, ref: ImageRef) -> None:
+        """Add an image reference to the session."""
+        self.image_refs[ref.id] = ref
+
+    def get_image_ref(self, ref_id: str) -> ImageRef | None:
+        """Get an image reference by ID."""
+        return self.image_refs.get(ref_id)
 
     def clear(self) -> None:
         """Clear message history."""
@@ -286,7 +300,7 @@ class Session:
 
     async def send(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
@@ -296,7 +310,7 @@ class Session:
         Send a message in this session.
 
         Args:
-            message: The user message.
+            message: The user message (text or multimodal content).
             model: Optional model override.
             on_event: Optional callback for events.
             skill_activation_handler: Optional handler for skill activation (ADR-027).
@@ -343,7 +357,7 @@ class Session:
 
     async def send_collecting(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
@@ -370,7 +384,7 @@ class Session:
 
     def send_sync(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
@@ -383,7 +397,7 @@ class Session:
 
     def send_collecting_sync(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,

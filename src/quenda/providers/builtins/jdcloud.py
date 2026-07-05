@@ -19,23 +19,34 @@ JDCLOUD_SPEC = ProviderSpec(
             tool_calling=True,
         ),
         ModelSpec(
-            id="GLM-4",
-            name="GLM-4",
+            id="Kimi-K2.5",
+            name="Kimi-K2.5",
+            tool_calling=True,
+            vision=True,  # 支持多模态
+        ),
+        ModelSpec(
+            id="GLM-4.7",
+            name="GLM-4.7",
             tool_calling=True,
         ),
         ModelSpec(
-            id="glm-4-plus",
-            name="GLM-4 Plus",
+            id="DeepSeek-V3.2",
+            name="DeepSeek-V3.2",
             tool_calling=True,
         ),
         ModelSpec(
-            id="glm-4-flash",
-            name="GLM-4 Flash",
+            id="MiniMax-M2.5",
+            name="MiniMax-M2.5",
             tool_calling=True,
         ),
         ModelSpec(
-            id="glm-4-long",
-            name="GLM-4 Long",
+            id="Kimi-K2-Turbo",
+            name="Kimi-K2-Turbo",
+            tool_calling=True,
+        ),
+        ModelSpec(
+            id="Qwen3-Coder",
+            name="Qwen3-Coder",
             tool_calling=True,
         ),
     ),

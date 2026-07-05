@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from quenda.host import FileStorage, FileStorageConfig, RunState
 from quenda.runtime import SessionState, Session, AgentConfig
-from quenda.kernel.types import Message, ToolCall, ToolResult
+from quenda.kernel.types import ImageContent, Message, ToolCall, ToolResult
 
 
 class TestRunState:
@@ -295,6 +295,30 @@ class TestSessionWithToolCalls:
         tr = user_msg.content[0]
         assert isinstance(tr, ToolResult)
         assert tr.content == "Sunny, 25C"
+
+    def test_save_session_with_tool_result_image_content(self, temp_storage: FileStorage) -> None:
+        """Test saving and loading a session preserves tool result image payloads."""
+        state = SessionState.create("test-agent")
+        state.add_user_message("Read the image")
+
+        tool_results = [
+            ToolResult(
+                call_id="call-1",
+                name="read_file",
+                content="Image: sample.png",
+                image_content=ImageContent(media_type="image/png", data="AAAA"),
+            ),
+        ]
+        state.messages.append(Message(role="user", content=tool_results))
+
+        temp_storage.save_session(state)
+        loaded = temp_storage.load_session(state.id)
+
+        assert loaded is not None
+        loaded_result = loaded.messages[1].content[0]
+        assert isinstance(loaded_result, ToolResult)
+        assert loaded_result.image_content is not None
+        assert loaded_result.image_content.media_type == "image/png"
 
 
 class TestFileStorageEdgeCases:

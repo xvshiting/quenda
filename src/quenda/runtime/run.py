@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import uuid4
 
 from quenda.kernel import Kernel, Message, Model, ModelResponse
-from quenda.kernel.types import ToolCall, ToolResult
+from quenda.kernel.types import ImageContent, TextContent, ToolCall, ToolResult
 from quenda.runtime.agent import AgentDefinition
 from quenda.runtime.events import (
     AnyEvent,
@@ -36,6 +36,7 @@ from quenda.runtime.events import (
     RunInterrupted,
 )
 from quenda.runtime.session import SessionState
+from quenda.providers.errors import UnsupportedFeatureError
 
 if TYPE_CHECKING:
     from quenda.host.compression_policy import CompressionPolicy
@@ -186,14 +187,14 @@ class Run:
             except Exception:
                 pass  # Don't let trace sink errors propagate
 
-    async def execute(self, user_message: str) -> AsyncIterator[AnyEvent]:
+    async def execute(self, user_message: str | Sequence[TextContent | ImageContent]) -> AsyncIterator[AnyEvent]:
         """
         Execute the run with a user message.
 
         ADR-023: Runtime owns the execution loop using Kernel primitives.
 
         Args:
-            user_message: The user's message to process.
+            user_message: The user's message to process (text or multimodal).
 
         Yields:
             Events describing the execution progress in real-time.
@@ -203,6 +204,9 @@ class Run:
         self.status = RunStatus.RUNNING
         run_start_time = time.perf_counter()
 
+        # Convert user_message to string for logging/storage
+        user_message_str = user_message if isinstance(user_message, str) else "[multimodal message]"
+
         # Clear any previous interrupt signal
         clear_interrupt()
 
@@ -210,12 +214,14 @@ class Run:
         started = RunStarted(
             agent_name=self.agent.name,
             session_id=self.session.id,
-            user_message=user_message,
+            user_message=user_message_str,
         )
         self._emit(started)
         yield started
 
         try:
+            self._ensure_vision_supported(user_message)
+
             # Add user message to session
             self.session.add_user_message(user_message)
 
@@ -445,6 +451,7 @@ class Run:
                                 display_hint=processed_display_hint,
                                 change_preview=processed_change_preview,
                                 result_summary=processed_result_summary,
+                                image_content=raw_result.image_content,
                             )
 
                             tool_results_map[call.id] = result
@@ -590,7 +597,7 @@ class Run:
                         session_id=self.session.id,
                         agent_name=self.agent.name,
                         status="terminated",
-                        user_message=user_message,
+                        user_message=user_message_str,
                         final_content=final_content,
                         step_count=step_count,
                         created_at=self.created_at,
@@ -623,7 +630,7 @@ class Run:
                         session_id=self.session.id,
                         agent_name=self.agent.name,
                         status="interrupted",
-                        user_message=user_message,
+                        user_message=user_message_str,
                         final_content=final_content,
                         step_count=step_count,
                         created_at=self.created_at,
@@ -660,7 +667,7 @@ class Run:
                     session_id=self.session.id,
                     agent_name=self.agent.name,
                     status="completed",
-                    user_message=user_message,
+                    user_message=user_message_str,
                     final_content=final_content,
                     step_count=step_count,
                     created_at=self.created_at,
@@ -686,7 +693,7 @@ class Run:
                     session_id=self.session.id,
                     agent_name=self.agent.name,
                     status="failed",
-                    user_message=user_message,
+                    user_message=user_message_str,
                     final_content=None,
                     step_count=0,
                     created_at=self.created_at,
@@ -748,6 +755,29 @@ class Run:
         messages.extend(self.session.messages)
 
         return messages
+
+    def _ensure_vision_supported(self, user_message: str | Sequence[TextContent | ImageContent]) -> None:
+        """
+        Fail fast when image blocks are present but the model does not support vision.
+        """
+        if isinstance(user_message, str):
+            return
+
+        has_image = any(isinstance(item, ImageContent) for item in user_message)
+        if not has_image:
+            return
+
+        model_spec = getattr(self.model, "spec", None)
+        supports_vision = bool(getattr(model_spec, "vision", False))
+        if supports_vision:
+            return
+
+        model_id = getattr(self.model, "id", "current model")
+        raise UnsupportedFeatureError(
+            f"Model {model_id} does not support image input. "
+            "Choose a vision-capable model before sending images.",
+            feature="vision",
+        )
 
     def _check_and_compress(self) -> AsyncIterator[AnyEvent]:
         """
@@ -829,13 +859,13 @@ class Run:
             current = self.session.usage.total_reasoning_tokens or 0
             self.session.usage.total_reasoning_tokens = current + response.usage.reasoning_tokens
 
-    async def execute_to_completion(self, user_message: str) -> list[AnyEvent]:
+    async def execute_to_completion(self, user_message: str | Sequence[TextContent | ImageContent]) -> list[AnyEvent]:
         """
         Execute the run and return all events as a list.
         """
         return [event async for event in self.execute(user_message)]
 
-    def execute_sync(self, user_message: str) -> list[AnyEvent]:
+    def execute_sync(self, user_message: str | Sequence[TextContent | ImageContent]) -> list[AnyEvent]:
         """
         Execute the run synchronously.
         """

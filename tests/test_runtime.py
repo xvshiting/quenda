@@ -4,10 +4,12 @@ Tests for Runtime layer.
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from quenda.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
+from quenda.kernel.types import ImageContent
 from quenda.runtime import (
     AgentConfig,
     ErrorOccurred,
@@ -50,6 +52,21 @@ class FakeModel:
         self.responses = list(responses)
 
     def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        if self.responses:
+            return self.responses.pop(0)
+        return ModelResponse(content="Done", stop_reason="end_turn")
+
+
+class CapturingModel:
+    """A fake model that records the messages it receives."""
+
+    def __init__(self, responses: list[ModelResponse]) -> None:
+        self.responses = list(responses)
+        self.invocations: list[list[Message]] = []
+        self.spec = SimpleNamespace(vision=True, context_window=None, max_output_tokens=None)
+
+    def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        self.invocations.append(list(messages))
         if self.responses:
             return self.responses.pop(0)
         return ModelResponse(content="Done", stop_reason="end_turn")
@@ -880,6 +897,54 @@ class TestToolResultProcessingPolicy:
         assert len(tool_events) == 1
         assert len(tool_events[0].result) <= 15  # 10 chars + suffix
         assert "API_KEY=secret123" in tool_events[0].raw_result
+
+    @pytest.mark.asyncio
+    async def test_image_content_preserved_for_tool_results(self) -> None:
+        """Test that image tool results keep their image payload through runtime writeback."""
+
+        class ImageTool:
+            @property
+            def name(self) -> str:
+                return "read_file"
+
+            @property
+            def description(self) -> str:
+                return "Read file"
+
+            @property
+            def parameters(self) -> dict[str, object]:
+                return {"type": "object"}
+
+            def execute(self, **kwargs: object) -> ToolResult:
+                return ToolResult(
+                    call_id="",
+                    name="read_file",
+                    content="Image: sample.png",
+                    image_content=ImageContent(media_type="image/png", data="AAAA"),
+                )
+
+        tool = ImageTool()
+        agent = AgentConfig(name="test", tools=[tool])
+        session = SessionState.create("test")
+        model = CapturingModel([
+            ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="read_file", arguments={"path": "sample.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content="Done!", stop_reason="end_turn"),
+        ])
+
+        run = Run.create(agent, session, model)
+        await run.execute_to_completion("Read the image")
+
+        assert len(model.invocations) >= 2
+        tool_result_message = model.invocations[1][-1]
+        assert tool_result_message.role == "user"
+        assert isinstance(tool_result_message.content, list)
+        tool_result = tool_result_message.content[0]
+        assert isinstance(tool_result, ToolResult)
+        assert tool_result.image_content is not None
+        assert tool_result.image_content.media_type == "image/png"
 
 
 class TestToolPhaseEvents:

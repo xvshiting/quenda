@@ -2,10 +2,16 @@
 Test convenience API.
 """
 
+import base64
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from quenda import Agent, tool
 from quenda.kernel import Message, Model, ModelResponse
+from quenda.kernel.types import ImageContent, TextContent
+from quenda.runtime.events import ErrorOccurred
 from quenda.runtime import RunCompleted, RunStarted
 
 
@@ -17,6 +23,29 @@ class FakeModel:
 
     def invoke(self, messages: list[Message], *, tools: list) -> ModelResponse:
         return ModelResponse(content=self.response, stop_reason="end_turn")
+
+
+class CapturingVisionModel:
+    """Fake vision-capable model that captures the messages it receives."""
+
+    def __init__(self, response: str = "Vision response") -> None:
+        self.response = response
+        self.last_messages: list[Message] | None = None
+        self.spec = SimpleNamespace(vision=True, context_window=None, max_output_tokens=None)
+
+    def invoke(self, messages: list[Message], *, tools: list) -> ModelResponse:
+        self.last_messages = messages
+        return ModelResponse(content=self.response, stop_reason="end_turn")
+
+
+class NonVisionModel:
+    """Fake non-vision model used to verify early rejection."""
+
+    def __init__(self) -> None:
+        self.spec = SimpleNamespace(vision=False, context_window=None, max_output_tokens=None)
+
+    def invoke(self, messages: list[Message], *, tools: list) -> ModelResponse:
+        return ModelResponse(content="should not be reached", stop_reason="end_turn")
 
 
 class TestConvenienceAPI:
@@ -167,3 +196,43 @@ class TestConvenienceAPI:
         session.rollback_to(checkpoint)
 
         assert len(session.messages) == checkpoint
+
+    def test_run_sync_accepts_image_paths(self, tmp_path: Path) -> None:
+        """Test that one-shot run can attach images by file path."""
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+        )
+        image_path = tmp_path / "sample.png"
+        image_path.write_bytes(png_data)
+
+        model = CapturingVisionModel()
+        agent = Agent(name="test", model=model)
+
+        result = agent.run_sync("Describe this image", image_paths=[str(image_path)])
+
+        assert result == "Vision response"
+        assert model.last_messages is not None
+        assert len(model.last_messages) == 2
+        content = model.last_messages[0].content
+        assert model.last_messages[0].role == "user"
+        assert model.last_messages[1].role == "assistant"
+        assert isinstance(content, list)
+        assert isinstance(content[0], TextContent)
+        assert isinstance(content[1], ImageContent)
+
+    @pytest.mark.asyncio
+    async def test_run_rejects_images_for_non_vision_model(self) -> None:
+        """Test that image input fails fast on non-vision models."""
+        agent = Agent(name="test", model=NonVisionModel())
+        events = []
+
+        result = await agent.run(
+            [
+                TextContent(text="What is in this image?"),
+                ImageContent(media_type="image/png", data="AAAA"),
+            ],
+            on_event=events.append,
+        )
+
+        assert result == ""
+        assert any(isinstance(event, ErrorOccurred) for event in events)

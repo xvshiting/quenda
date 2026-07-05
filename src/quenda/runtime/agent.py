@@ -12,10 +12,13 @@ This module provides both the protocol and convenience implementations.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from quenda.kernel.types import ImageContent, TextContent
+from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.session import Session, SessionState
 
 if TYPE_CHECKING:
@@ -282,18 +285,20 @@ class Agent:
 
     async def run(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
+        image_paths: Sequence[str] | None = None,
     ) -> str:
         """
         One-shot execution (creates temporary session).
 
         Args:
-            message: The user message.
+            message: The user message, or a multimodal content sequence.
             model: Optional model override.
             on_event: Optional callback for events.
+            image_paths: Optional local image files to attach to a text message.
 
         Returns:
             The agent's response text.
@@ -305,14 +310,28 @@ class Agent:
         state = SessionState.create(self._config.name)
         session = Session(state=state, agent=self._config, model=model or self._model)
 
+        if image_paths:
+            if not isinstance(message, str):
+                raise TypeError("image_paths can only be used with a text message")
+            images = load_images(image_paths)
+            if len(images) != len(image_paths):
+                missing = [
+                    path for path in image_paths
+                    if not Path(path).expanduser().exists()
+                ]
+                if missing:
+                    raise FileNotFoundError(f"Image file not found: {missing[0]}")
+            message = build_user_message(message, images)
+
         return await session.send(message, on_event=on_event)
 
     def run_sync(
         self,
-        message: str,
+        message: str | Sequence[TextContent | ImageContent],
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
+        image_paths: Sequence[str] | None = None,
     ) -> str:
         """
         Synchronous one-shot execution.
@@ -325,4 +344,6 @@ class Agent:
         Returns:
             The agent's response text.
         """
-        return asyncio.run(self.run(message, model=model, on_event=on_event))
+        return asyncio.run(
+            self.run(message, model=model, on_event=on_event, image_paths=image_paths)
+        )

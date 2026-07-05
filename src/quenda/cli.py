@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Sequence
 
 from quenda.host import (
     setup_agent,
@@ -45,13 +46,15 @@ from quenda.interface import (
     CollectingEventHandler,
     CompositeEventHandler,
 )
+from quenda.kernel.types import ImageContent, TextContent
+from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.events import ModelResponded, AnyEvent
 
 
 def run_agent(
     agent_path: Path,
     workspace: Path,
-    user_message: str,
+    user_message: str | Sequence[TextContent | ImageContent],
     *,
     provider: str | None = None,
     model: str | None = None,
@@ -515,6 +518,27 @@ def _run_repl(
                     status_bar.set_mode(session.mode)
                     continue
 
+                # ADR-027: Detect and process image paths in user input
+                # Only handle local file paths that user explicitly provides
+                # URLs and markdown images should NOT be auto-converted - they need Router decision
+                processed_input = user_input
+                words = user_input.split()
+                for word in words:
+                    # Check if word looks like a local file path
+                    is_local_path = word.startswith("/") or word.startswith("~") or word.startswith("./")
+
+                    if is_local_path:
+                        expanded_path = Path(word).expanduser()
+                        # Check if it's an image file
+                        if expanded_path.exists() and expanded_path.suffix.lower() in {
+                            ".png", ".jpg", ".jpeg", ".gif", ".webp"
+                        }:
+                            ref = runtime.create_image_ref(word)
+                            if ref:
+                                # Replace path with reference marker in display
+                                processed_input = processed_input.replace(word, f"[{ref.id}: {ref.display_name()}]")
+                                print(f"   Loaded image: {ref.display_name()} -> [{ref.id}]")
+
                 # Execute the user request (ADR-027: no followup phase for skill activation)
                 # Skill activation is handled within the Run, not as a separate phase.
                 # The tool returns a result, and the model continues with the updated context.
@@ -530,9 +554,12 @@ def _run_repl(
                 # ADR-027: Create skill activation handler for in-run skill activation
                 skill_handler = runtime.create_skill_activation_handler()
 
+                # Build multimodal message (resolve image refs if any)
+                message = runtime.build_multimodal_message(processed_input)
+
                 try:
                     session.send_sync(
-                        user_input,
+                        message,
                         on_event=event_handler.on_event,
                         skill_activation_handler=skill_handler,
                     )
@@ -618,6 +645,12 @@ def main() -> int:
         help="Resume a session by ID",
     )
     run_parser.add_argument(
+        "--image",
+        action="append",
+        dest="images",
+        help="Image file to attach (can be used multiple times)",
+    )
+    run_parser.add_argument(
         "message",
         nargs="?",
         help="Task or question for the agent (omit for REPL mode)",
@@ -644,6 +677,12 @@ def main() -> int:
         help="Resume a session by ID",
     )
     code_parser.add_argument(
+        "--image",
+        action="append",
+        dest="images",
+        help="Image file to attach (can be used multiple times)",
+    )
+    code_parser.add_argument(
         "message",
         nargs="?",
         help="Task or question for the agent (omit for REPL mode)",
@@ -654,10 +693,17 @@ def main() -> int:
     if args.command == "run":
         agent_path = args.agent
         if args.message:
+            # Load images if provided
+            images = load_images(args.images) if args.images else None
+            if args.images and len(images) != len(args.images):
+                missing = [path for path in args.images if not Path(path).expanduser().exists()]
+                for path in missing:
+                    print(f"Error: Image file not found: {path}", file=sys.stderr)
+            user_message = build_user_message(args.message, images)
             return run_agent(
                 agent_path=agent_path,
                 workspace=args.workspace,
-                user_message=args.message,
+                user_message=user_message,
                 provider=args.provider,
                 model=args.model,
                 session_id=args.session,
@@ -680,10 +726,17 @@ def main() -> int:
             return 1
 
         if args.message:
+            # Load images if provided
+            images = load_images(args.images) if args.images else None
+            if args.images and len(images) != len(args.images):
+                missing = [path for path in args.images if not Path(path).expanduser().exists()]
+                for path in missing:
+                    print(f"Error: Image file not found: {path}", file=sys.stderr)
+            user_message = build_user_message(args.message, images)
             return run_agent(
                 agent_path=agent_dir,
                 workspace=args.workspace,
-                user_message=args.message,
+                user_message=user_message,
                 provider=args.provider,
                 model=args.model,
                 session_id=args.session,
