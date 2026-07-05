@@ -24,6 +24,7 @@ dependencies = [
     "typing-extensions>=4.0.0",
     "openai>=1.0.0",
     "pyyaml>=6.0.0",
+    "pillow>=10.0.0",  # Image processing for multimodal support
 ]
 
 [project.optional-dependencies]

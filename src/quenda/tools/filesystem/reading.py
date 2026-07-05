@@ -8,16 +8,29 @@ Examples:
     read_file(path="app.py", start=1, end=100)     # Read lines 1-100
     read_file(path="app.log", start=-50)           # Read last 50 lines
     read_file(path="config.json", end=30)          # Read first 30 lines
+    read_file(path="photo.jpg")                    # Read image file (vision support)
+    read_file(path="https://example.com/img.png")  # Read image from URL
 """
 
 from __future__ import annotations
 
+import base64
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import override
+from urllib.parse import urlparse
 
 from quenda.kernel.tool import Tool
-from quenda.kernel.types import ToolResult
+from quenda.kernel.types import ImageContent, ToolResult
+
+from .image_utils import (
+    get_image_dimensions,
+    infer_media_type,
+    is_image_file,
+    read_image_file,
+    read_image_url,
+)
 
 
 @dataclass
@@ -25,6 +38,23 @@ class ReadFileConfig:
     """Configuration for read_file tool."""
 
     max_read_chars: int = 100000  # 100KB max file read
+    max_image_tokens: int = 4000  # Max tokens for image content
+
+
+# URL pattern for detecting web URLs
+URL_PATTERN = re.compile(r"^https?://")
+
+
+def _is_url(path: str) -> bool:
+    """Check if path is a URL."""
+    return bool(URL_PATTERN.match(path))
+
+
+def _is_image_url(url: str) -> bool:
+    """Check if URL points to an image based on extension."""
+    parsed = urlparse(url)
+    path_lower = parsed.path.lower()
+    return any(path_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"))
 
 
 def _validate_path(workspace: Path, path: str) -> tuple[Path, str | None]:
@@ -68,7 +98,12 @@ class ReadFileTool(Tool):
     @property
     @override
     def description(self) -> str:
-        return "Read file content. Supports reading specific line ranges. Use negative start for last N lines."
+        return (
+            "Read file content. Supports reading specific line ranges. "
+            "Also supports reading image files (png, jpg, gif, webp) and image URLs. "
+            "When reading images, returns the image content for vision understanding. "
+            "Use negative start for last N lines."
+        )
 
     @property
     @override
@@ -78,7 +113,11 @@ class ReadFileTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "File path to read.",
+                    "description": (
+                        "File path to read. Can be a local file path or an image URL "
+                        "(https://... ending with .png, .jpg, .jpeg, .gif, .webp). "
+                        "Images are automatically processed for vision understanding."
+                    ),
                 },
                 "start": {
                     "type": "integer",
@@ -102,6 +141,11 @@ class ReadFileTool(Tool):
         if not isinstance(path, str):
             return ToolResult("", self.name, "Error: path must be a string", is_error=True)
 
+        # Handle URLs (images only for now)
+        if _is_url(path):
+            return self._handle_url(path)
+
+        # Handle local files
         file_path, error = _validate_path(self.workspace, path)
         if error:
             return ToolResult("", self.name, f"Error: {error}", is_error=True)
@@ -112,6 +156,67 @@ class ReadFileTool(Tool):
         if not file_path.is_file():
             return ToolResult("", self.name, f"Error: Not a file: {path}", is_error=True)
 
+        # Handle image files
+        if is_image_file(file_path):
+            return self._handle_image_file(file_path, path)
+
+        # Handle text files
+        return self._handle_text_file(file_path, path, start, end)
+
+    def _handle_url(self, url: str) -> ToolResult:
+        """Handle URL (currently only image URLs)."""
+        if not _is_image_url(url):
+            return ToolResult(
+                "",
+                self.name,
+                f"Error: URL does not appear to be an image. Only image URLs are supported: {url}",
+                is_error=True,
+            )
+
+        try:
+            image_content = read_image_url(url, self.config.max_image_tokens)
+            width, height = get_image_dimensions(
+                base64.b64decode(image_content.data) if image_content.data else b""
+            )
+            return ToolResult(
+                "",
+                self.name,
+                f"Image from URL: {url}\nDimensions: {width}x{height}",
+                display_hint=url[:40] if len(url) <= 40 else "..." + url[-37:],
+                result_summary=f"{width}x{height}",
+                image_content=image_content,
+            )
+        except Exception as e:
+            return ToolResult("", self.name, f"Error reading image URL: {e}", is_error=True)
+
+    def _handle_image_file(self, file_path: Path, path: str) -> ToolResult:
+        """Handle local image file."""
+        try:
+            image_content = read_image_file(file_path, self.config.max_image_tokens)
+            width, height = get_image_dimensions(
+                base64.b64decode(image_content.data) if image_content.data else b""
+            )
+            size_kb = file_path.stat().st_size / 1024
+
+            return ToolResult(
+                "",
+                self.name,
+                f"Image: {path}\nDimensions: {width}x{height}\nSize: {size_kb:.1f}KB",
+                display_hint=file_path.name,
+                result_summary=f"{width}x{height}",
+                image_content=image_content,
+            )
+        except Exception as e:
+            return ToolResult("", self.name, f"Error reading image: {e}", is_error=True)
+
+    def _handle_text_file(
+        self,
+        file_path: Path,
+        path: str,
+        start: object,
+        end: object,
+    ) -> ToolResult:
+        """Handle text file (original logic)."""
         try:
             content = file_path.read_text(encoding="utf-8", errors="replace")
             lines = content.split("\n")
@@ -149,7 +254,11 @@ class ReadFileTool(Tool):
 
             # Build display_hint and result_summary
             display_hint = path if len(path) <= 40 else "..." + path[-37:]
-            result_summary = f"{lines_read} lines" if lines_read == total_lines else f"lines {start_line}-{end_line} of {total_lines}"
+            result_summary = (
+                f"{lines_read} lines"
+                if lines_read == total_lines
+                else f"lines {start_line}-{end_line} of {total_lines}"
+            )
 
             return ToolResult(
                 "",

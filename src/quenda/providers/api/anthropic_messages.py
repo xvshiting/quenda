@@ -14,7 +14,16 @@ import json
 from collections.abc import Generator
 from typing import TYPE_CHECKING, override
 
-from quenda.kernel.types import Message, ModelResponse, StreamChunk, ToolCall, UsageStats
+from quenda.kernel.types import (
+    ImageContent,
+    Message,
+    ModelResponse,
+    StreamChunk,
+    TextContent,
+    ToolCall,
+    ToolResult,
+    UsageStats,
+)
 from quenda.kernel.tool import Tool
 from quenda.providers.api.base import Api
 from quenda.providers.errors import (
@@ -224,52 +233,142 @@ class AnthropicMessagesApi(Api):
                     "content": msg.content,
                 })
             else:
-                # Handle tool calls and results
+                # Handle tool calls, results, or multimodal content
                 items = list(msg.content)
 
-                if items and hasattr(items[0], "__class__"):
-                    item_type = items[0].__class__.__name__
+                if not items:
+                    continue
 
-                    if item_type == "ToolCall":
-                        # Assistant message with tool calls
-                        content_blocks = []
-                        for tc in items:
-                            content_blocks.append({
-                                "type": "tool_use",
-                                "id": tc.id,
-                                "name": tc.name,
-                                "input": tc.arguments,
-                            })
+                first_item = items[0]
+
+                if isinstance(first_item, ToolCall):
+                    # Assistant message with tool calls
+                    content_blocks = []
+                    for tc in items:
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.arguments,
+                        })
+                    anthropic_messages.append({
+                        "role": "assistant",
+                        "content": content_blocks,
+                    })
+
+                    # Add tool result placeholders
+                    for tc in items:
                         anthropic_messages.append({
-                            "role": "assistant",
-                            "content": content_blocks,
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tc.id,
+                                "content": "",
+                            }],
                         })
 
-                        # Add tool result placeholders
-                        for tc in items:
-                            anthropic_messages.append({
-                                "role": "user",
-                                "content": [{
-                                    "type": "tool_result",
-                                    "tool_use_id": tc.id,
-                                    "content": "",
-                                }],
+                elif isinstance(first_item, ToolResult):
+                    # Tool results
+                    content_blocks = []
+                    for tr in items:
+                        # Check if tool result has image content
+                        if tr.image_content:
+                            # Anthropic supports multimodal content in tool_result
+                            # We send the text in tool_result, then add image in a separate user message
+                            # for better compatibility and clearer context
+
+                            # 1. Tool result with text only
+                            content_blocks.append({
+                                "type": "tool_result",
+                                "tool_use_id": tr.call_id,
+                                "content": tr.content or "",
+                                "is_error": tr.is_error,
                             })
 
-                    elif item_type == "ToolResult":
-                        # Tool results
-                        content_blocks = []
-                        for tr in items:
+                            # 2. Add image in a separate user message
+                            image_blocks = []
+                            if tr.image_content.image_url:
+                                image_blocks.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "url",
+                                        "url": tr.image_content.image_url,
+                                    },
+                                })
+                            elif tr.image_content.media_type and tr.image_content.data:
+                                image_blocks.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": tr.image_content.media_type,
+                                        "data": tr.image_content.data,
+                                    },
+                                })
+
+                            if image_blocks:
+                                # Insert the image as a user message after the tool result
+                                anthropic_messages.append({
+                                    "role": "user",
+                                    "content": content_blocks,
+                                })
+                                anthropic_messages.append({
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": f"[工具 {tr.name} 返回的图片内容]"},
+                                        *image_blocks,
+                                    ],
+                                })
+                                # Reset content_blocks since we already appended
+                                content_blocks = []
+                        else:
+                            # Text-only tool result
                             content_blocks.append({
                                 "type": "tool_result",
                                 "tool_use_id": tr.call_id,
                                 "content": tr.content,
                                 "is_error": tr.is_error,
                             })
+
+                    if content_blocks:
                         anthropic_messages.append({
                             "role": "user",
                             "content": content_blocks,
                         })
+
+                elif isinstance(first_item, (TextContent, ImageContent)):
+                    # Multimodal content (user message with text and/or images)
+                    content_blocks = []
+                    for item in items:
+                        if isinstance(item, TextContent):
+                            content_blocks.append({
+                                "type": "text",
+                                "text": item.text,
+                            })
+                        elif isinstance(item, ImageContent):
+                            if item.image_url:
+                                # URL 形式
+                                content_blocks.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "url",
+                                        "url": item.image_url,
+                                    },
+                                })
+                            elif item.media_type and item.data:
+                                # Base64 形式
+                                content_blocks.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": item.media_type,
+                                        "data": item.data,
+                                    },
+                                })
+
+                    anthropic_messages.append({
+                        "role": msg.role,
+                        "content": content_blocks,
+                    })
 
         return anthropic_messages, system_prompt
 

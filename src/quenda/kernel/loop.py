@@ -159,6 +159,7 @@ class Kernel:
                 display_hint=result.display_hint,
                 change_preview=result.change_preview,
                 result_summary=result.result_summary,
+                image_content=result.image_content,
             )
         except Exception as e:
             return ToolResult(
@@ -275,6 +276,7 @@ class Kernel:
                         display_hint=result.display_hint,
                         change_preview=result.change_preview,
                         result_summary=result.result_summary,
+                        image_content=result.image_content,
                     ),
                 )
             except Exception as e:

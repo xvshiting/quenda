@@ -126,6 +126,8 @@ SANDBOX_ALLOWED_MODULES: list[str] = [
     "pprint",
     "operator",
     "pathlib",
+    # Image processing
+    "PIL",
     # Data science (optional, may not be installed)
     "numpy",
     "pandas",

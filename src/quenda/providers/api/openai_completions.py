@@ -183,6 +183,10 @@ class OpenAICompletionsApi(Api):
                 if delta.content:
                     yield StreamChunk(content=delta.content, is_final=False)
 
+                # Handle reasoning_content (Kimi-K2.5 puts response here)
+                if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                    yield StreamChunk(content=delta.reasoning_content, is_final=False)
+
                 # Handle tool calls (streamed incrementally)
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
@@ -273,6 +277,12 @@ class OpenAICompletionsApi(Api):
                     )
                 )
 
+        # Handle content - some models (like Kimi) put reasoning in reasoning_content
+        content = choice.message.content
+        if not content and hasattr(choice.message, 'reasoning_content'):
+            # Kimi-K2.5 puts the actual response in reasoning_content
+            content = choice.message.reasoning_content
+
         # Extract usage statistics
         usage = None
         if hasattr(response, 'usage') and response.usage:
@@ -285,7 +295,7 @@ class OpenAICompletionsApi(Api):
             )
 
         return ModelResponse(
-            content=choice.message.content,
+            content=content,
             tool_calls=tool_calls,
             stop_reason="tool_use" if tool_calls else "end_turn",
             usage=usage,
