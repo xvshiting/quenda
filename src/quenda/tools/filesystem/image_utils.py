@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import base64
 import io
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
 
 from quenda.kernel.types import ImageContent
+from quenda.tools.security.validation import validate_url
 
 
 # Supported image extensions
@@ -27,6 +29,19 @@ EXTENSION_TO_MEDIA_TYPE = {
     ".webp": "image/webp",
     ".bmp": "image/bmp",
 }
+
+# Allowed image media types (for URL validation)
+ALLOWED_IMAGE_MEDIA_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+}
+
+# Maximum image download size (10 MB)
+MAX_IMAGE_DOWNLOAD_SIZE = 10 * 1024 * 1024
 
 
 def is_image_file(path: Path | str) -> bool:
@@ -57,11 +72,22 @@ def estimate_image_tokens(width: int, height: int) -> int:
     return (width * height) // 750
 
 
+@dataclass
+class ProcessedImage:
+    """Result of image processing with metadata."""
+
+    data: bytes
+    media_type: str  # Actual media type after processing
+    width: int
+    height: int
+    was_resized: bool
+
+
 def resize_image_for_tokens(
     data: bytes,
     max_tokens: int = 4000,
     min_dimension: int = 200,
-) -> bytes:
+) -> ProcessedImage:
     """
     Resize image to fit within token budget.
 
@@ -71,7 +97,8 @@ def resize_image_for_tokens(
         min_dimension: Minimum dimension (width or height) to maintain
 
     Returns:
-        Resized image bytes in JPEG format
+        ProcessedImage with resized bytes in JPEG format (if resize needed),
+        or original data if no resize was needed.
     """
     img = Image.open(io.BytesIO(data))
     width, height = img.size
@@ -79,7 +106,14 @@ def resize_image_for_tokens(
     # Check if resizing is needed
     current_tokens = estimate_image_tokens(width, height)
     if current_tokens <= max_tokens:
-        return data
+        # No resize needed, return original
+        return ProcessedImage(
+            data=data,
+            media_type=_detect_media_type(data, img),
+            width=width,
+            height=height,
+            was_resized=False,
+        )
 
     # Calculate scale factor
     scale = (max_tokens * 750 / (width * height)) ** 0.5
@@ -98,7 +132,42 @@ def resize_image_for_tokens(
     # Save as JPEG (good compression)
     output = io.BytesIO()
     resized.save(output, format="JPEG", quality=85)
-    return output.getvalue()
+    return ProcessedImage(
+        data=output.getvalue(),
+        media_type="image/jpeg",
+        width=new_width,
+        height=new_height,
+        was_resized=True,
+    )
+
+
+def _detect_media_type(data: bytes, img: Image.Image | None = None) -> str:
+    """
+    Detect media type from image data.
+
+    Args:
+        data: Raw image bytes
+        img: Optional PIL Image object (to avoid re-opening)
+
+    Returns:
+        Media type string (e.g., "image/png", "image/jpeg")
+    """
+    if img is None:
+        img = Image.open(io.BytesIO(data))
+
+    format_name = img.format
+    if format_name == "PNG":
+        return "image/png"
+    elif format_name in ("JPEG", "JPG"):
+        return "image/jpeg"
+    elif format_name == "GIF":
+        return "image/gif"
+    elif format_name == "WEBP":
+        return "image/webp"
+    elif format_name == "BMP":
+        return "image/bmp"
+    else:
+        return "image/png"  # Default fallback
 
 
 def read_image_file(path: Path, max_tokens: int = 4000) -> ImageContent:
@@ -110,24 +179,25 @@ def read_image_file(path: Path, max_tokens: int = 4000) -> ImageContent:
         max_tokens: Maximum tokens allowed for the image
 
     Returns:
-        ImageContent with base64-encoded image data
+        ImageContent with base64-encoded image data and correct media type.
     """
     raw_data = path.read_bytes()
 
-    # Resize if needed
-    processed_data = resize_image_for_tokens(raw_data, max_tokens)
-
-    # Get final dimensions
-    width, height = get_image_dimensions(processed_data)
+    # Process image (resize if needed)
+    processed = resize_image_for_tokens(raw_data, max_tokens)
 
     # Encode to base64
-    base64_data = base64.b64encode(processed_data).decode("utf-8")
+    base64_data = base64.b64encode(processed.data).decode("utf-8")
 
-    # Use JPEG media type after processing
     return ImageContent(
-        media_type="image/jpeg",
+        media_type=processed.media_type,
         data=base64_data,
     )
+
+
+class ImageDownloadError(Exception):
+    """Error downloading image."""
+    pass
 
 
 def read_image_url(url: str, max_tokens: int = 4000) -> ImageContent:
@@ -140,34 +210,103 @@ def read_image_url(url: str, max_tokens: int = 4000) -> ImageContent:
 
     This implementation downloads and encodes for broader compatibility.
 
+    Security measures:
+    - SSRF protection via URL validation
+    - Maximum download size limit
+    - Content-Type validation
+    - Redirect validation
+
     Args:
         url: URL of the image
         max_tokens: Maximum tokens allowed for the image
 
     Returns:
-        ImageContent with base64-encoded image data
+        ImageContent with base64-encoded image data and correct media type.
+
+    Raises:
+        ImageDownloadError: If download fails or security check fails.
     """
     import httpx
 
-    # Download image
-    response = httpx.get(url, timeout=30.0, follow_redirects=True)
-    response.raise_for_status()
-    raw_data = response.content
+    # SSRF protection: validate URL before downloading
+    error = validate_url(url)
+    if error:
+        raise ImageDownloadError(f"URL validation failed: {error}")
 
-    # Resize if needed
-    processed_data = resize_image_for_tokens(raw_data, max_tokens)
+    try:
+        # Download with size limit
+        with httpx.stream("GET", url, timeout=30.0, follow_redirects=False) as response:
+            # Check response status
+            if response.status_code >= 400:
+                raise ImageDownloadError(f"HTTP error {response.status_code}")
+
+            # Validate Content-Type
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            if content_type and content_type not in ALLOWED_IMAGE_MEDIA_TYPES:
+                raise ImageDownloadError(
+                    f"Invalid content type: {content_type}. "
+                    f"Expected one of: {', '.join(sorted(ALLOWED_IMAGE_MEDIA_TYPES))}"
+                )
+
+            # Handle redirects with validation
+            redirect_count = 0
+            max_redirects = 5
+            current_url = url
+
+            while response.is_redirect and redirect_count < max_redirects:
+                redirect_url = response.headers.get("location")
+                if not redirect_url:
+                    break
+
+                # Resolve relative redirect
+                if not redirect_url.startswith(("http://", "https://")):
+                    from urllib.parse import urljoin
+                    redirect_url = urljoin(current_url, redirect_url)
+
+                # Validate redirect URL
+                error = validate_url(redirect_url)
+                if error:
+                    raise ImageDownloadError(f"Redirect blocked: {error}")
+
+                current_url = redirect_url
+                response = httpx.stream("GET", current_url, timeout=30.0, follow_redirects=False)
+                redirect_count += 1
+
+            # Download with size limit
+            chunks = []
+            total_size = 0
+            for chunk in response.iter_bytes(chunk_size=8192):
+                total_size += len(chunk)
+                if total_size > MAX_IMAGE_DOWNLOAD_SIZE:
+                    raise ImageDownloadError(
+                        f"Image too large: {total_size} bytes exceeds limit of {MAX_IMAGE_DOWNLOAD_SIZE} bytes"
+                    )
+                chunks.append(chunk)
+
+            raw_data = b"".join(chunks)
+
+    except httpx.TimeoutException:
+        raise ImageDownloadError("Request timed out")
+    except httpx.RequestError as e:
+        raise ImageDownloadError(f"Request failed: {e}")
+
+    # Process image (resize if needed)
+    processed = resize_image_for_tokens(raw_data, max_tokens)
 
     # Encode to base64
-    base64_data = base64.b64encode(processed_data).decode("utf-8")
+    base64_data = base64.b64encode(processed.data).decode("utf-8")
 
     return ImageContent(
-        media_type="image/jpeg",
+        media_type=processed.media_type,
         data=base64_data,
     )
 
 
 __all__ = [
     "IMAGE_EXTENSIONS",
+    "ALLOWED_IMAGE_MEDIA_TYPES",
+    "ProcessedImage",
+    "ImageDownloadError",
     "is_image_file",
     "infer_media_type",
     "get_image_dimensions",

@@ -45,6 +45,7 @@ anthropic = [
 ]
 network = [
     "httpx[socks]>=0.25.0",
+    "brotli>=1.1.0",
 ]
 all = [
     "quenda[dev,code,openai,anthropic,network]",

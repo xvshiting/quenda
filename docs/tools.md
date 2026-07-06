@@ -424,7 +424,7 @@ workspace = Path(".")
 
 all_tools = []
 all_tools.extend(get_core_tools(workspace))   # 6 coding tools
-all_tools.extend(get_network_tools())         # 3 network tools
+all_tools.extend(get_network_tools())         # 2 network tools
 
 from quenda import Agent
 agent = Agent(
@@ -436,4 +436,4 @@ agent = Agent(
 
 Individual bundles: `get_filesystem_tools(workspace)` (5 tools),
 `get_execution_tools(workspace)` (2 tools), `get_network_tools()`
-(3 tools), `get_core_tools(workspace)` (6 tools).
+(2 tools), `get_core_tools(workspace)` (6 tools).

@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "quenda>=0.1.0",
+    "quenda[network]>=0.1.0",
 ]
 
 [project.entry-points."quenda.agents"]

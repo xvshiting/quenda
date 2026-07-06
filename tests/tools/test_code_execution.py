@@ -155,6 +155,21 @@ print(json.dumps(data))
         assert not result.is_error
         assert '{"key": "value"}' in result.content
 
+    def test_io_module_allowed(self) -> None:
+        """Test in-memory IO helpers are allowed."""
+        tool = PythonExecutionTool()
+        result = tool.execute(
+            code="""
+import io
+buffer = io.StringIO()
+buffer.write("image search helper")
+print(buffer.getvalue())
+"""
+        )
+
+        assert not result.is_error
+        assert "image search helper" in result.content
+
 
 class TestSandboxConfig:
     """Tests for SandboxConfig."""

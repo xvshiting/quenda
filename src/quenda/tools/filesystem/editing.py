@@ -13,6 +13,14 @@ from typing import override
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
+from quenda.runtime.permission import (
+    DenyPermissionPolicy,
+    PermissionKind,
+    PermissionLifetime,
+    PermissionPolicy,
+    PermissionRequest,
+    PermissionScope,
+)
 
 
 @dataclass
@@ -140,9 +148,11 @@ class WriteFileTool(Tool):
         self,
         workspace_root: Path | str,
         config: EditingConfig | None = None,
+        permission_policy: PermissionPolicy | None = None,
     ) -> None:
         self.workspace = Path(workspace_root).resolve()
         self.config = config or EditingConfig()
+        self.permission_policy = permission_policy
 
     @property
     @override
@@ -182,7 +192,19 @@ class WriteFileTool(Tool):
 
         file_path, error = _validate_path(self.workspace, path)
         if error:
-            return ToolResult("", self.name, f"Error: {error}", is_error=True)
+            policy = self.permission_policy or DenyPermissionPolicy()
+            request = PermissionRequest(
+                kind=PermissionKind.FILESYSTEM_WRITE,
+                resource=str(file_path.parent),
+                scope=PermissionScope.DIRECTORY,
+                reason=f"Writing files under directory outside workspace: {file_path.parent}",
+                lifetime=PermissionLifetime.SESSION,
+                tool_name=self.name,
+                tool_args={"path": path, "content": content},
+            )
+            decision = policy.decide(request)
+            if not decision.allowed:
+                return ToolResult("", self.name, f"Error: {decision.reason or error}", is_error=True)
 
         try:
             # Create parent directories
@@ -236,9 +258,11 @@ class ApplyPatchTool(Tool):
         self,
         workspace_root: Path | str,
         config: EditingConfig | None = None,
+        permission_policy: PermissionPolicy | None = None,
     ) -> None:
         self.workspace = Path(workspace_root).resolve()
         self.config = config or EditingConfig()
+        self.permission_policy = permission_policy
 
     @property
     @override
@@ -289,7 +313,19 @@ class ApplyPatchTool(Tool):
 
         file_path, error = _validate_path(self.workspace, path)
         if error:
-            return ToolResult("", self.name, f"Error: {error}", is_error=True)
+            policy = self.permission_policy or DenyPermissionPolicy()
+            request = PermissionRequest(
+                kind=PermissionKind.FILESYSTEM_WRITE,
+                resource=str(file_path.parent),
+                scope=PermissionScope.DIRECTORY,
+                reason=f"Patching files under directory outside workspace: {file_path.parent}",
+                lifetime=PermissionLifetime.SESSION,
+                tool_name=self.name,
+                tool_args={"path": path, "old_text": old_text, "new_text": new_text},
+            )
+            decision = policy.decide(request)
+            if not decision.allowed:
+                return ToolResult("", self.name, f"Error: {decision.reason or error}", is_error=True)
 
         if not file_path.exists():
             return ToolResult("", self.name, f"Error: File not found: {path}", is_error=True)

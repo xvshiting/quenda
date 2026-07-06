@@ -590,20 +590,27 @@ class FileStorage:
                         ],
                     })
                 elif isinstance(first_item, ToolResult):
+                    tool_results_data = []
+                    for tr in items:
+                        tr_data = {
+                            "call_id": tr.call_id,
+                            "name": tr.name,
+                            "content": tr.content,
+                            "is_error": tr.is_error,
+                        }
+                        # 只存图片标记，不存 base64 payload
+                        if tr.image_content:
+                            tr_data["has_image"] = True
+                            # 如果有 URL，存 URL（轻量引用）
+                            if tr.image_content.image_url:
+                                tr_data["image_url"] = tr.image_content.image_url
+                        tool_results_data.append(tr_data)
                     messages_data.append({
                         "role": msg.role,
-                        "tool_results": [
-                            {
-                                "call_id": tr.call_id,
-                                "name": tr.name,
-                                "content": tr.content,
-                                "is_error": tr.is_error,
-                            }
-                            for tr in items
-                        ],
+                        "tool_results": tool_results_data,
                     })
                 elif isinstance(first_item, (TextContent, ImageContent)):
-                    # Multimodal content
+                    # Multimodal content - 只存轻量引用，不存 base64
                     content_blocks = []
                     for item in items:
                         if isinstance(item, TextContent):
@@ -612,13 +619,11 @@ class FileStorage:
                                 "text": item.text,
                             })
                         elif isinstance(item, ImageContent):
+                            # 只存 URL，不存 base64 data
                             block = {"type": "image"}
                             if item.image_url:
                                 block["image_url"] = item.image_url
-                            if item.media_type:
-                                block["media_type"] = item.media_type
-                            if item.data:
-                                block["data"] = item.data
+                            # 不存 media_type 和 data，减少存储体积
                             content_blocks.append(block)
                     messages_data.append({
                         "role": msg.role,
@@ -682,27 +687,36 @@ class FileStorage:
                 ]
                 messages.append(Message(role=role, content=tool_calls))
             elif "tool_results" in msg_data:
-                tool_results = [
-                    ToolResult(
+                tool_results = []
+                for tr in msg_data["tool_results"]:
+                    # 处理图片引用（轻量格式）
+                    image_content = None
+                    if tr.get("has_image"):
+                        image_content = ImageContent(
+                            image_url=tr.get("image_url"),
+                            media_type=None,
+                            data=None,
+                        )
+                    tool_results.append(ToolResult(
                         call_id=tr["call_id"],
                         name=tr["name"],
                         content=tr["content"],
                         is_error=tr.get("is_error", False),
-                    )
-                    for tr in msg_data["tool_results"]
-                ]
+                        image_content=image_content,
+                    ))
                 messages.append(Message(role=role, content=tool_results))
             elif "content_blocks" in msg_data:
-                # Multimodal content
+                # Multimodal content - 轻量格式，可能没有 data/media_type
                 content_blocks = []
                 for block in msg_data["content_blocks"]:
                     if block["type"] == "text":
                         content_blocks.append(TextContent(text=block.get("text", "")))
                     elif block["type"] == "image":
+                        # 只有 URL，没有 base64 data
                         content_blocks.append(ImageContent(
                             image_url=block.get("image_url"),
-                            media_type=block.get("media_type"),
-                            data=block.get("data"),
+                            media_type=block.get("media_type"),  # 可能是 None
+                            data=block.get("data"),  # 可能是 None
                         ))
                 messages.append(Message(role=role, content=content_blocks))
 

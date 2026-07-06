@@ -15,6 +15,13 @@ from quenda.host import (
     CompositePolicy,
     create_default_policy,
 )
+from quenda.host.permission_manager import PermissionManager
+from quenda.runtime.permission import (
+    PermissionKind,
+    PermissionLifetime,
+    PermissionRequest,
+    PermissionScope,
+)
 
 
 @pytest.fixture
@@ -328,3 +335,35 @@ class TestPolicyIntegration:
         assert not policy.check(protected_path, Permission.DELETE)
         # EXECUTE (read-like) allowed
         assert policy.check(protected_path, Permission.EXECUTE)
+
+
+class TestPermissionManager:
+    """Tests for session-level permission caching."""
+
+    def test_network_permission_is_reused_within_session(self) -> None:
+        """Test that one network approval covers later network requests in the same session."""
+        manager = PermissionManager()
+        calls = {"count": 0}
+
+        def prompt_handler(request: PermissionRequest) -> bool:
+            calls["count"] += 1
+            return True
+
+        manager.prompt_handler = prompt_handler
+
+        first = PermissionRequest(
+            kind=PermissionKind.NETWORK_ACCESS,
+            resource="https://www.baidu.com",
+            scope=PermissionScope.ALL,
+            lifetime=PermissionLifetime.SESSION,
+        )
+        second = PermissionRequest(
+            kind=PermissionKind.NETWORK_ACCESS,
+            resource="https://www.bing.com",
+            scope=PermissionScope.ALL,
+            lifetime=PermissionLifetime.SESSION,
+        )
+
+        assert manager.decide(first).allowed is True
+        assert manager.decide(second).allowed is True
+        assert calls["count"] == 1

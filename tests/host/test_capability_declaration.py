@@ -12,6 +12,7 @@ from quenda.host.loader import (
     ToolsConfig,
     ExecutionConfig,
     PythonExecutionConfig,
+    load_agent_package,
 )
 from quenda.host.runner import _resolve_tools, _resolve_sandbox_config
 
@@ -40,7 +41,6 @@ class TestToolsConfig:
         })
         assert config.bundles == []
         assert config.include == ["http_request", "web_fetch"]
-
 
 class TestExecutionConfig:
     """Tests for ExecutionConfig parsing."""
@@ -166,7 +166,7 @@ class TestResolveTools:
         # Network tools now included
         assert "http_request" in tool_names
         assert "web_fetch" in tool_names
-        assert "web_search" in tool_names
+        assert "web_search" not in tool_names
 
     def test_network_only_no_core(self, workspace: Path) -> None:
         """Test that requesting only 'network' gives only network tools."""
@@ -183,7 +183,7 @@ class TestResolveTools:
         # Only network tools
         assert "http_request" in tool_names
         assert "web_fetch" in tool_names
-        assert "web_search" in tool_names
+        assert "web_search" not in tool_names
 
     def test_custom_sandbox_applied(self, workspace: Path) -> None:
         """Test that custom sandbox config is applied to Python tool."""
@@ -230,3 +230,24 @@ class TestAgentConfigYamlIntegration:
         assert config.include_skill_catalog is False
         assert config.tools.bundles == ["network"]
         assert config.execution.python.allowed_modules == ["requests", "httpx"]
+
+    def test_load_agent_package_yaml_booleans(self, tmp_path: Path) -> None:
+        """Test config.yaml boolean values are parsed correctly from disk."""
+        agent_dir = tmp_path / "agent"
+        agent_dir.mkdir()
+        (agent_dir / "AGENT.md").write_text(
+            "---\nname: sample\n---\nSample agent\n",
+            encoding="utf-8",
+        )
+        (agent_dir / "config.yaml").write_text(
+            "tools:\n"
+            "  bundles:\n"
+            "    - network\n"
+            "compression:\n"
+            "  enabled: false\n",
+            encoding="utf-8",
+        )
+
+        package = load_agent_package(agent_dir)
+        assert package.config is not None
+        assert package.config.compression.enabled is False

@@ -23,6 +23,14 @@ from urllib.parse import urlparse
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ImageContent, ToolResult
+from quenda.runtime.permission import (
+    DenyPermissionPolicy,
+    PermissionKind,
+    PermissionLifetime,
+    PermissionPolicy,
+    PermissionRequest,
+    PermissionScope,
+)
 
 from .image_utils import (
     get_image_dimensions,
@@ -31,7 +39,6 @@ from .image_utils import (
     read_image_file,
     read_image_url,
 )
-
 
 @dataclass
 class ReadFileConfig:
@@ -57,11 +64,41 @@ def _is_image_url(url: str) -> bool:
     return any(path_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"))
 
 
+def _is_relative_to(child: Path, parent: Path) -> bool:
+    """
+    Check if child path is relative to parent path.
+
+    Python 3.12+ has Path.is_relative_to(), but we need to support older versions.
+    Uses resolved absolute paths for comparison.
+    """
+    try:
+        # Resolve both paths to absolute
+        child_resolved = child.resolve()
+        parent_resolved = parent.resolve()
+
+        # Try relative_to (Python 3.12+)
+        if hasattr(child_resolved, "is_relative_to"):
+            return child_resolved.is_relative_to(parent_resolved)
+
+        # Fallback: check if parent is a prefix of child's parts
+        child_parts = child_resolved.parts
+        parent_parts = parent_resolved.parts
+
+        # Parent must be shorter or equal
+        if len(parent_parts) > len(child_parts):
+            return False
+
+        # All parent parts must match child parts at the start
+        return child_parts[:len(parent_parts)] == parent_parts
+    except Exception:
+        return False
+
+
 def _validate_path(workspace: Path, path: str) -> tuple[Path, str | None]:
     """Validate path is within workspace. Returns (resolved_path, error_message)."""
     try:
         resolved = (workspace / path).resolve()
-        if not str(resolved).startswith(str(workspace.resolve())):
+        if not _is_relative_to(resolved, workspace):
             return resolved, "Access denied - path outside workspace"
         return resolved, None
     except Exception as e:
@@ -86,9 +123,11 @@ class ReadFileTool(Tool):
         self,
         workspace_root: Path | str,
         config: ReadFileConfig | None = None,
+        permission_policy: PermissionPolicy | None = None,
     ) -> None:
         self.workspace = Path(workspace_root).resolve()
         self.config = config or ReadFileConfig()
+        self.permission_policy = permission_policy
 
     @property
     @override
@@ -148,6 +187,9 @@ class ReadFileTool(Tool):
         # Handle local files
         file_path, error = _validate_path(self.workspace, path)
         if error:
+            # Path is outside workspace - check for permission
+            if "outside workspace" in error:
+                return self._handle_outside_workspace(path, file_path, start, end)
             return ToolResult("", self.name, f"Error: {error}", is_error=True)
 
         if not file_path.exists():
@@ -161,6 +203,43 @@ class ReadFileTool(Tool):
             return self._handle_image_file(file_path, path)
 
         # Handle text files
+        return self._handle_text_file(file_path, path, start, end)
+
+    def _handle_outside_workspace(
+        self,
+        path: str,
+        file_path: Path,
+        start: object,
+        end: object,
+    ) -> ToolResult:
+        """Handle file access outside workspace through policy."""
+        request = PermissionRequest(
+            kind=PermissionKind.FILESYSTEM_READ,
+            resource=str(file_path.parent),
+            scope=PermissionScope.DIRECTORY,
+            reason=f"Reading files under directory outside workspace: {file_path.parent}",
+            lifetime=PermissionLifetime.SESSION,
+            tool_name=self.name,
+            tool_args={"path": path},
+        )
+
+        policy = self.permission_policy or DenyPermissionPolicy()
+        decision = policy.decide(request)
+        if not decision.allowed:
+            return ToolResult(
+                "",
+                self.name,
+                f"Error: {decision.reason or 'Access denied - path outside workspace'}",
+                is_error=True,
+            )
+
+        if not file_path.exists():
+            return ToolResult("", self.name, f"Error: File not found: {path}", is_error=True)
+        if not file_path.is_file():
+            return ToolResult("", self.name, f"Error: Not a file: {path}", is_error=True)
+
+        if is_image_file(file_path):
+            return self._handle_image_file(file_path, path)
         return self._handle_text_file(file_path, path, start, end)
 
     def _handle_url(self, url: str) -> ToolResult:

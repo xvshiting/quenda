@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from quenda.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
-from quenda.kernel.types import ImageContent
+from quenda.kernel.types import ImageContent, ImageRef, ImageSource, TextContent
 from quenda.runtime import (
     AgentConfig,
     ErrorOccurred,
@@ -70,6 +70,23 @@ class CapturingModel:
         if self.responses:
             return self.responses.pop(0)
         return ModelResponse(content="Done", stop_reason="end_turn")
+
+
+class RoutingCaptureModel:
+    """A fake model with provider metadata for capability routing tests."""
+
+    def __init__(self, *, vision: bool, responses: list[ModelResponse] | None = None) -> None:
+        self.responses = list(responses or [])
+        self.invocations: list[list[Message]] = []
+        self.spec = SimpleNamespace(vision=vision, context_window=None, max_output_tokens=None)
+        self.provider = SimpleNamespace(id="fake")
+        self.id = "vision" if vision else "default"
+
+    def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        self.invocations.append(list(messages))
+        if self.responses:
+            return self.responses.pop(0)
+        return ModelResponse(content=self.id, stop_reason="end_turn")
 
 
 class TestSessionState:
@@ -945,6 +962,145 @@ class TestToolResultProcessingPolicy:
         assert isinstance(tool_result, ToolResult)
         assert tool_result.image_content is not None
         assert tool_result.image_content.media_type == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_historical_images_do_not_keep_session_routed_to_vision(self) -> None:
+        """Historical image payloads are lazy in later turns."""
+        from quenda.runtime.events import ModelRouted
+
+        agent = AgentConfig(name="test")
+        session = SessionState.create("test")
+        default_model = RoutingCaptureModel(vision=False)
+        vision_model = RoutingCaptureModel(vision=True)
+
+        first_run = Run.create(
+            agent,
+            session,
+            default_model,
+            vision_model=vision_model,
+        )
+        first_events = await first_run.execute_to_completion([
+            TextContent(text="Describe this image"),
+            ImageContent(media_type="image/png", data="AAAA"),
+        ])
+
+        assert any(isinstance(event, ModelRouted) for event in first_events)
+        assert len(vision_model.invocations) == 1
+        first_content = vision_model.invocations[0][0].content
+        assert isinstance(first_content, list)
+        assert any(isinstance(block, ImageContent) for block in first_content)
+
+        second_run = Run.create(
+            agent,
+            session,
+            default_model,
+            vision_model=vision_model,
+        )
+        second_events = await second_run.execute_to_completion("Continue with text only")
+
+        assert not any(isinstance(event, ModelRouted) for event in second_events)
+        assert len(default_model.invocations) == 1
+        second_messages = default_model.invocations[0]
+        assert not any(
+            isinstance(block, ImageContent)
+            for message in second_messages
+            if isinstance(message.content, list)
+            for block in message.content
+        )
+        assert "[Image resource: image/png" in str(second_messages[0].content[1].text)
+        assert isinstance(session.messages[0].content, list)
+        assert any(isinstance(block, ImageContent) for block in session.messages[0].content)
+
+    @pytest.mark.asyncio
+    async def test_activate_resource_tool_attaches_historical_image_and_routes_to_vision(self) -> None:
+        """Model can request a historical image through structured resource activation."""
+        from quenda.runtime.events import ModelRouted
+        from quenda.tools.resource_activation import ActivateResourceTool
+
+        agent = AgentConfig(name="test", tools=[ActivateResourceTool()])
+        session = SessionState.create("test")
+        session.add_image_ref(ImageRef(
+            id="img0",
+            source=ImageSource(
+                scheme="data",
+                uri="data:image/png;base64,AAAA",
+                media_type="image/png",
+                filename="sample.png",
+            ),
+        ))
+        session.add_user_message("Here is an image [img0: sample.png]")
+        session.add_message(Message(role="assistant", content="It is an orange cat."))
+
+        default_model = RoutingCaptureModel(
+            vision=False,
+            responses=[
+                ModelResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="c1",
+                            name="activate_resource",
+                            arguments={
+                                "resource_id": "img0",
+                                "purpose": "Inspect the image again",
+                            },
+                        )
+                    ],
+                    stop_reason="tool_use",
+                ),
+            ],
+        )
+        vision_model = RoutingCaptureModel(
+            vision=True,
+            responses=[ModelResponse(content="Vision answer", stop_reason="end_turn")],
+        )
+
+        run = Run.create(
+            agent,
+            session,
+            default_model,
+            vision_model=vision_model,
+        )
+        events = await run.execute_to_completion("Look at that image again")
+
+        routed_events = [event for event in events if isinstance(event, ModelRouted)]
+        assert len(routed_events) == 1
+        assert routed_events[0].resolved_role == "vision"
+        assert len(default_model.invocations) == 1
+        assert len(vision_model.invocations) == 1
+
+        vision_messages = vision_model.invocations[0]
+        assert any(
+            isinstance(block, ImageContent)
+            for message in vision_messages
+            if isinstance(message.content, list)
+            for block in message.content
+        )
+        resource_context = [message.content for message in default_model.invocations[0] if message.role == "system"]
+        assert any("[Resource img0]" in str(content) for content in resource_context)
+
+    def test_resource_context_includes_original_file_path(self) -> None:
+        """Session resource placeholders expose source metadata without raw image payload."""
+        agent = AgentConfig(name="test")
+        session = SessionState.create("test")
+        session.add_image_ref(ImageRef(
+            id="img0",
+            source=ImageSource(
+                scheme="file",
+                uri="file:///Users/example/Downloads/test.jpg",
+                media_type="image/jpeg",
+                filename="test.jpg",
+            ),
+        ))
+        run = Run.create(agent, session, RoutingCaptureModel(vision=False))
+
+        messages = run._build_messages()
+        context = "\n".join(str(message.content) for message in messages if message.role == "system")
+
+        assert "[Resource img0]" in context
+        assert "filename=test.jpg" in context
+        assert "source=file" in context
+        assert "path=/Users/example/Downloads/test.jpg" in context
+        assert "raw=not_attached" in context
 
 
 class TestToolPhaseEvents:

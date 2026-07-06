@@ -22,6 +22,14 @@ from typing import override
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
+from quenda.runtime.permission import (
+    DenyPermissionPolicy,
+    PermissionKind,
+    PermissionLifetime,
+    PermissionPolicy,
+    PermissionRequest,
+    PermissionScope,
+)
 
 
 @dataclass
@@ -104,9 +112,11 @@ class RunShellTool(Tool):
         self,
         workspace_root: Path | str,
         config: ShellConfig | None = None,
+        permission_policy: PermissionPolicy | None = None,
     ) -> None:
         self.workspace = Path(workspace_root).resolve()
         self.config = config or ShellConfig()
+        self.permission_policy = permission_policy
 
     @property
     @override
@@ -158,7 +168,19 @@ class RunShellTool(Tool):
         # Validate working directory
         work_dir, error = _validate_path(self.workspace, cwd if isinstance(cwd, str) else ".")
         if error:
-            return ToolResult("", self.name, f"Error: {error}", is_error=True)
+            request = PermissionRequest(
+                kind=PermissionKind.SHELL_EXECUTE,
+                resource=str(work_dir),
+                scope=PermissionScope.PATH,
+                reason=f"Running shell command outside workspace: {cwd}",
+                lifetime=PermissionLifetime.SESSION,
+                tool_name=self.name,
+                tool_args={"command": command, "cwd": cwd, "timeout": timeout},
+            )
+            policy = self.permission_policy or DenyPermissionPolicy()
+            decision = policy.decide(request)
+            if not decision.allowed:
+                return ToolResult("", self.name, f"Error: {decision.reason or error}", is_error=True)
 
         if not work_dir.exists():
             return ToolResult("", self.name, f"Error: Directory not found: {cwd}", is_error=True)

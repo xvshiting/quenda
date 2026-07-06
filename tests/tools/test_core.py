@@ -299,11 +299,11 @@ class TestRunShellTool:
 class TestGetCoreTools:
     """Tests for get_core_tools helper."""
 
-    def test_returns_nine_tools(self) -> None:
-        """Test that exactly 9 tools are returned."""
+    def test_returns_ten_tools(self) -> None:
+        """Test that exactly 10 tools are returned."""
         tools = get_core_tools("/tmp")
 
-        assert len(tools) == 9
+        assert len(tools) == 10
         names = [t.name for t in tools]
         assert "list_files" in names
         assert "search_text" in names
@@ -314,3 +314,4 @@ class TestGetCoreTools:
         assert "execute_python" in names
         assert "request_interaction" in names
         assert "request_skill_activation" in names
+        assert "activate_resource" in names

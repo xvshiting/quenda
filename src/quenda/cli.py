@@ -49,6 +49,8 @@ from quenda.interface import (
 from quenda.kernel.types import ImageContent, TextContent
 from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.events import ModelResponded, AnyEvent
+from quenda.runtime.permission import PermissionRequest
+from quenda.host.permission_manager import PermissionManager, format_permission_prompt
 
 
 def run_agent(
@@ -274,8 +276,16 @@ def run_repl(
     Returns:
         Exit code (0 for success, 1 for error).
     """
+    permission_manager = PermissionManager()
+
     # Setup agent (Host layer)
-    setup = setup_agent(agent_path, workspace, provider=provider, model=model)
+    setup = setup_agent(
+        agent_path,
+        workspace,
+        provider=provider,
+        model=model,
+        permission_policy=permission_manager,
+    )
     if setup is None:
         print(f"Error: Failed to setup agent from {agent_path}", file=sys.stderr)
         return 1
@@ -302,6 +312,8 @@ def run_repl(
             session = agent.open_session(session_id=session_id)
     else:
         session = agent.open_session()
+
+    permission_manager.load_state(session.state.metadata.get("permission_cache"))
 
     # Create command registry and load agent extensions (ADR-010)
     registry = create_default_registry()
@@ -359,7 +371,7 @@ def run_repl(
     # Run REPL loop (Interface layer handles input)
     return _run_repl(
         session, agent, runtime, renderer, indicator, phase_handler, registry, theme,
-        provider_name, model_name, workspace_id
+        provider_name, model_name, workspace_id, permission_manager
     )
 
 
@@ -375,6 +387,7 @@ def _run_repl(
     provider_name: str,
     model_name: str,
     workspace_id: str,
+    permission_manager: PermissionManager,
 ) -> int:
     """
     Run REPL loop using interface layer for input.
@@ -408,6 +421,24 @@ def _run_repl(
 
     # Create input handler with runtime for two-stage command completion
     repl_input = create_repl_input(registry, status_bar=status_bar, runtime=runtime)
+
+    def permission_prompt_handler(request: PermissionRequest) -> bool:
+        """Prompt the user for a permission decision."""
+        indicator.stop()
+        print(f"\n{theme.permission_icon if hasattr(theme, 'permission_icon') else '🔐'} {format_permission_prompt(request)}")
+
+        try:
+            response = repl_input.get_input("Approve? [y/N]: ").strip().lower()
+            allowed = response in ("y", "yes")
+        except (KeyboardInterrupt, EOFError):
+            allowed = False
+
+        if in_run:
+            indicator.start()
+
+        return allowed
+
+    permission_manager.prompt_handler = permission_prompt_handler
 
     # Track whether we're in a run (for interrupt handling)
     in_run = False
@@ -529,6 +560,9 @@ def _run_repl(
 
                     if is_local_path:
                         expanded_path = Path(word).expanduser()
+                        if expanded_path.exists():
+                            permission_manager.grant_user_provided_resource(str(expanded_path.resolve()))
+
                         # Check if it's an image file
                         if expanded_path.exists() and expanded_path.suffix.lower() in {
                             ".png", ".jpg", ".jpeg", ".gif", ".webp"
@@ -564,6 +598,8 @@ def _run_repl(
                         skill_activation_handler=skill_handler,
                     )
                 finally:
+                    session.state.metadata["permission_cache"] = permission_manager.to_state()
+                    session.save()
                     indicator.stop()
                     in_run = False
 
@@ -573,8 +609,6 @@ def _run_repl(
                 # Transient skills are cleared only when:
                 # 1. User explicitly deactivates them
                 # 2. Session ends (they're not persisted to session metadata)
-
-                session.save()
                 status_bar.set_mode(session.mode)
 
             except KeyboardInterrupt:

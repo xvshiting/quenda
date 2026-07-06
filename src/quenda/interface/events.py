@@ -136,12 +136,11 @@ class StreamingEventHandler:
 
     def on_run_started(self, event: RunStarted) -> None:
         """Start the activity indicator."""
+        rendered = self.renderer.render(event)
         self.indicator.start()
-        if self.verbose_start:
+        if self.verbose_start and rendered:
             self.indicator.stop()
-            rendered = self.renderer.render(event)
-            if rendered:
-                print(rendered, file=self.output)
+            print(rendered, file=self.output)
             self.indicator.start()
 
     def on_model_responded(self, event: ModelResponded) -> None:
@@ -285,6 +284,8 @@ class ActivityEventHandler:
     def on_run_started(self, event: RunStarted) -> None:
         self._run_count += 1
         self._last_phase = None
+        if self.renderer is not None:
+            self.renderer.render(event)
         self.indicator.start()
         self.indicator.update(self.theme.thinking_message)
         if self.status_bar is not None:
@@ -411,6 +412,7 @@ class ProgressEventHandler:
         """Track run count but don't display phase headers."""
         self._run_count += 1
         self._last_phase = None
+        self.renderer.render(event)
 
     def on_model_responded(self, event: ModelResponded) -> None:
         return None

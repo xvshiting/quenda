@@ -110,6 +110,7 @@ SANDBOX_ALLOWED_MODULES: list[str] = [
     "re",
     "json",
     "csv",
+    "io",
     "typing",
     "dataclasses",
     "enum",

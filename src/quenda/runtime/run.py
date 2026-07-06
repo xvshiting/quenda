@@ -11,10 +11,11 @@ ADR-027: Skill activation is handled within the Run, not as a separate phase.
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -236,6 +237,7 @@ class Run:
 
             # Add user message to session
             self.session.add_user_message(user_message)
+            active_message = self.session.messages[-1]
 
             # ADR-015: Check if compression is needed before execution
             compression_events = list(self._check_and_compress())
@@ -243,7 +245,8 @@ class Run:
                 yield event
 
             # Build messages with system prompt
-            messages = self._build_messages()
+            active_resource_start = self._active_resource_start(active_message)
+            messages = self._build_messages(active_resource_start=active_resource_start)
             original_count = len(messages)
 
             # Runtime-owned execution loop
@@ -269,10 +272,10 @@ class Run:
 
                 # ADR-028: Resolve model based on message capabilities
                 resolved_model, routing_event = self._resolve_model_for_messages(messages)
+                current_model = resolved_model
                 if routing_event:
                     self._emit(routing_event)
                     yield routing_event
-                    current_model = resolved_model
 
                 # Create kernel with resolved model
                 kernel = Kernel(current_model, self.agent.tools)
@@ -579,7 +582,13 @@ class Run:
                                 # Update the agent's system prompt for subsequent steps
                                 object.__setattr__(self.agent, 'system_prompt', updated_prompt)
                                 # Rebuild messages with the new prompt
-                                messages[:] = self._build_messages()
+                                messages[:] = self._build_messages(
+                                    active_resource_start=active_resource_start
+                                )
+
+                    resource_activation_messages = self._build_resource_activation_messages(tool_results)
+                    if resource_activation_messages:
+                        messages.extend(resource_activation_messages)
 
                     # Check if interrupted during tool phase
                     if is_interrupted():
@@ -800,9 +809,13 @@ class Run:
                 is_error=True,
             )
 
-    def _build_messages(self) -> list[Message]:
+    def _build_messages(self, *, active_resource_start: int | None = None) -> list[Message]:
         """
         Build the message list with system prompt and summary blocks.
+
+        Multimodal resources from previous turns are projected as lightweight
+        placeholders so they remain visible in history without forcing every
+        later turn through a vision-capable model.
         """
         messages = []
 
@@ -815,9 +828,140 @@ class Run:
                 content=f"[历史摘要]\n{block.content}",
             ))
 
-        messages.extend(self.session.messages)
+        resource_context = self._build_resource_context()
+        if resource_context:
+            messages.append(Message(role="system", content=resource_context))
+
+        for index, message in enumerate(self.session.messages):
+            if active_resource_start is not None and index < active_resource_start:
+                messages.append(self._deactivate_message_resources(message))
+            else:
+                messages.append(message)
 
         return messages
+
+    def _deactivate_message_resources(self, message: Message) -> Message:
+        """Return a model-context copy with image payloads replaced by text placeholders."""
+        content = message.content
+        if not isinstance(content, list | tuple):
+            return message
+
+        deactivated: list[object] = []
+        changed = False
+
+        for block in content:
+            if isinstance(block, ImageContent):
+                deactivated.append(TextContent(text=self._image_placeholder(block)))
+                changed = True
+            elif isinstance(block, ToolResult) and block.image_content is not None:
+                suffix = "\n\n[Image content from this historical tool result is not currently attached.]"
+                deactivated.append(replace(
+                    block,
+                    content=f"{block.content}{suffix}",
+                    image_content=None,
+                ))
+                changed = True
+            else:
+                deactivated.append(block)
+
+        if not changed:
+            return message
+
+        return Message(role=message.role, content=deactivated)  # type: ignore[arg-type]
+
+    def _image_placeholder(self, image: ImageContent) -> str:
+        if image.image_url:
+            return f"[Image resource: {image.image_url}. Raw content is not currently attached.]"
+        if image.media_type:
+            return f"[Image resource: {image.media_type}. Raw content is not currently attached.]"
+        return "[Image resource. Raw content is not currently attached.]"
+
+    def _active_resource_start(self, active_message: Message) -> int:
+        for index, message in enumerate(self.session.messages):
+            if message is active_message:
+                return index
+        return len(self.session.messages)
+
+    def _build_resource_context(self) -> str:
+        if not self.session.image_refs:
+            return ""
+
+        lines = [
+            "[Session Resources]",
+            "Historical resources are available but raw content is not attached by default.",
+            "If raw visual details are needed, call activate_resource(resource_id, purpose).",
+        ]
+        for ref_id, ref in sorted(self.session.image_refs.items()):
+            lines.append(
+                f"- [Resource {ref_id}] type=image filename={ref.display_name()} "
+                f"media_type={ref.source.media_type} source={ref.source.scheme} "
+                f"{self._resource_location(ref.source.uri)} raw=not_attached"
+            )
+        return "\n".join(lines)
+
+    def _resource_location(self, uri: str) -> str:
+        if uri.startswith("file://"):
+            return f"path={uri[7:]}"
+        if uri.startswith(("http://", "https://")):
+            return f"url={uri}"
+        if uri.startswith("data:"):
+            return "uri=data:<inline>"
+        return f"uri={uri}"
+
+    def _extract_resource_activation_requests(self, tool_results: list[ToolResult]) -> list[str]:
+        resource_ids: list[str] = []
+        for result in tool_results:
+            if result.name != "activate_resource":
+                continue
+            summary = result.result_summary
+            if summary and summary.startswith("resource_activation:"):
+                resource_id = summary[len("resource_activation:"):].strip()
+                if resource_id:
+                    resource_ids.append(resource_id)
+        return resource_ids
+
+    def _build_resource_activation_messages(self, tool_results: list[ToolResult]) -> list[Message]:
+        messages: list[Message] = []
+        for resource_id in self._extract_resource_activation_requests(tool_results):
+            image = self._resolve_image_resource(resource_id)
+            if image is None:
+                messages.append(Message(
+                    role="user",
+                    content=f"Resource activation failed: {resource_id} is not available.",
+                ))
+                continue
+            messages.append(Message(
+                role="user",
+                content=[
+                    TextContent(text=f"[Activated resource {resource_id}: raw image content attached.]"),
+                    image,
+                ],
+            ))
+        return messages
+
+    def _resolve_image_resource(self, resource_id: str) -> ImageContent | None:
+        ref = self.session.get_image_ref(resource_id)
+        if ref is None:
+            return None
+
+        source = ref.source
+        if source.scheme == "file":
+            path = source.uri[7:] if source.uri.startswith("file://") else source.uri
+            try:
+                with open(path, "rb") as f:
+                    data = base64.b64encode(f.read()).decode("utf-8")
+            except OSError:
+                return None
+            return ImageContent(media_type=source.media_type, data=data)
+
+        if source.scheme in ("https", "http"):
+            return ImageContent(image_url=source.uri)
+
+        if source.scheme == "data":
+            data = source.uri.split(",", 1)[1] if "," in source.uri else source.uri
+            return ImageContent(media_type=source.media_type, data=data)
+
+        return None
 
     def _resolve_model_for_messages(self, messages: list[Message]) -> tuple[Model, "ModelRouted | None"]:
         """

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from quenda.kernel.types import ToolResult
+from quenda.host.permission_manager import PermissionManager
 from quenda.tools import (
     ReadFileTool,
     WriteFileTool,
@@ -116,6 +117,69 @@ class TestFilesystemTools:
         assert result.is_error
         assert "access denied" in result.content.lower()
 
+    def test_read_file_outside_workspace_with_permission_policy(self, temp_dir: Path) -> None:
+        """Test reading a file outside workspace when policy allows it."""
+        with tempfile.NamedTemporaryFile(dir=temp_dir.parent, delete=False, suffix=".txt") as tmp:
+            tmp.write(b"Outside content")
+            outside_path = Path(tmp.name)
+
+        try:
+            permission_manager = PermissionManager()
+            permission_manager.prompt_handler = lambda request: True
+
+            tool = ReadFileTool(temp_dir, permission_policy=permission_manager)
+            result = tool.execute(path=f"../{outside_path.name}")
+
+            assert not result.is_error
+            assert "Outside content" in result.content
+        finally:
+            outside_path.unlink(missing_ok=True)
+
+    def test_read_file_outside_workspace_permission_is_cached(self, temp_dir: Path) -> None:
+        """Test permission prompt is only needed once per resource."""
+        with tempfile.NamedTemporaryFile(dir=temp_dir.parent, delete=False, suffix=".txt") as tmp:
+            tmp.write(b"Cached content")
+            outside_path = Path(tmp.name)
+
+        calls = {"count": 0}
+
+        try:
+            permission_manager = PermissionManager()
+
+            def prompt_handler(request) -> bool:
+                calls["count"] += 1
+                return True
+
+            permission_manager.prompt_handler = prompt_handler
+
+            tool = ReadFileTool(temp_dir, permission_policy=permission_manager)
+            first = tool.execute(path=f"../{outside_path.name}")
+            second = tool.execute(path=f"../{outside_path.name}")
+
+            assert not first.is_error
+            assert not second.is_error
+            assert calls["count"] == 1
+        finally:
+            outside_path.unlink(missing_ok=True)
+
+    def test_read_file_user_provided_resource_is_auto_allowed(self, temp_dir: Path) -> None:
+        """Test user-provided resources bypass the permission prompt."""
+        with tempfile.NamedTemporaryFile(dir=temp_dir.parent, delete=False, suffix=".txt") as tmp:
+            tmp.write(b"User provided content")
+            outside_path = Path(tmp.name)
+
+        try:
+            permission_manager = PermissionManager()
+            permission_manager.grant_user_provided_resource(str(outside_path.resolve()))
+
+            tool = ReadFileTool(temp_dir, permission_policy=permission_manager)
+            result = tool.execute(path=f"../{outside_path.name}")
+
+            assert not result.is_error
+            assert "User provided content" in result.content
+        finally:
+            outside_path.unlink(missing_ok=True)
+
     def test_write_file(self, temp_dir: Path) -> None:
         """Test writing a file."""
         tool = WriteFileTool(temp_dir)
@@ -162,7 +226,7 @@ class TestFilesystemTools:
         """Test getting core tools."""
         tools = get_core_tools(temp_dir)
 
-        assert len(tools) == 9
+        assert len(tools) == 10
         names = [t.name for t in tools]
         assert "read_file" in names
         assert "write_file" in names
@@ -173,3 +237,4 @@ class TestFilesystemTools:
         assert "execute_python" in names
         assert "request_interaction" in names
         assert "request_skill_activation" in names
+        assert "activate_resource" in names

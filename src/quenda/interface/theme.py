@@ -40,6 +40,7 @@ class InterfaceTheme:
     thinking_icon: str = "💭"
     complete_icon: str = "✅"
     interrupt_icon: str = "⚠"
+    permission_icon: str = "🔐"
 
     # === Activity messages ===
     thinking_message: str = "Thinking..."

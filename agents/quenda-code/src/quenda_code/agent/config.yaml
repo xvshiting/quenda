@@ -1,6 +1,13 @@
-model:
-  provider: jdcloud
-  name: GLM-5
+models:
+  default:
+    provider: jdcloud
+    model: GLM-5
+  vision:
+    provider: jdcloud
+    model: Kimi-K2.5
+  routing:
+      capability_routing: true
+      missing_capability: error
 
 # Instructions to include (relative to agent package)
 instructions:

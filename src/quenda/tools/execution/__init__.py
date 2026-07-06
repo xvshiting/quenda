@@ -13,6 +13,7 @@ from quenda.tools.execution.code import (
     PythonExecutionTool,
     SandboxConfig,
 )
+from quenda.runtime.permission import PermissionPolicy
 
 __all__ = [
     "RunShellTool",
@@ -22,7 +23,10 @@ __all__ = [
 ]
 
 
-def get_execution_tools(workspace_root: str) -> list:
+def get_execution_tools(
+    workspace_root: str,
+    permission_policy: PermissionPolicy | None = None,
+) -> list:
     """Get execution tools."""
     from pathlib import Path
 

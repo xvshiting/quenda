@@ -111,6 +111,9 @@ class ConsoleRenderer:
 
     def _render_run_started(self, event: AnyEvent) -> str | None:
         """Render run started event."""
+        self._model_routed = False
+        self._routed_model_info = ""
+
         if not self.verbose:
             return None
 

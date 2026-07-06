@@ -6,12 +6,14 @@ Supports GET, POST, PUT, DELETE, PATCH methods with SSRF protection.
 
 from __future__ import annotations
 
+import importlib.util
 import ipaddress
+import json
 import re
 import socket
 from dataclasses import dataclass
 from typing import Any, override
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
@@ -25,7 +27,12 @@ class HTTPConfig:
     max_timeout: int = 60
     max_output_chars: int = 100000
     max_redirects: int = 5
-    user_agent: str = "Quenda-Agent/1.0"
+    max_download_bytes: int = 2_000_000
+    user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 
 
 # SSRF protection
@@ -57,7 +64,10 @@ BLOCKED_DOMAINS: list[str] = [
 BLOCKED_HEADERS: list[str] = [
     "Authorization",
     "Cookie",
+    "Proxy-Authorization",
     "Set-Cookie",
+    "X-Forwarded-For",
+    "X-Real-IP",
 ]
 
 
@@ -107,6 +117,84 @@ def _truncate(text: str, max_chars: int) -> tuple[str, bool]:
     if len(text) > max_chars:
         return text[:max_chars] + f"\n... [truncated at {max_chars} chars]", True
     return text, False
+
+
+def _supports_brotli() -> bool:
+    """Return whether httpx can decode Brotli responses in this environment."""
+    return (
+        importlib.util.find_spec("brotli") is not None
+        or importlib.util.find_spec("brotlicffi") is not None
+    )
+
+
+def _default_headers(url: str, user_agent: str) -> dict[str, str]:
+    """Build safe default headers for API and document requests."""
+    encodings = ["gzip", "deflate"]
+    if _supports_brotli():
+        encodings.append("br")
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": "application/json,text/plain,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
+        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        "Accept-Encoding": ", ".join(encodings),
+    }
+
+
+def _merge_headers(url: str, headers: object, user_agent: str) -> dict[str, str] | str:
+    """Merge caller headers with safe defaults, or return an error string."""
+    merged = _default_headers(url, user_agent)
+
+    if headers is None:
+        return merged
+
+    if not isinstance(headers, dict):
+        return "headers must be an object"
+
+    blocked = {header.lower() for header in BLOCKED_HEADERS}
+    for key, value in headers.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            return "headers must map strings to strings"
+        if key.lower() in blocked:
+            return f"Header '{key}' is not allowed"
+        merged[key] = value
+
+    return merged
+
+
+def _content_type(response: object) -> str:
+    headers = getattr(response, "headers", {}) or {}
+    return str(headers.get("content-type", "")).split(";", 1)[0].strip().lower()
+
+
+def _format_body(response: object, max_chars: int) -> tuple[str, bool]:
+    """Format response body while preserving http_request's raw-ish character."""
+    content_type = _content_type(response)
+
+    try:
+        text = getattr(response, "text", "")
+    except Exception:
+        content = getattr(response, "content", b"")
+        return f"<binary data: {len(content)} bytes>", False
+
+    if "json" in content_type:
+        try:
+            parsed = json.loads(text)
+            text = json.dumps(parsed, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        return _truncate(text, max_chars)
+
+    if content_type and not (
+        content_type.startswith("text/")
+        or content_type in {"application/xml", "application/xhtml+xml", "application/json"}
+        or content_type.endswith("+json")
+        or content_type.endswith("+xml")
+    ):
+        content = getattr(response, "content", b"")
+        return f"<binary data: {len(content)} bytes; content-type: {content_type}>", False
+
+    return _truncate(text, max_chars)
 
 
 class HTTPRequestTool(Tool):
@@ -171,6 +259,11 @@ class HTTPRequestTool(Tool):
                     "description": f"Timeout in seconds (max {self.config.max_timeout}).",
                     "default": self.config.default_timeout,
                 },
+                "max_chars": {
+                    "type": "integer",
+                    "description": f"Maximum response body characters to return (max {self.config.max_output_chars}).",
+                    "default": self.config.max_output_chars,
+                },
             },
             "required": ["url"],
         }
@@ -182,6 +275,7 @@ class HTTPRequestTool(Tool):
         headers = kwargs.get("headers", {})
         body = kwargs.get("body")
         timeout = kwargs.get("timeout", self.config.default_timeout)
+        max_chars = kwargs.get("max_chars", self.config.max_output_chars)
 
         if not isinstance(url, str):
             return ToolResult("", self.name, "Error: url must be a string", is_error=True)
@@ -191,29 +285,27 @@ class HTTPRequestTool(Tool):
         if error:
             return ToolResult("", self.name, f"Error: {error}", is_error=True)
 
-        # Validate headers
-        if isinstance(headers, dict):
-            for key in headers:
-                if key in BLOCKED_HEADERS:
-                    return ToolResult("", self.name, f"Error: Header '{key}' is not allowed", is_error=True)
-            # Add user agent
-            if "User-Agent" not in headers:
-                headers = {**headers, "User-Agent": self.config.user_agent}
-        else:
-            headers = {"User-Agent": self.config.user_agent}
+        merged_headers = _merge_headers(url, headers, self.config.user_agent)
+        if isinstance(merged_headers, str):
+            return ToolResult("", self.name, f"Error: {merged_headers}", is_error=True)
 
         # Clamp timeout
         timeout_seconds = min(
             int(timeout) if isinstance(timeout, (int, float)) else self.config.default_timeout,
             self.config.max_timeout,
         )
+        max_chars_int = min(
+            int(max_chars) if isinstance(max_chars, (int, float)) else self.config.max_output_chars,
+            self.config.max_output_chars,
+        )
 
         try:
             client = self._get_client()
+            request_method = method.upper() if isinstance(method, str) else "GET"
             response = client.request(
-                method=method.upper() if isinstance(method, str) else "GET",
+                method=request_method,
                 url=url,
-                headers=headers,
+                headers=merged_headers,
                 content=body if isinstance(body, str) else None,
                 timeout=timeout_seconds,
             )
@@ -225,28 +317,40 @@ class HTTPRequestTool(Tool):
                 if not redirect_url:
                     break
 
-                error = _validate_url(redirect_url)
+                next_url = urljoin(str(response.url), redirect_url)
+                error = _validate_url(next_url)
                 if error:
                     return ToolResult("", self.name, f"Error: Redirect blocked - {error}", is_error=True)
 
                 response = client.request(
-                    method=method.upper() if isinstance(method, str) else "GET",
-                    url=redirect_url,
-                    headers=headers,
+                    method="GET" if response.status_code in {301, 302, 303} else request_method,
+                    url=next_url,
+                    headers=_merge_headers(next_url, headers, self.config.user_agent),
                     timeout=timeout_seconds,
                 )
                 redirect_count += 1
 
+            if response.is_redirect:
+                return ToolResult("", self.name, "Error: Too many redirects", is_error=True)
+
+            content = getattr(response, "content", b"")
+            if len(content) > self.config.max_download_bytes:
+                return ToolResult(
+                    "",
+                    self.name,
+                    f"Error: Response too large ({len(content)} bytes, max {self.config.max_download_bytes})",
+                    is_error=True,
+                )
+
             # Format response
-            parts = [f"HTTP {response.status_code} {response.reason_phrase}"]
+            parts = [
+                f"HTTP {response.status_code} {response.reason_phrase}",
+                f"URL: {response.url}",
+                f"Content-Type: {_content_type(response) or 'unknown'}",
+            ]
 
             # Response body
-            try:
-                content = response.text
-            except Exception:
-                content = f"<binary data: {len(response.content)} bytes>"
-
-            content, truncated = _truncate(content, self.config.max_output_chars)
+            content, truncated = _format_body(response, max_chars_int)
             parts.append(f"\n[body]\n{content}")
 
             if truncated:

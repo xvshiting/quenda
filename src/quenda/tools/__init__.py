@@ -72,7 +72,9 @@ from quenda.tools.decorator import FunctionTool, tool
 
 # Interaction tool (framework-reserved)
 from quenda.tools.interaction import RequestInteractionTool
+from quenda.tools.resource_activation import ActivateResourceTool
 from quenda.tools.skill_activation import RequestSkillActivationTool
+from quenda.runtime.permission import PermissionPolicy
 
 __all__ = [
     # Decorator
@@ -99,12 +101,16 @@ __all__ = [
     # Interaction tool
     "RequestInteractionTool",
     "RequestSkillActivationTool",
+    "ActivateResourceTool",
 ]
 
 
-def get_core_tools(workspace_root: str) -> list:
+def get_core_tools(
+    workspace_root: str,
+    permission_policy: PermissionPolicy | None = None,
+) -> list:
     """
-    Get the 9 core tools for Quenda Coding Agent.
+    Get the 10 core tools for Quenda Coding Agent.
 
     The minimal tool set following capability semantics:
     - list_files: See what exists
@@ -116,12 +122,13 @@ def get_core_tools(workspace_root: str) -> list:
     - run_shell: Execute shell commands
     - request_interaction: Ask human for a decision
     - request_skill_activation: Ask Host to activate a discovered skill
+    - activate_resource: Ask Runtime to attach a historical session resource
 
     Args:
         workspace_root: The workspace directory for file operations.
 
     Returns:
-        List of 9 core Tool instances.
+        List of 10 core Tool instances.
     """
     from pathlib import Path
 
@@ -129,11 +136,12 @@ def get_core_tools(workspace_root: str) -> list:
     return [
         ListFilesTool(workspace),
         SearchTextTool(workspace),
-        ReadFileTool(workspace),
+        ReadFileTool(workspace, permission_policy=permission_policy),
         WriteFileTool(workspace),
         ApplyPatchTool(workspace),
         PythonExecutionTool(workspace),
         RunShellTool(workspace),
         RequestInteractionTool(),
         RequestSkillActivationTool(),
+        ActivateResourceTool(),
     ]

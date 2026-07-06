@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 from io import StringIO
 
-from quenda.interface import ActivityEventHandler, InterfaceTheme, ProgressEventHandler
+from quenda.interface import ActivityEventHandler, InterfaceTheme, ProgressEventHandler, StreamingEventHandler
 from quenda.interface.console import ConsoleRenderer
 from quenda.interface.status import StatusBarManager
-from quenda.runtime.events import ModelResponded, RunCompleted, RunStarted, ToolExecuted
+from quenda.runtime.events import ModelResponded, ModelRouted, RunCompleted, RunStarted, ToolExecuted
 
 
 @dataclass
@@ -97,3 +97,53 @@ def test_progress_event_handler_renders_tool_progress_without_run_headers() -> N
     assert "[Run 2]" not in text
     assert "🔄" not in text
     assert "Activating skills" not in text
+
+
+def test_console_renderer_clears_routed_model_between_runs() -> None:
+    renderer = ConsoleRenderer()
+
+    renderer.render(RunStarted(user_message="image"))
+    renderer.render(ModelRouted(
+        resolved_role="vision",
+        provider="jdcloud",
+        model_id="Kimi-K2.5",
+        required_capabilities={"text", "vision"},
+    ))
+    first_completion = renderer.render(RunCompleted(total_steps=1))
+
+    renderer.render(RunStarted(user_message="text"))
+    second_completion = renderer.render(RunCompleted(total_steps=1))
+
+    assert first_completion is not None
+    assert "model: jdcloud/Kimi-K2.5" in first_completion
+    assert second_completion is not None
+    assert "model:" not in second_completion
+
+
+def test_streaming_handler_clears_routed_model_between_non_verbose_runs() -> None:
+    indicator = FakeIndicator()
+    output = StringIO()
+    handler = StreamingEventHandler(
+        renderer=ConsoleRenderer(),
+        indicator=indicator,
+        theme=InterfaceTheme(),
+        output=output,
+        verbose_start=False,
+    )
+
+    handler.on_event(RunStarted(user_message="image"))
+    handler.on_event(ModelRouted(
+        resolved_role="vision",
+        provider="jdcloud",
+        model_id="Kimi-K2.5",
+        required_capabilities={"text", "vision"},
+    ))
+    handler.on_event(RunCompleted(total_steps=1))
+
+    handler.on_event(RunStarted(user_message="text"))
+    handler.on_event(RunCompleted(total_steps=1))
+
+    completions = [line for line in output.getvalue().splitlines() if "Done in" in line]
+    assert len(completions) == 2
+    assert "model: jdcloud/Kimi-K2.5" in completions[0]
+    assert "model:" not in completions[1]

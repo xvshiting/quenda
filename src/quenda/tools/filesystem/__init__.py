@@ -18,6 +18,7 @@ from quenda.tools.filesystem.listing import (
     ListFilesConfig,
     ListFilesTool,
 )
+from quenda.runtime.permission import PermissionPolicy
 from quenda.tools.filesystem.reading import (
     ReadFileConfig,
     ReadFileTool,
@@ -42,7 +43,10 @@ __all__ = [
 ]
 
 
-def get_filesystem_tools(workspace_root: str) -> list:
+def get_filesystem_tools(
+    workspace_root: str,
+    permission_policy: PermissionPolicy | None = None,
+) -> list:
     """Get all 5 filesystem tools."""
     from pathlib import Path
 
@@ -50,7 +54,7 @@ def get_filesystem_tools(workspace_root: str) -> list:
     return [
         ListFilesTool(workspace),
         SearchTextTool(workspace),
-        ReadFileTool(workspace),
+        ReadFileTool(workspace, permission_policy=permission_policy),
         WriteFileTool(workspace),
         ApplyPatchTool(workspace),
     ]

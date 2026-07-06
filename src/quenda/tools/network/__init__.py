@@ -3,7 +3,6 @@ Network tools for Quenda.
 
 - http_request: Make HTTP requests with SSRF protection
 - web_fetch: Fetch content from web pages
-- web_search: Search the web using DuckDuckGo
 """
 
 from quenda.tools.network.http import (
@@ -34,5 +33,4 @@ def get_network_tools() -> list:
     return [
         HTTPRequestTool(),
         WebFetchTool(),
-        WebSearchTool(),
     ]

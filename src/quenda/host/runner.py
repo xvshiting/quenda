@@ -171,6 +171,7 @@ def _resolve_tools(
     """
     from quenda.tools import (
         ApplyPatchTool,
+        ActivateResourceTool,
         ListFilesTool,
         PythonExecutionTool,
         ReadFileTool,
@@ -212,6 +213,7 @@ def _resolve_tools(
         builder.register(RunShellTool(workspace), source="builtin")
         builder.register(RequestInteractionTool(), source="builtin")
         builder.register(RequestSkillActivationTool(), source="builtin")
+        builder.register(ActivateResourceTool(), source="builtin")
         builder.register(PythonExecutionTool(workspace, sandbox_config), source="builtin")
 
     # Network bundle tools
