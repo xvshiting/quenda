@@ -35,6 +35,7 @@ from quenda.host.loader import (
     load_agent_tools,
     load_agent_providers,
 )
+from quenda.host.mcp import MCPClientManager
 from quenda.host.registry import LoadedToolCatalog, NamedToolSpec, ToolRegistryBuilder
 from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
 from quenda.host.storage import FileStorage, FileStorageConfig
@@ -86,6 +87,7 @@ class StableHostBinding:
         loaded_tool_catalog: Catalog of custom tools.
         agent_package: Loaded agent package (for config access).
         skill_activator: Skill activation manager.
+        mcp_manager: MCP client manager for MCP server connections.
     """
 
     agent_package_path: Path
@@ -107,6 +109,7 @@ class StableHostBinding:
     loaded_tool_catalog: LoadedToolCatalog | None = None
     agent_package: AgentPackage | None = None
     skill_activator: SkillActivator | None = None
+    mcp_manager: MCPClientManager | None = None
 
 
 @dataclass
@@ -145,9 +148,24 @@ def _resolve_tools(
     Resolve tools based on agent capability declaration.
 
     Implements ADR-014 and ADR-024 capability declaration:
-    - tools.bundles: ["core", "network"]
+    - tools.bundles: ["core", "network", "coding", "agent", "skill", "scheduling"]
     - tools.include: ["my_custom_tool"]
     - execution.python.allowed_modules: extend sandbox allowlist
+
+    **Available Bundles:**
+
+    - `core` (10 tools): list_files, search_text, read_file, write_file, apply_patch,
+      execute_python, run_shell, request_interaction, request_skill_activation,
+      activate_resource
+    - `network` (2 tools): http_request, web_fetch
+    - `coding` (7 tools): task_create, task_get, task_list, task_update, lsp,
+      enter_plan_mode, exit_plan_mode
+    - `scheduling` (4 tools): schedule_wakeup, cron_create, cron_delete, cron_list
+
+    Note:
+    - Skill activation is handled by `request_skill_activation` in the core bundle,
+      following ADR-002 (Skills as Host-Level Capability Packages).
+    - Multi-agent orchestration is NOT in core (ADR-017), should be in separate package.
 
     All bundles and include entries are requests. The Host resolves
     the final tool set.
@@ -221,6 +239,37 @@ def _resolve_tools(
         from quenda.tools.network import HTTPRequestTool, WebFetchTool
         builder.register(HTTPRequestTool(), source="builtin")
         builder.register(WebFetchTool(), source="builtin")
+
+    # Coding bundle tools (task management, LSP, plan mode)
+    if "coding" in requested_bundles:
+        from quenda.tools.task import (
+            TaskCreateTool,
+            TaskGetTool,
+            TaskListTool,
+            TaskUpdateTool,
+        )
+        from quenda.tools.lsp import LSPTool
+        from quenda.tools.plan_mode import EnterPlanModeTool, ExitPlanModeTool
+        builder.register(TaskCreateTool(), source="builtin")
+        builder.register(TaskGetTool(), source="builtin")
+        builder.register(TaskListTool(), source="builtin")
+        builder.register(TaskUpdateTool(), source="builtin")
+        builder.register(LSPTool(), source="builtin")
+        builder.register(EnterPlanModeTool(), source="builtin")
+        builder.register(ExitPlanModeTool(), source="builtin")
+
+    # Scheduling bundle tools (cron and wake-up scheduling)
+    if "scheduling" in requested_bundles:
+        from quenda.tools.scheduling import (
+            ScheduleWakeupTool,
+            CronCreateTool,
+            CronDeleteTool,
+            CronListTool,
+        )
+        builder.register(ScheduleWakeupTool(), source="builtin")
+        builder.register(CronCreateTool(), source="builtin")
+        builder.register(CronDeleteTool(), source="builtin")
+        builder.register(CronListTool(), source="builtin")
 
     # Register agent-local custom tools from loaded catalog
     if loaded_tool_catalog:
@@ -463,6 +512,7 @@ def setup_host_binding(
         )
         skill_discovery = SkillDiscovery(
             user_workspace_skills_path=user_workspace_skills_path,
+            workspace_path=workspace,
             agent_package_path=agent_dir,
         )
         skill_activator = SkillActivator(discovery=skill_discovery)
@@ -500,6 +550,20 @@ def setup_host_binding(
         storage_path = resolver.get_user_workspace_path(user, agent_package.name, binding)
         storage = FileStorage(config=FileStorageConfig(base_dir=storage_path))
 
+        # 15.1 Pre-grant permissions for Host-managed user directories
+        # These are trusted directories that agents should be able to write to without prompting
+        # Grant access to entire ~/.quenda/users/<user_id>/ directory
+        if permission_policy is not None:
+            from quenda.runtime.permission import PermissionManager, PermissionKind, PermissionScope, PermissionLifetime
+            if isinstance(permission_policy, PermissionManager):
+                user_root_path = resolver.get_user_root_path(user)
+                permission_policy.grant_user_provided_resource(
+                    str(user_root_path),
+                    kind=PermissionKind.FILESYSTEM_WRITE,
+                    scope=PermissionScope.DIRECTORY,
+                    lifetime=PermissionLifetime.SESSION,
+                )
+
         # 16. Setup compression (if configured)
         compression_policy = None
         compressor = None
@@ -530,6 +594,11 @@ def setup_host_binding(
 
             compressor = SummarizerCompressor(model=summary_model, storage=storage)
 
+        # 17. Setup MCP manager (not connected yet - async connection happens later)
+        mcp_manager = None
+        if agent_package.config and agent_package.config.mcp:
+            mcp_manager = MCPClientManager()
+
         return StableHostBinding(
             agent_package_path=agent_dir,
             workspace_path=workspace,
@@ -550,10 +619,52 @@ def setup_host_binding(
             loaded_tool_catalog=loaded_tool_catalog,
             agent_package=agent_package,
             skill_activator=skill_activator,
+            mcp_manager=mcp_manager,
         )
 
     except Exception:
         return None
+
+
+async def connect_mcp_servers(binding: StableHostBinding) -> list[Tool]:
+    """
+    Connect to MCP servers and return MCP tools.
+
+    This is an async function that should be called after setup_host_binding
+    to establish MCP connections and retrieve tools.
+
+    Args:
+        binding: The stable host binding with MCP configuration.
+
+    Returns:
+        List of MCP tools (as MCPToolAdapter instances).
+
+    Raises:
+        MCPError: If connection fails.
+    """
+    if binding.mcp_manager is None:
+        return []
+
+    if not binding.agent_package or not binding.agent_package.config:
+        return []
+
+    mcp_config = binding.agent_package.config.mcp
+    if mcp_config is None or not mcp_config.has_servers():
+        return []
+
+    from quenda.host.mcp import MCPToolRegistry
+
+    # Connect to all configured servers
+    connected = await binding.mcp_manager.connect_from_config(mcp_config)
+
+    if not connected:
+        return []
+
+    # Build tool adapters
+    registry = MCPToolRegistry(binding.mcp_manager)
+    tools = await registry.build_tools()
+
+    return tools
 
 
 # =============================================================================
@@ -595,6 +706,7 @@ def refresh_run_context(
 
     skill_discovery = SkillDiscovery(
         user_workspace_skills_path=user_workspace_skills_path,
+        workspace_path=binding.workspace_path,
         agent_package_path=binding.agent_package_path,
     )
     discovered_skills = skill_discovery.discover_skills()
@@ -817,6 +929,7 @@ __all__ = [
     "RunContextSnapshot",
     "setup_host_binding",
     "refresh_run_context",
+    "connect_mcp_servers",
     # Legacy API
     "AgentSetup",
     "setup_agent",

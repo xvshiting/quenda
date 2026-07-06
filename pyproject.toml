@@ -25,6 +25,7 @@ dependencies = [
     "openai>=1.0.0",
     "pyyaml>=6.0.0",
     "pillow>=10.0.0",  # Image processing for multimodal support
+    "mcp>=1.28,<2",  # MCP SDK for Model Context Protocol support
 ]
 
 [project.optional-dependencies]

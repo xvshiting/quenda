@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from quenda.host.instructions import InstructionScope, InstructionSource
+from quenda.host.mcp.config import MCPConfig
 from quenda.runtime.agent import AgentConfig
 
 if TYPE_CHECKING:
@@ -348,6 +349,7 @@ class AgentConfigYaml:
         models: Model roles configuration (ADR-028).
         instructions_include: List of instruction files to include.
         skills: List of skills to activate by default.
+        mcp: MCP server configuration.
         theme: Theme configuration for interface layer.
         compression: Compression configuration (ADR-015).
         tools: Tool capability request.
@@ -360,6 +362,7 @@ class AgentConfigYaml:
     instructions_include: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     include_skill_catalog: bool = False
+    mcp: MCPConfig | None = None
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
@@ -375,6 +378,7 @@ class AgentConfigYaml:
         compression_data = data.get("compression", {})
         tools_data = data.get("tools", {})
         execution_data = data.get("execution", {})
+        mcp_data = data.get("mcp", {})
 
         # Skills can be at top level or under skills.activate
         skills_data = data.get("skills", {})
@@ -418,6 +422,11 @@ class AgentConfigYaml:
         if models_config is None:
             models_config = ModelsConfig()
 
+        # Parse MCP config
+        mcp_config = None
+        if mcp_data:
+            mcp_config = MCPConfig.from_dict(mcp_data)
+
         return cls(
             model_provider=model.get("provider") if isinstance(model, dict) else None,
             model_name=model.get("name") if isinstance(model, dict) else None,
@@ -427,6 +436,7 @@ class AgentConfigYaml:
             include_skill_catalog=_coerce_bool(include_skill_catalog, False)
             if isinstance(skills_data, dict)
             else False,
+            mcp=mcp_config,
             theme=ThemeConfig.from_dict(theme_data),
             compression=CompressionConfig.from_dict(compression_data),
             tools=ToolsConfig.from_dict(tools_data),

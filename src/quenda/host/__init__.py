@@ -97,6 +97,7 @@ from quenda.host.runner import (
     RunContextSnapshot,
     setup_host_binding,
     refresh_run_context,
+    connect_mcp_servers,
     # Legacy API
     AgentSetup,
     setup_agent,
@@ -195,6 +196,7 @@ __all__ = [
     "RunContextSnapshot",
     "setup_host_binding",
     "refresh_run_context",
+    "connect_mcp_servers",
     # Runner - Legacy API
     "AgentSetup",
     "setup_agent",
