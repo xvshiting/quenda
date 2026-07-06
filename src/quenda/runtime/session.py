@@ -129,6 +129,8 @@ class Session:
     Created via Agent.open_session(), this binds a SessionState
     with execution context (agent config and model).
 
+    ADR-028: Supports capability-based model routing with vision_model.
+
     Example:
         ```python
         agent = Agent(name="assistant", tools=[...], model=model)
@@ -151,6 +153,8 @@ class Session:
         tool_result_processing_policy: ToolResultProcessingPolicy | None = None,
         termination_policy: TerminationPolicy | None = None,
         trace_sink: TraceSink | None = None,
+        vision_model: Model | None = None,
+        capability_routing: bool = True,
     ) -> None:
         self._state = state
         self._agent = agent
@@ -162,6 +166,8 @@ class Session:
         self._tool_result_processing_policy = tool_result_processing_policy
         self._termination_policy = termination_policy
         self._trace_sink = trace_sink
+        self._vision_model = vision_model
+        self._capability_routing = capability_routing
 
     @property
     def id(self) -> str:
@@ -336,6 +342,8 @@ class Session:
             termination_policy=self._termination_policy,
             tool_selection_policy=self._tool_selection_policy,
             tool_result_processing_policy=self._tool_result_processing_policy,
+            vision_model=self._vision_model,
+            capability_routing=self._capability_routing,
         )
 
         # ADR-015: Inject compression components
@@ -378,7 +386,8 @@ class Session:
                 on_event(event)
 
         final_content = await self.send(
-            message, model=model, on_event=collect, skill_activation_handler=skill_activation_handler
+            message, model=model, on_event=collect,
+            skill_activation_handler=skill_activation_handler,
         )
         return final_content, events
 
@@ -392,7 +401,10 @@ class Session:
     ) -> str:
         """Synchronous send."""
         return asyncio.run(
-            self.send(message, model=model, on_event=on_event, skill_activation_handler=skill_activation_handler)
+            self.send(
+                message, model=model, on_event=on_event,
+                skill_activation_handler=skill_activation_handler,
+            )
         )
 
     def send_collecting_sync(
@@ -405,7 +417,10 @@ class Session:
     ) -> tuple[str, list[AnyEvent]]:
         """Synchronous variant of send_collecting()."""
         return asyncio.run(
-            self.send_collecting(message, model=model, on_event=on_event, skill_activation_handler=skill_activation_handler)
+            self.send_collecting(
+                message, model=model, on_event=on_event,
+                skill_activation_handler=skill_activation_handler,
+            )
         )
 
     def checkpoint(self) -> int:

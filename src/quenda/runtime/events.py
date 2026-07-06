@@ -7,8 +7,11 @@ of the agent's behavior in real-time.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TYPE_CHECKING
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from quenda.runtime.permission import PermissionRequest, PermissionDecision
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,42 @@ class ToolExecuted(Event):
 
 
 @dataclass(frozen=True)
+class PermissionRequested(Event):
+    """
+    Emitted when a permission request needs user approval.
+
+    This event signals to the UI layer that the agent needs
+    permission to access a resource. The UI should prompt
+    the user and return a decision.
+
+    Attributes:
+        request: The permission request details.
+        tool_name: Name of the tool requesting permission.
+        call_id: ID of the tool call that triggered this.
+    """
+
+    type: Literal["permission_requested"] = "permission_requested"
+    request: Any = None  # PermissionRequest (use Any to avoid circular import)
+    tool_name: str = ""
+    call_id: str = ""
+
+
+@dataclass(frozen=True)
+class PermissionDecided(Event):
+    """
+    Emitted when a permission decision is made.
+
+    Attributes:
+        decision: The permission decision.
+        was_cached: Whether this decision came from cache (no user prompt).
+    """
+
+    type: Literal["permission_decided"] = "permission_decided"
+    decision: Any = None  # PermissionDecision
+    was_cached: bool = False
+
+
+@dataclass(frozen=True)
 class ErrorOccurred(Event):
     """Emitted when an error occurs."""
 
@@ -200,9 +239,37 @@ class CompressionCompleted(Event):
     result: Any = None  # CompressionResult
 
 
+@dataclass(frozen=True)
+class ModelRouted(Event):
+    """
+    Emitted when model routing decision is made (ADR-028).
+
+    This event captures the capability-based model routing decision,
+    enabling observability of automatic model selection.
+
+    Attributes:
+        requested_role: The model role initially requested (e.g., "default").
+        resolved_role: The actual role resolved after capability check
+            (e.g., "vision" if routed from default to vision model).
+        provider: The provider ID of the selected model.
+        model_id: The model ID of the selected model.
+        required_capabilities: Set of capabilities required for this turn.
+        reason: Human-readable explanation of the routing decision.
+    """
+
+    type: Literal["model_routed"] = "model_routed"
+    requested_role: str = "default"
+    resolved_role: str = "default"
+    provider: str = ""
+    model_id: str = ""
+    required_capabilities: set[str] = field(default_factory=lambda: {"text"})
+    reason: str = ""
+
+
 # Union type for all events
 AnyEvent = (
     RunStarted | RunCompleted | ModelCalled | ModelResponded |
-    ToolPhaseStarted | ToolExecuted | ErrorOccurred | RunInterrupted |
-    RunTerminated | CompressionStarted | CompressionCompleted
+    ToolPhaseStarted | ToolExecuted | PermissionRequested | PermissionDecided |
+    ErrorOccurred | RunInterrupted | RunTerminated |
+    CompressionStarted | CompressionCompleted | ModelRouted
 )

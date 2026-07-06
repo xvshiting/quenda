@@ -91,7 +91,7 @@ registry.register(ProviderSpec(
 | jdcloud | glm-5, glm-4 | JDCLOUD_API_KEY |
 """
 
-from quenda.providers.model import Model, ModelCost, ModelSpec
+from quenda.providers.model import Model, ModelCost, ModelSpec, capabilities_of
 from quenda.providers.provider import Provider, ProviderSpec
 from quenda.providers.auth import AuthResolver, EnvAuthResolver
 from quenda.providers.registry import ProviderRegistry, get_provider_registry
@@ -152,6 +152,7 @@ __all__ = [
     "Model",
     "ModelSpec",
     "ModelCost",
+    "capabilities_of",
     "Provider",
     "ProviderSpec",
     # Auth

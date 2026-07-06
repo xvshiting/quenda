@@ -115,6 +115,8 @@ class Agent:
         tool_result_processing_policy: ToolResultProcessingPolicy | None = None,
         termination_policy: TerminationPolicy | None = None,
         trace_sink: TraceSink | None = None,
+        vision_model: Model | None = None,
+        capability_routing: bool = True,
     ) -> None:
         """
         Create an agent.
@@ -131,6 +133,8 @@ class Agent:
             tool_result_processing_policy: Optional tool result processing policy (ADR-023).
             termination_policy: Optional termination policy (ADR-021).
             trace_sink: Optional trace sink for event recording (ADR-016).
+            vision_model: Optional vision model for capability routing (ADR-028).
+            capability_routing: Whether to enable capability-based routing (ADR-028).
         """
         self._config = AgentConfig(
             name=name,
@@ -145,6 +149,8 @@ class Agent:
         self._tool_result_processing_policy = tool_result_processing_policy
         self._termination_policy = termination_policy
         self._trace_sink = trace_sink
+        self._vision_model = vision_model
+        self._capability_routing = capability_routing
 
     @property
     def name(self) -> str:
@@ -239,6 +245,8 @@ class Agent:
             tool_result_processing_policy=self._tool_result_processing_policy,
             termination_policy=self._termination_policy,
             trace_sink=self._trace_sink,
+            vision_model=self._vision_model,
+            capability_routing=self._capability_routing,
         )
 
     def load_session(self, session_id: str) -> Session | None:

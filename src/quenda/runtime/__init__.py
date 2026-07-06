@@ -1,7 +1,7 @@
 """
 Quenda Runtime Layer.
 
-The runtime manages Agent, Workspace, Session, Prompt, and Run semantics.
+The runtime manages Agent, Workspace, Session, Prompt, Run, and Model Routing semantics.
 It coordinates Kernel execution but does not handle persistence.
 
 This layer is async - it wraps the sync Kernel with real-time event streaming.
@@ -14,12 +14,22 @@ from quenda.runtime.events import (
     Event,
     ModelCalled,
     ModelResponded,
+    ModelRouted,
     RunCompleted,
     RunStarted,
     RunTerminated,
     ToolExecuted,
 )
 from quenda.runtime.run import Run, RunStatus, SkillActivationHandler
+from quenda.runtime.routing import (
+    CapabilityGuard,
+    ModelRequirementResolver,
+    ModelRouter,
+    ModelRoutingResult,
+    ensure_capabilities_supported,
+    resolve_requirements,
+    route_model,
+)
 from quenda.runtime.session import Session, SessionState
 from quenda.runtime.termination import (
     CompositeTerminationPolicy,
@@ -67,10 +77,19 @@ __all__ = [
     "Event",
     "ModelCalled",
     "ModelResponded",
+    "ModelRouted",
     "RunCompleted",
     "RunStarted",
     "RunTerminated",
     "ToolExecuted",
+    # Routing (ADR-028)
+    "ModelRequirementResolver",
+    "ModelRouter",
+    "CapabilityGuard",
+    "ModelRoutingResult",
+    "resolve_requirements",
+    "route_model",
+    "ensure_capabilities_supported",
     # Trace
     "TraceSink",
     "NullTraceSink",

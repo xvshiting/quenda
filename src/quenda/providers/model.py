@@ -87,6 +87,36 @@ class ModelSpec:
         return f"ModelSpec(id={self.id!r}, name={self.name!r})"
 
 
+def capabilities_of(spec: ModelSpec) -> set[str]:
+    """
+    Extract capabilities from a ModelSpec as a set of capability names.
+
+    This adapter converts ModelSpec's boolean capability fields into a
+    unified capability set, enabling capability-based model routing.
+
+    The returned set always includes 'text' as all models support text.
+
+    Args:
+        spec: The ModelSpec to extract capabilities from.
+
+    Returns:
+        A set of capability names (e.g., {"text", "vision"}).
+
+    Example:
+        >>> spec = ModelSpec(id="gpt-4o", name="GPT-4o", vision=True)
+        >>> capabilities_of(spec)
+        {'text', 'vision'}
+    """
+    from quenda.kernel.types import ModelCapability
+
+    capabilities = {ModelCapability.TEXT}
+
+    if spec.vision:
+        capabilities.add(ModelCapability.VISION)
+
+    return capabilities
+
+
 class Model:
     """
     A model bound to a Provider.

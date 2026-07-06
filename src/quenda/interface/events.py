@@ -236,6 +236,8 @@ class StreamingEventHandler:
         """Dispatch event to appropriate handler."""
         if event.type == "run_started":
             self.on_run_started(event)  # type: ignore[arg-type]
+        elif event.type == "model_routed":
+            self.on_model_routed(event)  # type: ignore[arg-type]
         elif event.type == "model_responded":
             self.on_model_responded(event)  # type: ignore[arg-type]
         elif event.type == "tool_executed":
@@ -250,6 +252,12 @@ class StreamingEventHandler:
             self.on_compression_started(event)  # type: ignore[arg-type]
         elif event.type == "compression_completed":
             self.on_compression_completed(event)  # type: ignore[arg-type]
+
+    def on_model_routed(self, event: AnyEvent) -> None:
+        """Handle model routing event - render the routing hint."""
+        rendered = self.renderer.render(event)
+        if rendered:
+            print(rendered, file=self.output)
 
 
 @dataclass
@@ -359,6 +367,8 @@ class ActivityEventHandler:
     def on_event(self, event: AnyEvent) -> None:
         if event.type == "run_started":
             self.on_run_started(event)  # type: ignore[arg-type]
+        elif event.type == "model_routed":
+            self.on_model_routed(event)  # type: ignore[arg-type]
         elif event.type == "model_responded":
             self.on_model_responded(event)  # type: ignore[arg-type]
         elif event.type == "tool_executed":
@@ -373,6 +383,11 @@ class ActivityEventHandler:
             self.on_compression_started(event)  # type: ignore[arg-type]
         elif event.type == "compression_completed":
             self.on_compression_completed(event)  # type: ignore[arg-type]
+
+    def on_model_routed(self, event: AnyEvent) -> None:
+        """Handle model routing event."""
+        if self.renderer is not None:
+            self._record_activity(self.renderer.render(event))
 
 
 @dataclass
@@ -445,6 +460,8 @@ class ProgressEventHandler:
     def on_event(self, event: AnyEvent) -> None:
         if event.type == "run_started":
             self.on_run_started(event)  # type: ignore[arg-type]
+        elif event.type == "model_routed":
+            self.on_model_routed(event)  # type: ignore[arg-type]
         elif event.type == "tool_executed":
             self.on_tool_executed(event)  # type: ignore[arg-type]
         elif event.type == "run_completed":
@@ -457,6 +474,14 @@ class ProgressEventHandler:
             self.on_compression_started(event)  # type: ignore[arg-type]
         elif event.type == "compression_completed":
             self.on_compression_completed(event)  # type: ignore[arg-type]
+
+    def on_model_routed(self, event: AnyEvent) -> None:
+        """Handle model routing event."""
+        self.indicator.stop()
+        rendered = self.renderer.render(event)
+        if rendered:
+            print(rendered, file=self.output)
+        self.indicator.start()
 
 
 @dataclass

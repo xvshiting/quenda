@@ -128,6 +128,12 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
   - 补充 registry/model lookup 兼容性测试
   - 验证所有内置 Provider 可发现、可创建 Model
 
+- **P1.5: Capability-Based Model Routing (ADR-028)**
+  - Kernel: `ModelCapability` enum + `ModelRequirements` + `UnsupportedFeatureError`
+  - Runtime: `ModelRequirementResolver` + `ModelRouter` + `CapabilityGuard` + `ModelRouted` Event
+  - Host: `models.default` + `models.vision` 配置
+  - 详见 [decisions/028-capability-based-model-routing.md](decisions/028-capability-based-model-routing.md)
+
 ### 📋 待做
 
 - **P2: Host 安全与权限**
@@ -287,6 +293,7 @@ execution:
 **语义原则**：
 - 所有 bundle 和 include 都是 **request**
 - Host 解析最终能力集（未来可加入 trust/permission policy）
+- 配置了 tool bundle，就代表该能力已授予，不再额外叠加同类运行时权限开关
 
 **兼容性默认**：
 - 如果 `tools.bundles` 缺失或为空，Host 默认按 `["core"]` 处理
@@ -326,7 +333,6 @@ execution:
 |-----|------|
 | HTTPRequestTool | HTTP 请求（带 SSRF 防护） |
 | WebFetchTool | 获取网页内容 |
-| WebSearchTool | DuckDuckGo 搜索 |
 
 ### 便捷聚合
 
@@ -335,7 +341,7 @@ execution:
 | get_core_tools(workspace) | 7 个核心 Coding Agent 工具 |
 | get_filesystem_tools(workspace) | 5 个文件系统工具 |
 | get_execution_tools(workspace) | 2 个执行工具 |
-| get_network_tools() | 3 个网络工具 |
+| get_network_tools() | 2 个网络工具 |
 
 ### Interface 层
 

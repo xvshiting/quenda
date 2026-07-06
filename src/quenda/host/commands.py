@@ -679,6 +679,8 @@ class ModelCommand:
 
             # Build description with model info
             description = model_spec.name if model_spec.name else ""
+            if getattr(model_spec, "role", None):
+                description = f"[{model_spec.role}] {description}" if description else f"[{model_spec.role}]"
             if model_spec.context_window:
                 ctx = model_spec.context_window
                 if ctx >= 1_000_000:
@@ -833,15 +835,36 @@ class ModelCommand:
 
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         if not args.strip():
-            # Show current model
+            # Show current model configuration
             if context.model is None:
                 return CommandResult(
                     status="error",
                     message="No model is currently set.",
                 )
+
+            # Build model info message
+            model_info = f"**Default model:** `{context.model}`"
+
+            # Add vision model info if available
+            binding = context.host_binding
+            if binding is not None:
+                vision_model = getattr(binding, "vision_model_instance", None)
+                capability_routing = getattr(binding, "capability_routing", True)
+
+                if vision_model is not None:
+                    model_info += f"\n**Vision model:** `{vision_model.provider.id}/{vision_model.id}`"
+
+                model_info += f"\n**Capability routing:** `{capability_routing}`"
+
+                # Show model capabilities
+                from quenda.providers.model import capabilities_of
+                caps = capabilities_of(context.model.spec)
+                caps_str = ", ".join(sorted(c.value for c in caps))
+                model_info += f"\n**Capabilities:** {caps_str}"
+
             return CommandResult(
                 status="ok",
-                message=f"**Current model:** `{context.model}`",
+                message=model_info,
             )
 
         # Parse provider/model

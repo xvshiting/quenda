@@ -6,7 +6,39 @@ These types are pure data structures with no external dependencies.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Literal
+
+
+class ModelCapability(str, Enum):
+    """
+    Model capabilities for capability-based routing.
+
+    These capabilities represent what a model can handle in terms of
+    input/output modalities and features. Runtime uses these to route
+    messages to appropriate models.
+
+    See ADR-028: Capability-Based Model Routing
+    """
+
+    TEXT = "text"
+    VISION = "vision"
+    AUDIO_INPUT = "audio_input"
+    AUDIO_OUTPUT = "audio_output"
+
+
+@dataclass(frozen=True)
+class ModelRequirements:
+    """
+    Required capabilities for a model invocation.
+
+    Runtime analyzes the effective context and determines what
+    capabilities are needed for the current turn.
+
+    See ADR-028: Capability-Based Model Routing
+    """
+
+    capabilities: set[ModelCapability] = field(default_factory=lambda: {ModelCapability.TEXT})
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,7 @@ from quenda.runtime.events import (
     ToolExecuted,
     RunInterrupted,
 )
+from quenda.runtime.permission import PermissionRequiredError
 from quenda.runtime.session import SessionState
 from quenda.providers.errors import UnsupportedFeatureError
 
@@ -88,13 +89,14 @@ class Run:
     and emit events for observability.
 
     ADR-023: Runtime owns the execution loop.
+    ADR-028: Capability-based model routing.
     Kernel provides execution primitives (invoke_model, execute_tool).
     """
 
     id: str
     agent: AgentDefinition
     session: SessionState
-    model: Model
+    model: Model  # Default model (may be overridden by routing)
     status: RunStatus = RunStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     storage: Storage | None = None
@@ -116,6 +118,10 @@ class Run:
     # Skill activation handler (ADR-027): Host injects this
     skill_activation_handler: SkillActivationHandler | None = None
 
+    # Model routing (ADR-028): Host injects these
+    vision_model: Model | None = None
+    capability_routing: bool = True
+
     _event_handlers: list[Callable[[AnyEvent], None]] = field(default_factory=list)
     _executor: ThreadPoolExecutor = field(default_factory=ThreadPoolExecutor)
 
@@ -130,6 +136,8 @@ class Run:
         termination_policy: TerminationPolicy | None = None,
         tool_selection_policy: ToolSelectionPolicy | None = None,
         tool_result_processing_policy: ToolResultProcessingPolicy | None = None,
+        vision_model: Model | None = None,
+        capability_routing: bool = True,
     ) -> Run:
         """
         Create a new Run.
@@ -143,6 +151,8 @@ class Run:
             termination_policy: Optional termination policy for run control.
             tool_selection_policy: Optional tool selection policy for gating.
             tool_result_processing_policy: Optional policy for shaping tool results.
+            vision_model: Optional vision model for capability routing (ADR-028).
+            capability_routing: Whether to enable capability-based routing (ADR-028).
 
         Returns:
             A new Run instance.
@@ -157,6 +167,8 @@ class Run:
             termination_policy=termination_policy,
             tool_selection_policy=tool_selection_policy,
             tool_result_processing_policy=tool_result_processing_policy,
+            vision_model=vision_model,
+            capability_routing=capability_routing,
         )
 
     def on_event(self, handler: Callable[[AnyEvent], None]) -> None:
@@ -234,9 +246,6 @@ class Run:
             messages = self._build_messages()
             original_count = len(messages)
 
-            # Create kernel for execution primitives
-            kernel = Kernel(self.model, self.agent.tools)
-
             # Runtime-owned execution loop
             step_count = 0
             tool_round_count = 0
@@ -248,12 +257,25 @@ class Run:
             iteration = 0
             max_iterations = 100  # Hard guard
 
+            # Current resolved model (may change due to routing)
+            current_model = self.model
+
             while iteration < max_iterations:
                 iteration += 1
 
                 # Check for interrupt
                 if is_interrupted():
                     break
+
+                # ADR-028: Resolve model based on message capabilities
+                resolved_model, routing_event = self._resolve_model_for_messages(messages)
+                if routing_event:
+                    self._emit(routing_event)
+                    yield routing_event
+                    current_model = resolved_model
+
+                # Create kernel with resolved model
+                kernel = Kernel(current_model, self.agent.tools)
 
                 # Invoke model (async wrapper around sync primitive)
                 response = await asyncio.get_running_loop().run_in_executor(
@@ -393,11 +415,9 @@ class Run:
                                     break
 
                         if is_approved:
-                            # Execute approved tool
-                            raw_result = await asyncio.get_running_loop().run_in_executor(
-                                self._executor,
-                                kernel.execute_tool,
-                                call,
+                            # Execute approved tool (with permission handling)
+                            raw_result = await self._execute_tool_with_permission(
+                                kernel, call, step_count, error_count, consecutive_error_count
                             )
 
                             step_count += 1
@@ -737,6 +757,49 @@ class Run:
                         skill_names.append(skill_name)
         return skill_names
 
+    async def _execute_tool_with_permission(
+        self,
+        kernel: Kernel,
+        call: ToolCall,
+        step_count: int,
+        error_count: int,
+        consecutive_error_count: int,
+    ) -> ToolResult:
+        """
+        Execute a tool.
+
+        Permission is hard-denied at the runtime boundary.
+        If a tool raises PermissionRequiredError, it is converted into
+        a denied ToolResult immediately.
+
+        Args:
+            kernel: The kernel to execute the tool.
+            call: The tool call to execute.
+            step_count: Current step count (for logging).
+            error_count: Current error count.
+            consecutive_error_count: Current consecutive error count.
+
+        Returns:
+            ToolResult on success, or a denied ToolResult on permission error.
+        """
+        try:
+            # Try executing the tool
+            raw_result = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                kernel.execute_tool,
+                call,
+            )
+            return raw_result
+
+        except PermissionRequiredError as e:
+            request = e.request
+            return ToolResult(
+                call_id=call.id,
+                name=call.name,
+                content=f"Permission denied: {request.reason or 'Access not allowed'}",
+                is_error=True,
+            )
+
     def _build_messages(self) -> list[Message]:
         """
         Build the message list with system prompt and summary blocks.
@@ -756,9 +819,66 @@ class Run:
 
         return messages
 
+    def _resolve_model_for_messages(self, messages: list[Message]) -> tuple[Model, "ModelRouted | None"]:
+        """
+        Resolve the appropriate model for the given messages using capability routing.
+
+        ADR-028: Capability-based model routing.
+
+        Args:
+            messages: The messages to analyze for capability requirements.
+
+        Returns:
+            Tuple of (resolved_model, optional ModelRouted event).
+            The event is None if no routing was needed (default model used).
+        """
+        from quenda.runtime.routing import ModelRequirementResolver, ModelRouter, ModelRoutingResult
+        from quenda.runtime.events import ModelRouted
+
+        # If routing disabled or no vision model configured, use default
+        if not self.capability_routing or self.vision_model is None:
+            return self.model, None
+
+        # Resolve requirements from messages
+        resolver = ModelRequirementResolver()
+        requirements = resolver.resolve(messages)
+
+        # Route to appropriate model
+        router = ModelRouter()
+        try:
+            result = router.route(
+                requirements=requirements,
+                default_model=self.model,
+                capability_models={"vision": self.vision_model},
+            )
+
+            # If routing occurred, emit event
+            if result.resolved_role != "default":
+                event = ModelRouted(
+                    requested_role=result.requested_role,
+                    resolved_role=result.resolved_role,
+                    provider=result.model.provider.id,
+                    model_id=result.model.id,
+                    required_capabilities=result.required_capabilities,
+                    reason=result.reason,
+                )
+                return result.model, event
+
+            return result.model, None
+
+        except UnsupportedFeatureError:
+            # Re-raise with more context
+            raise
+
     def _ensure_vision_supported(self, user_message: str | Sequence[TextContent | ImageContent]) -> None:
         """
-        Fail fast when image blocks are present but the model does not support vision.
+        Fail fast when image blocks are present but no vision model is available.
+
+        This is a compatibility check before routing. The actual routing happens
+        in _resolve_model_for_messages.
+
+        ADR-028: This method is kept for backward compatibility but delegates
+        to the routing system.
         """
         if isinstance(user_message, str):
             return
@@ -767,15 +887,21 @@ class Run:
         if not has_image:
             return
 
+        # Check if default model supports vision
         model_spec = getattr(self.model, "spec", None)
         supports_vision = bool(getattr(model_spec, "vision", False))
         if supports_vision:
             return
 
+        # Check if vision model is configured
+        if self.vision_model is not None:
+            return
+
+        # No vision support available
         model_id = getattr(self.model, "id", "current model")
         raise UnsupportedFeatureError(
-            f"Model {model_id} does not support image input. "
-            "Choose a vision-capable model before sending images.",
+            f"Model {model_id} does not support image input and no vision model is configured. "
+            "Choose a vision-capable model or configure a vision model in config.yaml.",
             feature="vision",
         )
 

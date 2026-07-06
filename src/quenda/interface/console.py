@@ -54,6 +54,8 @@ class ConsoleRenderer:
         self.theme = theme or InterfaceTheme()
         self.verbose = verbose
         self._step_count = 0
+        self._model_routed = False  # Track if model routing occurred this run
+        self._routed_model_info = ""  # Store routed model info for display
 
     def render(self, event: AnyEvent) -> str | None:
         """
@@ -67,6 +69,8 @@ class ConsoleRenderer:
         """
         if event.type == "run_started":
             return self._render_run_started(event)
+        if event.type == "model_routed":
+            return self._render_model_routed(event)
         if event.type == "model_responded":
             return self._render_model_responded(event)
         if event.type == "tool_executed":
@@ -80,6 +84,30 @@ class ConsoleRenderer:
         if event.type == "compression_completed":
             return self._render_compression_completed(event)
         return None
+
+    def _render_model_routed(self, event: AnyEvent) -> str | None:
+        """
+        Render model routing event.
+
+        Shows a hint when the model is automatically routed due to capability requirements.
+        Only shows when resolved_role != "default".
+        """
+        # Reset routing state for new run
+        self._model_routed = False
+        self._routed_model_info = ""
+
+        # Only show if routing actually occurred (not using default)
+        if event.resolved_role == "default":
+            return None
+
+        self._model_routed = True
+        self._routed_model_info = f"{event.provider}/{event.model_id}"
+
+        # Build hint message
+        caps_str = ", ".join(sorted(event.required_capabilities))
+        hint = f"🔄 Routed to {event.resolved_role}: {self._routed_model_info} (requires: {caps_str})"
+
+        return f"\n{hint}"
 
     def _render_run_started(self, event: AnyEvent) -> str | None:
         """Render run started event."""
@@ -233,11 +261,17 @@ class ConsoleRenderer:
                     duration_s=event.duration_ms / 1000,
                 )
 
-        return self.theme.complete_template.format(
+        base = self.theme.complete_template.format(
             complete_icon=self.theme.complete_icon,
             steps=event.total_steps,
             duration=duration_str,
         )
+
+        # Add model routing hint if applicable
+        if self._model_routed and self._routed_model_info:
+            base += f" | model: {self._routed_model_info}"
+
+        return base
 
     def _render_error(self, event: AnyEvent) -> str:
         """Render error event."""

@@ -19,6 +19,30 @@
 - [ ] 验证所有内置 Provider 可发现、可创建 Model，并有清晰错误语义
 - [ ] 为旧 provider 类迁移到 `get_provider_registry().get_model(...)` 写迁移说明
 
+### P1.5: Capability-Based Model Routing (ADR-028)
+
+> 不是给 Quenda 加一个"vision 模型切换按钮"，而是建立一套最小的 capability-based model routing。
+
+- [ ] **Kernel 层**：定义能力语言
+  - `ModelCapability` enum (TEXT, VISION, AUDIO_INPUT, AUDIO_OUTPUT)
+  - `ModelRequirements` dataclass
+  - `UnsupportedFeatureError` 异常类型
+- [ ] **Provider 层**：能力适配
+  - `capabilities_of(spec: ModelSpec) -> set[ModelCapability]` 适配器
+  - 保持 `ModelSpec.vision: bool` 布尔字段，通过适配器转换
+- [ ] **Runtime 层**：核心路由逻辑
+  - `ModelRequirementResolver` — 分析本轮有效上下文的能力需求
+  - `ModelRouter` — 根据需求和配置选择模型角色
+  - `CapabilityGuard` — 校验模型是否满足所需能力
+  - `ModelRouted` Event — 记录路由决策，便于调试和审计
+- [ ] **Host 层**：配置与展示
+  - `config.yaml` 支持 `models.default` 和 `models.vision` 配置
+  - REPL 输出路由信息（如 `Detected image input. Routing default → vision`）
+  - `/models` 命令展示模型角色配置
+- [ ] **优先级机制**：显式选择 > Session 锁定 > 能力路由 > default
+  - 用户显式锁定非 vision 模型 + 发图 → `UnsupportedFeatureError`
+- [ ] 详见 [docs/decisions/028-capability-based-model-routing.md](docs/decisions/028-capability-based-model-routing.md)
+
 ### P2: Host 最小骨架
 
 - [x] 定义 Session/Run 持久化边界

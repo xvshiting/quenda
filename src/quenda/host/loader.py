@@ -26,6 +26,52 @@ if TYPE_CHECKING:
     from quenda.interface.theme import InterfaceTheme
 
 
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce common YAML-like boolean values into a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "y", "on", "1"}:
+            return True
+        if normalized in {"false", "no", "n", "off", "0"}:
+            return False
+    return default
+
+
+def _parse_scalar_value(value: str) -> object:
+    """Parse a scalar YAML-like value from text."""
+    raw = value.strip()
+    if not raw:
+        return ""
+
+    lower = raw.lower()
+    if lower in {"true", "false"}:
+        return lower == "true"
+    if lower in {"null", "none", "~"}:
+        return None
+
+    # Integer
+    if raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+
+    # Float
+    try:
+        if any(ch in raw for ch in (".", "e", "E")):
+            return float(raw)
+    except ValueError:
+        pass
+
+    return raw.strip("\"'")
+
+
 @dataclass
 class ThemeConfig:
     """
@@ -88,6 +134,91 @@ class ThemeConfig:
 
 
 @dataclass
+class ModelRoleConfig:
+    """
+    Configuration for a single model role.
+
+    Attributes:
+        provider: Provider ID (e.g., "openai", "deepseek").
+        model: Model ID (e.g., "gpt-4o", "deepseek-v4-flash").
+    """
+
+    provider: str
+    model: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | str) -> "ModelRoleConfig | None":
+        """Create from parsed YAML dictionary or string."""
+        if isinstance(data, str):
+            # Simple form: "provider/model"
+            parts = data.split("/", 1)
+            if len(parts) == 2:
+                return cls(provider=parts[0], model=parts[1])
+            return None
+
+        if isinstance(data, dict):
+            return cls(
+                provider=data.get("provider", ""),
+                model=data.get("model", ""),
+            )
+
+        return None
+
+
+@dataclass
+class ModelsConfig:
+    """
+    Model roles configuration (ADR-028: Capability-Based Model Routing).
+
+    Supports:
+    - default: Default model for text-based tasks
+    - vision: Model for image input (routed automatically)
+    - routing: Routing behavior configuration
+
+    Example config.yaml:
+        models:
+          default:
+            provider: deepseek
+            model: deepseek-v4-flash
+          vision:
+            provider: dashscope
+            model: qwen3-vl-plus
+          routing:
+            capability_routing: true
+            missing_capability: error
+    """
+
+    default: ModelRoleConfig | None = None
+    vision: ModelRoleConfig | None = None
+    capability_routing: bool = True
+    missing_capability: str = "error"  # error | warn | ignore
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ModelsConfig":
+        """Create from parsed YAML dictionary."""
+        if not data:
+            return cls()
+
+        # Handle simple form: models: "provider/model"
+        if isinstance(data, str):
+            default = ModelRoleConfig.from_dict(data)
+            return cls(default=default)
+
+        default_data = data.get("default")
+        vision_data = data.get("vision")
+        routing_data = data.get("routing", {})
+
+        return cls(
+            default=ModelRoleConfig.from_dict(default_data) if default_data else None,
+            vision=ModelRoleConfig.from_dict(vision_data) if vision_data else None,
+            capability_routing=_coerce_bool(
+                routing_data.get("capability_routing", True), True
+            ),
+            missing_capability=routing_data.get("missing_capability", "error"),
+        )
+
+
+@dataclass
 class CompressionConfig:
     """
     Compression configuration from config.yaml (ADR-015).
@@ -114,10 +245,10 @@ class CompressionConfig:
             return cls()
 
         return cls(
-            enabled=data.get("enabled", True),
+            enabled=_coerce_bool(data.get("enabled", True), True),
             threshold_ratio=data.get("threshold_ratio", 0.8),
             keep_last_n_messages=data.get("keep_last_n_messages", 10),
-            archive_raw_messages=data.get("archive_raw_messages", True),
+            archive_raw_messages=_coerce_bool(data.get("archive_raw_messages", True), True),
             compression_model=data.get("compression_model"),
         )
 
@@ -212,8 +343,9 @@ class AgentConfigYaml:
     Machine-readable agent configuration from config.yaml.
 
     Attributes:
-        model_provider: Default model provider.
-        model_name: Default model name.
+        model_provider: Default model provider (legacy, prefer models.default).
+        model_name: Default model name (legacy, prefer models.default).
+        models: Model roles configuration (ADR-028).
         instructions_include: List of instruction files to include.
         skills: List of skills to activate by default.
         theme: Theme configuration for interface layer.
@@ -224,6 +356,7 @@ class AgentConfigYaml:
 
     model_provider: str | None = None
     model_name: str | None = None
+    models: ModelsConfig = field(default_factory=ModelsConfig)
     instructions_include: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     include_skill_catalog: bool = False
@@ -236,6 +369,7 @@ class AgentConfigYaml:
     def from_dict(cls, data: dict[str, Any]) -> AgentConfigYaml:
         """Create from parsed YAML dictionary."""
         model = data.get("model", {})
+        models_data = data.get("models", {})
         instructions = data.get("instructions", {})
         theme_data = data.get("theme", {})
         compression_data = data.get("compression", {})
@@ -250,17 +384,49 @@ class AgentConfigYaml:
         elif isinstance(skills_data, dict):
             # Structured form: skills: {activate: [skill1, skill2]}
             skills_list = skills_data.get("activate", [])
-            include_skill_catalog = bool(skills_data.get("include_catalog", False))
+            include_skill_catalog = skills_data.get("include_catalog", False)
         else:
             skills_list = []
             include_skill_catalog = False
 
+        # Parse models config
+        # Priority: models key > model key with new format (default/vision) > model key with legacy format
+        models_config = None
+
+        # 1. Check for "models:" key (ADR-028 new format)
+        if models_data:
+            models_config = ModelsConfig.from_dict(models_data)
+
+        # 2. Check for "model:" key with new format (default/vision)
+        if models_config is None and isinstance(model, dict):
+            if "default" in model or "vision" in model:
+                # model: default: ... vision: ... format
+                models_config = ModelsConfig.from_dict(model)
+
+        # 3. Check for "model:" key with legacy format (provider/name)
+        if models_config is None or models_config.default is None:
+            if isinstance(model, dict):
+                model_provider = model.get("provider")
+                model_name = model.get("name")
+                if model_provider and model_name:
+                    # Legacy format: model: provider: ... name: ...
+                    models_config = ModelsConfig(
+                        default=ModelRoleConfig(provider=model_provider, model=model_name)
+                    )
+
+        # 4. Default: empty config
+        if models_config is None:
+            models_config = ModelsConfig()
+
         return cls(
             model_provider=model.get("provider") if isinstance(model, dict) else None,
             model_name=model.get("name") if isinstance(model, dict) else None,
+            models=models_config,
             instructions_include=instructions.get("include", []) if isinstance(instructions, dict) else [],
             skills=skills_list,
-            include_skill_catalog=include_skill_catalog if isinstance(skills_data, dict) else False,
+            include_skill_catalog=_coerce_bool(include_skill_catalog, False)
+            if isinstance(skills_data, dict)
+            else False,
             theme=ThemeConfig.from_dict(theme_data),
             compression=CompressionConfig.from_dict(compression_data),
             tools=ToolsConfig.from_dict(tools_data),
@@ -348,10 +514,10 @@ def load_agent_from_markdown(path: Path | str) -> AgentConfig:
             if value.startswith("[") and value.endswith("]"):
                 # Simple list parsing: [a, b, c]
                 items = value[1:-1].split(",")
-                config[key] = [item.strip().strip("\"'") for item in items if item.strip()]
+                config[key] = [_parse_scalar_value(item) for item in items if item.strip()]
             else:
                 # Remove quotes
-                config[key] = value.strip("\"'")
+                config[key] = _parse_scalar_value(value)
 
     name = config.get("name", path.parent.name)
     if not isinstance(name, str):
@@ -458,9 +624,9 @@ def _parse_frontmatter(content: str, path: Path) -> dict[str, object]:
             # Handle list values
             if value.startswith("[") and value.endswith("]"):
                 items = value[1:-1].split(",")
-                config[key] = [item.strip().strip("\"'") for item in items if item.strip()]
+                config[key] = [_parse_scalar_value(item) for item in items if item.strip()]
             else:
-                config[key] = value.strip("\"'")
+                config[key] = _parse_scalar_value(value)
 
     return config
 

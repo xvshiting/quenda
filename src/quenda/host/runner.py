@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from quenda.kernel.model import Model
     from quenda.runtime.agent import Agent
     from quenda.runtime.compressor import Compressor
+    from quenda.runtime.permission import PermissionPolicy
     from quenda.tools import Tool
     from quenda.tools.execution import SandboxConfig
 
@@ -73,6 +74,8 @@ class StableHostBinding:
         provider_name: Model provider name.
         model_name: Model name.
         model_instance: Resolved Model instance.
+        vision_model_instance: Optional vision model for capability routing (ADR-028).
+        capability_routing: Whether capability-based routing is enabled.
         tools: Granted tool set.
         sandbox_config: Python sandbox configuration.
         compression_policy: Compression policy if enabled.
@@ -94,6 +97,8 @@ class StableHostBinding:
     model_instance: Model
     tools: list[Tool]
     sandbox_config: SandboxConfig
+    vision_model_instance: Model | None = None
+    capability_routing: bool = True
     compression_policy: CompressionPolicy | None = None
     compressor: Compressor | None = None
     storage: FileStorage | None = None
@@ -134,6 +139,7 @@ def _resolve_tools(
     config: AgentConfigYaml | None,
     loaded_tool_catalog: LoadedToolCatalog | None = None,
     skill_resource_resolver: ResourceResolver | None = None,
+    permission_policy: "PermissionPolicy" | None = None,
 ) -> list[Tool]:
     """
     Resolve tools based on agent capability declaration.
@@ -200,7 +206,7 @@ def _resolve_tools(
         sandbox_config = _resolve_sandbox_config(config)
         builder.register(ListFilesTool(workspace), source="builtin")
         builder.register(SearchTextTool(workspace), source="builtin")
-        builder.register(ReadFileTool(workspace), source="builtin")
+        builder.register(ReadFileTool(workspace, permission_policy=permission_policy), source="builtin")
         builder.register(WriteFileTool(workspace), source="builtin")
         builder.register(ApplyPatchTool(workspace), source="builtin")
         builder.register(RunShellTool(workspace), source="builtin")
@@ -210,10 +216,9 @@ def _resolve_tools(
 
     # Network bundle tools
     if "network" in requested_bundles:
-        from quenda.tools.network import HTTPRequestTool, WebFetchTool, WebSearchTool
+        from quenda.tools.network import HTTPRequestTool, WebFetchTool
         builder.register(HTTPRequestTool(), source="builtin")
         builder.register(WebFetchTool(), source="builtin")
-        builder.register(WebSearchTool(), source="builtin")
 
     # Register agent-local custom tools from loaded catalog
     if loaded_tool_catalog:
@@ -241,6 +246,7 @@ def _resolve_tools(
     for name, spec in builder._catalog.tools.items():
         if spec.source in ("builtin", "skill_resource"):
             tool = _instantiate_tool(spec, workspace)
+            _apply_permission_policy(tool, permission_policy)
             if tool.name not in seen_names:
                 resolved_tools.append(tool)
                 seen_names.add(tool.name)
@@ -258,6 +264,7 @@ def _resolve_tools(
             )
 
         tool = _instantiate_tool(spec, workspace)
+        _apply_permission_policy(tool, permission_policy)
         if tool.name not in seen_names:
             resolved_tools.append(tool)
             seen_names.add(tool.name)
@@ -287,6 +294,19 @@ def _instantiate_tool(spec: NamedToolSpec, workspace: Path) -> Tool:
             return spec.factory()
 
     raise ValueError(f"Tool spec '{spec.name}' has neither tool nor factory")
+
+
+def _apply_permission_policy(tool: Tool, permission_policy: "PermissionPolicy" | None) -> None:
+    """Attach the active permission policy to tools that support it."""
+    if permission_policy is None:
+        return
+
+    try:
+        current_policy = getattr(tool, "permission_policy", None)
+        if current_policy is None:
+            setattr(tool, "permission_policy", permission_policy)
+    except Exception:
+        pass
 
 
 def _resolve_sandbox_config(config: AgentConfigYaml | None) -> SandboxConfig:
@@ -341,6 +361,7 @@ def setup_host_binding(
     provider: str | None = None,
     model: str | None = None,
     tools: list[Tool] | None = None,
+    permission_policy: "PermissionPolicy" | None = None,
 ) -> StableHostBinding | None:
     """
     Capability binding path - runs once at setup or explicit rebind.
@@ -392,21 +413,47 @@ def setup_host_binding(
         # 6. Load agent-local custom providers (before resolving provider/model)
         load_agent_providers(agent_dir)
 
-        # 7. Resolve provider/model
-        provider_name = provider or (
-            agent_package.config.model_provider if agent_package.config else None
-        ) or "deepseek"
-        model_name = model or (
-            agent_package.config.model_name if agent_package.config else None
-        ) or "deepseek-v4-flash"
+        # 7. Resolve provider/model (with ADR-028 model roles support)
+        models_config = (
+            agent_package.config.models
+            if agent_package.config and agent_package.config.models
+            else None
+        )
 
-        # 8. Get model instance
+        # Determine default model
+        if models_config and models_config.default:
+            provider_name = models_config.default.provider
+            model_name = models_config.default.model
+        else:
+            # Legacy or override
+            provider_name = provider or (
+                agent_package.config.model_provider if agent_package.config else None
+            ) or "deepseek"
+            model_name = model or (
+                agent_package.config.model_name if agent_package.config else None
+            ) or "deepseek-v4-flash"
+
+        # 8. Get model instances
         from quenda.providers import get_provider_registry
         registry = get_provider_registry()
         try:
             model_instance = registry.get_model(provider_name, model_name)
         except KeyError:
             return None
+
+        # Resolve vision model if configured
+        vision_model_instance = None
+        capability_routing = models_config.capability_routing if models_config else True
+
+        if models_config and models_config.vision:
+            try:
+                vision_model_instance = registry.get_model(
+                    models_config.vision.provider,
+                    models_config.vision.model,
+                )
+            except KeyError:
+                # Vision model configured but not found - will warn but not fail
+                pass
 
         # 9. Setup skill discovery and activator
         user_workspace_skills_path = resolver.get_user_workspace_skills_path(
@@ -438,7 +485,11 @@ def setup_host_binding(
                 agent_package.config,
                 loaded_tool_catalog,
                 skill_resource_resolver,
+                permission_policy,
             )
+        else:
+            for tool in tools:
+                _apply_permission_policy(tool, permission_policy)
 
         # 14. Resolve sandbox config
         sandbox_config = _resolve_sandbox_config(agent_package.config)
@@ -485,6 +536,8 @@ def setup_host_binding(
             provider_name=provider_name,
             model_name=model_name,
             model_instance=model_instance,
+            vision_model_instance=vision_model_instance,
+            capability_routing=capability_routing,
             tools=tools,
             sandbox_config=sandbox_config,
             compression_policy=compression_policy,
@@ -644,6 +697,7 @@ def setup_agent(
     provider: str | None = None,
     model: str | None = None,
     tools: list[Tool] | None = None,
+    permission_policy: "PermissionPolicy" | None = None,
 ) -> AgentSetup | None:
     """
     Setup an agent from AGENT.md path.
@@ -684,6 +738,7 @@ def setup_agent(
             provider=provider,
             model=model,
             tools=tools,
+            permission_policy=permission_policy,
         )
         if binding is None:
             return None
@@ -707,6 +762,8 @@ def setup_agent(
             storage=binding.storage,
             compression_policy=binding.compression_policy,
             compressor=binding.compressor,
+            vision_model=binding.vision_model_instance,
+            capability_routing=binding.capability_routing,
         )
 
         # Create ContextRebuilder for runtime context rebuilding
