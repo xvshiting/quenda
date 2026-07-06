@@ -554,7 +554,8 @@ def setup_host_binding(
         # These are trusted directories that agents should be able to write to without prompting
         # Grant access to entire ~/.quenda/users/<user_id>/ directory
         if permission_policy is not None:
-            from quenda.runtime.permission import PermissionManager, PermissionKind, PermissionScope, PermissionLifetime
+            from quenda.host.permission_manager import PermissionManager
+            from quenda.runtime.permission import PermissionKind, PermissionScope, PermissionLifetime
             if isinstance(permission_policy, PermissionManager):
                 user_root_path = resolver.get_user_root_path(user)
                 permission_policy.grant_user_provided_resource(
@@ -862,6 +863,16 @@ def setup_agent(
         # =====================================================================
         context_snapshot = refresh_run_context(binding)
 
+        # Connect MCP servers before creating sessions so MCP tools are part of
+        # the same tool pool as built-ins and agent-local tools.
+        mcp_tools = _connect_mcp_servers_sync(binding)
+        if mcp_tools:
+            existing_names = {tool.name for tool in binding.tools}
+            binding.tools.extend(
+                tool for tool in mcp_tools
+                if tool.name not in existing_names
+            )
+
         # =====================================================================
         # Create Runtime Components
         # =====================================================================
@@ -921,6 +932,16 @@ def setup_agent(
 
     except Exception:
         return None
+
+
+def _connect_mcp_servers_sync(binding: StableHostBinding) -> list[Tool]:
+    """Connect configured MCP servers from the synchronous setup path."""
+    import asyncio
+
+    if binding.mcp_manager is None:
+        return []
+
+    return asyncio.run(connect_mcp_servers(binding))
 
 
 __all__ = [
