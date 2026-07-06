@@ -7,6 +7,7 @@ These tests verify that Quenda can connect to MCP servers and use their tools.
 import asyncio
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 
 from quenda.host.mcp import (
     MCPConfig,
@@ -14,6 +15,7 @@ from quenda.host.mcp import (
     MCPToolRegistry,
     StdioMCPConfig,
 )
+from quenda.host.runner import connect_mcp_servers
 
 
 # Use absolute path to project root
@@ -64,7 +66,7 @@ class TestMCPClientE2E:
             result = await manager.call_tool("calculator.add", {"a": 5, "b": 3})
             assert result == 8  # 5 + 3 = 8
 
-            result = await manager.call_tool("calculator.multiply", {"a": 4, "b": 7})
+            result = await manager.call_tool("mcp__calculator__multiply", {"a": 4, "b": 7})
             assert result == 28  # 4 * 7 = 28
 
         finally:
@@ -96,13 +98,43 @@ class TestMCPClientE2E:
             tools = await registry.build_tools()
 
             tool_names = [t.name for t in tools]
-            assert "calc.add" in tool_names
-            assert "calc.multiply" in tool_names
+            assert "mcp__calc__add" in tool_names
+            assert "mcp__calc__multiply" in tool_names
 
             # Check tool descriptions
-            add_tool = next(t for t in tools if t.name == "calc.add")
+            add_tool = next(t for t in tools if t.name == "mcp__calc__add")
             assert "add" in add_tool.description.lower() or "two" in add_tool.description.lower()
 
+        finally:
+            await manager.close()
+
+    @pytest.mark.asyncio
+    async def test_connect_mcp_servers_returns_tool_adapters(self, calculator_server_path: Path) -> None:
+        """Test host runner MCP connection helper returns tools for the model pool."""
+        if not calculator_server_path.exists():
+            pytest.skip(f"Calculator server not found at {calculator_server_path}")
+
+        config = MCPConfig.from_dict({
+            "servers": {
+                "calc": {
+                    "transport": "stdio",
+                    "command": "python",
+                    "args": [str(calculator_server_path)],
+                }
+            }
+        })
+        manager = MCPClientManager()
+        binding = SimpleNamespace(
+            mcp_manager=manager,
+            agent_package=SimpleNamespace(config=SimpleNamespace(mcp=config)),
+        )
+
+        try:
+            tools = await connect_mcp_servers(binding)
+            tool_names = [tool.name for tool in tools]
+
+            assert "mcp__calc__add" in tool_names
+            assert "mcp__calc__multiply" in tool_names
         finally:
             await manager.close()
 
@@ -132,12 +164,12 @@ class TestMCPClientE2E:
             tools = await registry.build_tools()
 
             # Find add tool
-            add_tool = next(t for t in tools if t.name == "calc.add")
-            assert add_tool.name == "calc.add"
+            add_tool = next(t for t in tools if t.name == "mcp__calc__add")
+            assert add_tool.name == "mcp__calc__add"
             assert "add" in add_tool.description.lower() or "two" in add_tool.description.lower()
 
             # Execute via manager's async API (sync execute() doesn't work in async context)
-            result = await manager.call_tool("calc.add", {"a": 10, "b": 25})
+            result = await manager.call_tool("mcp__calc__add", {"a": 10, "b": 25})
             assert result == 35  # 10 + 25 = 35
 
         finally:

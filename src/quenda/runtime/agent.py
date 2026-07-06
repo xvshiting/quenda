@@ -151,6 +151,25 @@ class Agent:
         self._trace_sink = trace_sink
         self._vision_model = vision_model
         self._capability_routing = capability_routing
+        # MCP support (set by Host layer)
+        self._mcp_manager: Any = None
+        self._mcp_config: Any = None
+        self._mcp_connected = False
+
+    def set_mcp(self, manager: Any, config: Any) -> None:
+        """Set MCP manager and config (called by Host layer)."""
+        self._mcp_manager = manager
+        self._mcp_config = config
+
+    @property
+    def mcp_manager(self) -> Any:
+        """The MCP client manager."""
+        return self._mcp_manager
+
+    @property
+    def mcp_connected(self) -> bool:
+        """Whether MCP servers are connected."""
+        return self._mcp_connected
 
     @property
     def name(self) -> str:
@@ -218,6 +237,19 @@ class Agent:
         """
         from dataclasses import replace
         self._config = replace(self._config, system_prompt=system_prompt)
+
+    def add_tools(self, tools: list[Tool]) -> None:
+        """
+        Add tools to the agent at runtime.
+
+        Used for adding MCP tools after connecting to MCP servers.
+
+        Args:
+            tools: List of tools to add.
+        """
+        # Since AgentConfig is frozen, we need to create a new config
+        from dataclasses import replace
+        self._config = replace(self._config, tools=[*self._config.tools, *tools])
 
     def set_storage(self, storage: Storage) -> None:
         """Set the storage backend."""

@@ -86,6 +86,13 @@ def run_agent(
 
     agent = setup.agent
 
+    # Pass MCP manager to agent (connection happens lazily in session.send)
+    if setup.binding.mcp_manager is not None:
+        mcp_config = None
+        if setup.agent_package.config and setup.agent_package.config.mcp:
+            mcp_config = setup.agent_package.config.mcp
+        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
+
     # Resolve theme: CLI arg > agent config > default
     if theme is None:
         config = setup.agent_package.config
@@ -295,6 +302,13 @@ def run_repl(
     provider_name = setup.provider_name
     model_name = setup.model_name
     workspace_id = setup.workspace_id
+
+    # Pass MCP manager to agent (connection happens lazily in session.send)
+    if setup.binding.mcp_manager is not None:
+        mcp_config = None
+        if setup.agent_package.config and setup.agent_package.config.mcp:
+            mcp_config = setup.agent_package.config.mcp
+        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
 
     # Resolve theme: CLI arg > agent config > default
     if theme is None:

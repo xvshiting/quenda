@@ -31,7 +31,7 @@ class MCPToolAdapter(Tool):
     Adapter that wraps an MCP tool as a Quenda Tool.
 
     This adapter:
-    - Uses qualified name (server_id.tool_name) as the tool name
+    - Uses qualified name (mcp__server_id__tool_name) as the tool name
     - Bridges async MCP execution to sync Tool.execute()
     - Converts MCP results to Quenda ToolResult
 
@@ -53,8 +53,8 @@ class MCPToolAdapter(Tool):
     @property
     @override
     def name(self) -> str:
-        """Qualified tool name (server_id.tool_name)."""
-        return f"{self._server_id}.{self._tool_spec.name}"
+        """Qualified tool name (mcp__server_id__tool_name)."""
+        return f"mcp__{self._server_id}__{self._tool_spec.name}"
 
     @property
     @override

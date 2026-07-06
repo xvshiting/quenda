@@ -19,6 +19,8 @@ tools:
   bundles:
     - core
     - network
+    - coding
+    - scheduling
 
 skills:
   include_catalog: true
@@ -37,3 +39,13 @@ skills:
 #   spinner_frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 theme:
   agent_icon: "🐾"
+
+# MCP servers (optional)
+mcp:
+  servers:
+    calculator:
+      transport: stdio
+      command: python
+      args:
+        - "/Users/xushiting/Workspace/quenda/examples/mcp/calculator_server.py"
+

@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -168,6 +169,8 @@ class Session:
         self._trace_sink = trace_sink
         self._vision_model = vision_model
         self._capability_routing = capability_routing
+        # Persistent event loop for MCP connections
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def id(self) -> str:
@@ -245,6 +248,43 @@ class Session:
         """
         from dataclasses import replace
         self._agent = replace(self._agent, system_prompt=system_prompt)
+
+    async def _connect_mcp_if_needed(self) -> None:
+        """
+        Connect to MCP servers if configured and not yet connected.
+
+        This is called lazily on the first send() to ensure the connection
+        happens within the correct async context.
+        """
+        # Check if agent has MCP configured
+        if not hasattr(self._agent, '_mcp_manager') or self._agent._mcp_manager is None:
+            return
+
+        if self._agent._mcp_connected:
+            return
+
+        if self._agent._mcp_config is None or not self._agent._mcp_config.has_servers():
+            return
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            from quenda.host.mcp import MCPToolRegistry
+
+            server_names = self._agent._mcp_config.get_server_ids()
+            print(f"   Connecting to MCP servers: {', '.join(server_names)}")
+
+            connected = await self._agent._mcp_manager.connect_from_config(self._agent._mcp_config)
+            if connected:
+                registry = MCPToolRegistry(self._agent._mcp_manager)
+                mcp_tools = await registry.build_tools()
+                self._agent.add_tools(mcp_tools)
+                self._agent._mcp_connected = True
+                print(f"   Connected {len(mcp_tools)} MCP tool(s)")
+        except Exception as e:
+            print(f"   Warning: MCP connection failed: {e}", file=sys.stderr)
+            logger.warning(f"MCP connection failed: {e}")
 
     def save(self) -> None:
         """
@@ -329,6 +369,9 @@ class Session:
         """
         from quenda.runtime import Run, RunCompleted
 
+        # Connect MCP servers if configured and not yet connected
+        await self._connect_mcp_if_needed()
+
         active_model = model or self._model
         if active_model is None:
             raise ValueError("No model configured. Pass model to Agent, Session, or send().")
@@ -391,6 +434,12 @@ class Session:
         )
         return final_content, events
 
+    def _get_or_create_loop(self) -> asyncio.AbstractEventLoop:
+        """Get or create a persistent event loop."""
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+        return self._loop
+
     def send_sync(
         self,
         message: str | Sequence[TextContent | ImageContent],
@@ -399,8 +448,9 @@ class Session:
         on_event: Callable[[AnyEvent], None] | None = None,
         skill_activation_handler: Callable[[list[str]], str | None] | None = None,
     ) -> str:
-        """Synchronous send."""
-        return asyncio.run(
+        """Synchronous send using persistent event loop."""
+        loop = self._get_or_create_loop()
+        return loop.run_until_complete(
             self.send(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,
@@ -415,13 +465,20 @@ class Session:
         on_event: Callable[[AnyEvent], None] | None = None,
         skill_activation_handler: Callable[[list[str]], str | None] | None = None,
     ) -> tuple[str, list[AnyEvent]]:
-        """Synchronous variant of send_collecting()."""
-        return asyncio.run(
+        """Synchronous variant of send_collecting() using persistent event loop."""
+        loop = self._get_or_create_loop()
+        return loop.run_until_complete(
             self.send_collecting(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,
             )
         )
+
+    def close(self) -> None:
+        """Close the session and clean up resources."""
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.close()
+            self._loop = None
 
     def checkpoint(self) -> int:
         """
