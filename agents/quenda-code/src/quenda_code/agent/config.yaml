@@ -41,11 +41,11 @@ theme:
   agent_icon: "🐾"
 
 # MCP servers (optional)
-mcp:
-  servers:
-    calculator:
-      transport: stdio
-      command: python
-      args:
-        - "/Users/xushiting/Workspace/quenda/examples/mcp/calculator_server.py"
+# mcp:
+#   servers:
+#     example:
+#       transport: stdio
+#       command: python
+#       args:
+#         - "path/to/server.py"
 
