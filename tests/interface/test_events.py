@@ -45,19 +45,19 @@ def test_activity_event_handler_drives_indicator_without_rendering() -> None:
         content="",
         tool_call_details=[{
             "id": "call_1",
-            "name": "web_search",
-            "arguments": {"_summary": "Searching latest filings"},
+            "name": "web_fetch",
+            "arguments": {"_summary": "Fetching latest filings"},
         }],
     ))
-    handler.on_event(ToolExecuted(tool_name="web_search"))
+    handler.on_event(ToolExecuted(tool_name="web_fetch"))
     handler.on_event(ModelResponded(content="final answer"))
     handler.on_event(RunCompleted(final_content="final answer"))
 
     assert indicator.is_running is False
     assert indicator.messages[0] == "Thinking..."
-    assert "Searching latest filings" in indicator.messages
+    assert "Fetching latest filings" in indicator.messages
     assert indicator.messages[-1] == "Thinking..."
-    assert any("Searching latest filings" in line for line in status_bar.get_activity_log())
+    assert any("Fetching latest filings" in line for line in status_bar.get_activity_log())
 
 
 def test_progress_event_handler_renders_tool_progress_without_run_headers() -> None:
@@ -73,8 +73,8 @@ def test_progress_event_handler_renders_tool_progress_without_run_headers() -> N
     # First run
     handler.on_event(RunStarted(user_message="hello"))
     handler.on_event(ToolExecuted(
-        tool_name="web_search",
-        arguments={"_summary": "Searching latest filings"},
+        tool_name="web_fetch",
+        arguments={"_summary": "Fetching latest filings"},
         result_summary="3 matches",
     ))
 
@@ -89,7 +89,7 @@ def test_progress_event_handler_renders_tool_progress_without_run_headers() -> N
     text = output.getvalue()
 
     # Should show tool execution progress
-    assert "Searching latest filings" in text
+    assert "Fetching latest filings" in text
     assert "Reading file" in text
 
     # Should NOT show any run phase headers

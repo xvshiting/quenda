@@ -338,7 +338,7 @@ execution:
 
 | 函数 | 返回 |
 |-----|------|
-| get_core_tools(workspace) | 7 个核心 Coding Agent 工具 |
+| get_core_tools(workspace) | 10 个核心框架工具 |
 | get_filesystem_tools(workspace) | 5 个文件系统工具 |
 | get_execution_tools(workspace) | 2 个执行工具 |
 | get_network_tools() | 2 个网络工具 |

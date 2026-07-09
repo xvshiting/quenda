@@ -114,7 +114,7 @@ from quenda import Agent, get_provider_registry
 registry = get_provider_registry()
 model = registry.get_model("deepseek", "deepseek-v4-flash")
 
-# 8 个核心工具
+# 10 个核心工具
 tools = get_core_tools("/path/to/workspace")
 
 agent = Agent(
@@ -137,6 +137,8 @@ agent = Agent(
 | `PythonExecutionTool` | 沙箱执行 Python |
 | `RunShellTool` | 执行 Shell 命令 |
 | `RequestInteractionTool` | 向用户请求交互 |
+| `RequestSkillActivationTool` | 请求 Host 激活技能 |
+| `ActivateResourceTool` | 临时附加会话资源 |
 
 ---
 

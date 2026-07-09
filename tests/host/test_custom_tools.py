@@ -287,6 +287,15 @@ class TestResolveToolsWithCustom:
         with pytest.raises(ValueError, match="conflicts with built-in"):
             _resolve_tools(workspace, config, catalog)
 
+    def test_product_bundles_are_rejected_by_framework_runner(self, workspace: Path) -> None:
+        """Coding and scheduling workflows are extension concerns, not runner builtins."""
+        config = AgentConfigYaml(
+            tools=ToolsConfig(bundles=["core", "coding", "scheduling"]),
+        )
+
+        with pytest.raises(ValueError, match="Unknown tool bundle"):
+            _resolve_tools(workspace, config, None)
+
 
 class TestInstantiateTool:
     """Tests for _instantiate_tool helper."""

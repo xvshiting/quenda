@@ -583,8 +583,6 @@ from quenda.tools import (
     HTTPConfig,
     WebFetchTool,
     WebFetchConfig,
-    WebSearchTool,
-    WebSearchConfig,
     get_network_tools,
 )
 ```
@@ -594,8 +592,8 @@ from quenda.tools import (
 ```python
 from quenda.tools import get_core_tools
 
-# The 6 essential tools for a coding agent:
-# list_files, search_text, read_file, write_file, apply_patch, run_shell
+# The 10 essential framework tools:
+# filesystem, execution, interaction, skill activation, and resource activation
 tools = get_core_tools(".")
 ```
 

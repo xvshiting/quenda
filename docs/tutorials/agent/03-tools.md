@@ -162,7 +162,7 @@ class MyWorkspaceTool(BaseTool):
 
 ## 内置工具详解
 
-### 核心 8 工具
+### 核心 10 工具
 
 使用 `get_core_tools(workspace_root)` 获取：
 
@@ -265,7 +265,6 @@ from quenda.tools import RequestInteractionTool
 from quenda.tools import (
     HTTPRequestTool,  # HTTP 请求（SSRF 保护）
     WebFetchTool,     # 网页内容获取
-    WebSearchTool,    # DuckDuckGo 搜索
 )
 ```
 

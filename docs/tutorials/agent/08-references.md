@@ -274,12 +274,11 @@ from quenda.tools import (
     RequestInteractionTool,
     HTTPRequestTool,
     WebFetchTool,
-    WebSearchTool,
     FunctionTool,
 )
 
 # 快捷方式
-tools = get_core_tools(workspace_root)       # 8 个核心工具
+tools = get_core_tools(workspace_root)       # 10 个核心工具
 tools = get_filesystem_tools(workspace_root) # 5 个文件工具
 tools = get_execution_tools(workspace_root)  # 2 个执行工具
 tools = get_network_tools()                  # 2 个网络工具

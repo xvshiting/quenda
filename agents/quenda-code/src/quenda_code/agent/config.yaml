@@ -19,8 +19,6 @@ tools:
   bundles:
     - core
     - network
-    - coding
-    - scheduling
 
 skills:
   include_catalog: true
@@ -48,4 +46,3 @@ theme:
 #       command: python
 #       args:
 #         - "path/to/server.py"
-

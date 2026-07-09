@@ -118,7 +118,6 @@ class InterfaceTheme:
         "python_execution": "executing",
         "http_request": "network",
         "web_fetch": "network",
-        "web_search": "searching",
     })
 
     phase_labels: dict[str, str] = field(default_factory=lambda: {

@@ -148,7 +148,7 @@ def _resolve_tools(
     Resolve tools based on agent capability declaration.
 
     Implements ADR-014 and ADR-024 capability declaration:
-    - tools.bundles: ["core", "network", "coding", "agent", "skill", "scheduling"]
+    - tools.bundles: ["core", "network"]
     - tools.include: ["my_custom_tool"]
     - execution.python.allowed_modules: extend sandbox allowlist
 
@@ -158,13 +158,13 @@ def _resolve_tools(
       execute_python, run_shell, request_interaction, request_skill_activation,
       activate_resource
     - `network` (2 tools): http_request, web_fetch
-    - `coding` (7 tools): task_create, task_get, task_list, task_update, lsp,
-      enter_plan_mode, exit_plan_mode
-    - `scheduling` (4 tools): schedule_wakeup, cron_create, cron_delete, cron_list
-
     Note:
     - Skill activation is handled by `request_skill_activation` in the core bundle,
       following ADR-002 (Skills as Host-Level Capability Packages).
+    - Coding workflows, LSP integration, plan modes, and scheduling are
+      product/extension concerns. They should be provided as agent-local tools,
+      MCP tools, or upper-layer Host capabilities rather than built into the
+      framework runner.
     - Multi-agent orchestration is NOT in core (ADR-017), should be in separate package.
 
     All bundles and include entries are requests. The Host resolves
@@ -216,6 +216,18 @@ def _resolve_tools(
     else:
         requested_include = []
 
+    builtin_bundles = {"core", "network"}
+    unknown_bundles = sorted(set(requested_bundles) - builtin_bundles)
+    if unknown_bundles:
+        available = ", ".join(sorted(builtin_bundles))
+        unknown = ", ".join(unknown_bundles)
+        raise ValueError(
+            f"Unknown tool bundle(s): {unknown}. "
+            f"Available framework bundles: {available}. "
+            "Product-specific workflows should be provided as agent-local tools, "
+            "MCP tools, or Host extensions."
+        )
+
     # Build a unified catalog with built-in tools
     builder = ToolRegistryBuilder()
 
@@ -239,37 +251,6 @@ def _resolve_tools(
         from quenda.tools.network import HTTPRequestTool, WebFetchTool
         builder.register(HTTPRequestTool(), source="builtin")
         builder.register(WebFetchTool(), source="builtin")
-
-    # Coding bundle tools (task management, LSP, plan mode)
-    if "coding" in requested_bundles:
-        from quenda.tools.task import (
-            TaskCreateTool,
-            TaskGetTool,
-            TaskListTool,
-            TaskUpdateTool,
-        )
-        from quenda.tools.lsp import LSPTool
-        from quenda.tools.plan_mode import EnterPlanModeTool, ExitPlanModeTool
-        builder.register(TaskCreateTool(), source="builtin")
-        builder.register(TaskGetTool(), source="builtin")
-        builder.register(TaskListTool(), source="builtin")
-        builder.register(TaskUpdateTool(), source="builtin")
-        builder.register(LSPTool(), source="builtin")
-        builder.register(EnterPlanModeTool(), source="builtin")
-        builder.register(ExitPlanModeTool(), source="builtin")
-
-    # Scheduling bundle tools (cron and wake-up scheduling)
-    if "scheduling" in requested_bundles:
-        from quenda.tools.scheduling import (
-            ScheduleWakeupTool,
-            CronCreateTool,
-            CronDeleteTool,
-            CronListTool,
-        )
-        builder.register(ScheduleWakeupTool(), source="builtin")
-        builder.register(CronCreateTool(), source="builtin")
-        builder.register(CronDeleteTool(), source="builtin")
-        builder.register(CronListTool(), source="builtin")
 
     # Register agent-local custom tools from loaded catalog
     if loaded_tool_catalog:

@@ -198,7 +198,7 @@ registry.register(ProviderSpec(
 
 ## Built-in Tools
 
-`get_core_tools(workspace)` returns **9 essential tools**:
+`get_core_tools(workspace)` returns **10 essential framework tools**:
 
 | Tool | Capability |
 |------|-----------|
@@ -208,6 +208,10 @@ registry.register(ProviderSpec(
 | `write_file` | Create or overwrite files |
 | `apply_patch` | Apply targeted text patches |
 | `run_shell` | Execute shell commands (filtered) |
+| `execute_python` | Run sandboxed Python |
+| `request_interaction` | Ask the user for structured input |
+| `request_skill_activation` | Ask Host to activate discovered skills |
+| `activate_resource` | Attach historical session resources |
 | `execute_python` | Run Python in a sandbox |
 | `request_interaction` | Ask the user for input |
 | `request_skill_activation` | Request skill activation |

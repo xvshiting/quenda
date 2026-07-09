@@ -75,7 +75,7 @@ class MyComplexTool(Tool):
 
 ## Core Tools Bundle
 
-The 6 essential tools for a coding agent, available via
+The 10 essential framework tools, available via
 `get_core_tools(workspace)`:
 
 | Tool | Capability | Covers |
@@ -86,6 +86,10 @@ The 6 essential tools for a coding agent, available via
 | `write_file` | Create new files | `>` |
 | `apply_patch` | Modify existing files | `sed`, `patch` |
 | `run_shell` | Execute and verify | `pytest`, `git`, `npm`, … |
+| `execute_python` | Run sandboxed Python | quick scripts, data transforms |
+| `request_interaction` | Ask a human for a decision | choices, confirmations, input |
+| `request_skill_activation` | Ask Host to activate skills | skill package activation |
+| `activate_resource` | Attach session resources | historical multimodal resources |
 
 ```python
 from quenda.tools import get_core_tools
@@ -325,17 +329,14 @@ from quenda.tools import (
     HTTPConfig,
     WebFetchTool,
     WebFetchConfig,
-    WebSearchTool,
-    WebSearchConfig,
     get_network_tools,
 )
 
 # Individual tools
 http_tool = HTTPRequestTool()
 fetch_tool = WebFetchTool()
-search_tool = WebSearchTool()
 
-# Or get all 3 at once
+# Or get both at once
 tools = get_network_tools()
 
 # With custom config
@@ -381,20 +382,6 @@ fetch_tool.execute(url="https://example.com/article")
 | `url` | `str` | — | URL to fetch |
 | `timeout` | `int` | `config.default_timeout` | Timeout in seconds |
 
-### WebSearchTool
-
-Search the web via the DuckDuckGo Instant Answer API.
-
-```python
-search_tool.execute(query="Python async programming")
-search_tool.execute(query="machine learning", max_results=5)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `str` | — | Search query |
-| `max_results` | `int` | `10` | Maximum results (capped at 20) |
-
 ### SSRF Protection
 
 `HTTPRequestTool` and `WebFetchTool` validate URLs before requesting:
@@ -423,7 +410,7 @@ from quenda.tools import (
 workspace = Path(".")
 
 all_tools = []
-all_tools.extend(get_core_tools(workspace))   # 6 coding tools
+all_tools.extend(get_core_tools(workspace))   # 10 framework tools
 all_tools.extend(get_network_tools())         # 2 network tools
 
 from quenda import Agent
@@ -436,4 +423,4 @@ agent = Agent(
 
 Individual bundles: `get_filesystem_tools(workspace)` (5 tools),
 `get_execution_tools(workspace)` (2 tools), `get_network_tools()`
-(2 tools), `get_core_tools(workspace)` (6 tools).
+(2 tools), `get_core_tools(workspace)` (10 tools).

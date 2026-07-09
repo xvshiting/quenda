@@ -1,9 +1,4 @@
-"""
-Network tools for Quenda.
-
-- http_request: Make HTTP requests with SSRF protection
-- web_fetch: Fetch content from web pages
-"""
+"""Network tools for Quenda."""
 
 from quenda.tools.network.http import (
     HTTPConfig,
@@ -13,23 +8,18 @@ from quenda.tools.network.fetching import (
     WebFetchConfig,
     WebFetchTool,
 )
-from quenda.tools.network.searching import (
-    WebSearchConfig,
-    WebSearchTool,
-)
 
 __all__ = [
     "HTTPRequestTool",
     "HTTPConfig",
     "WebFetchTool",
     "WebFetchConfig",
-    "WebSearchTool",
-    "WebSearchConfig",
+    "get_network_tools",
 ]
 
 
 def get_network_tools() -> list:
-    """Get all network tools."""
+    """Get framework-level network tools."""
     return [
         HTTPRequestTool(),
         WebFetchTool(),
