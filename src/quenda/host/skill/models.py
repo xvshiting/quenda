@@ -1,7 +1,13 @@
 """
 Pydantic models for SKILL.md parsing.
 
-These models define the schema for skill frontmatter and metadata.
+Simplified skill schema focusing on what's actually used:
+- name: Required skill identifier
+- description: Required human-readable description
+- version: Optional semantic version
+- resources: Optional references and assets
+
+See docs/skills.md for the full specification.
 """
 
 from __future__ import annotations
@@ -9,19 +15,6 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, Field
-
-
-class ActivationTrigger(BaseModel):
-    """
-    Activation conditions for a skill.
-
-    Skills can be activated by:
-    - Command: A slash command like "/review"
-    - File pattern: A glob pattern for contextual activation (deferred)
-    """
-
-    command: str | None = None
-    file_pattern: str | None = None
 
 
 class ResourceReference(BaseModel):
@@ -37,7 +30,6 @@ class AssetReference(BaseModel):
     path: str
     type: Literal["template", "script", "data", "other"] = "other"
     description: str = ""
-    safe: bool = False  # Must be explicitly true for script execution
 
 
 class ResourceCatalog(BaseModel):
@@ -47,55 +39,40 @@ class ResourceCatalog(BaseModel):
     assets: list[AssetReference] = Field(default_factory=list)
 
 
-class ToolRequirements(BaseModel):
-    """Tool dependencies and provisions (deferred to post-MVP)."""
-
-    requires: list[str] = Field(default_factory=list)
-    provides: list[str] = Field(default_factory=list)
-
-
-class TrustMetadata(BaseModel):
-    """Trust and permission metadata (deferred to post-MVP)."""
-
-    sources: list[str] = Field(default_factory=list)
-    permissions: list[str] = Field(default_factory=list)
-
-
-class SkillQuendaMetadata(BaseModel):
-    """Quenda-specific skill configuration."""
-
-    activates_on: list[ActivationTrigger] = Field(default_factory=list)
-    resources: ResourceCatalog = Field(default_factory=ResourceCatalog)
-    tools: ToolRequirements = Field(default_factory=ToolRequirements)
-    trust: TrustMetadata = Field(default_factory=TrustMetadata)
-
-
 class SkillFrontmatter(BaseModel):
     """
     SKILL.md frontmatter schema.
 
-    Required fields:
-    - name: Unique skill identifier (lowercase, alphanumeric, dashes, underscores)
-    - description: Human-readable description
+    Minimal schema that works:
+    - name: Required, unique identifier
+    - description: Required, primary triggering mechanism
+    - version: Optional, defaults to "0.1.0"
+    - resources: Optional, references and assets
 
-    Optional fields:
-    - version: Semantic version (default: "0.1.0")
-    - quenda: Quenda-specific metadata
+    Example:
+        ---
+        name: code-review
+        description: Apply when reviewing code or providing feedback on code changes.
+        version: "1.0.0"
+        resources:
+          references:
+            - path: "guides/style-guide.md"
+              description: "Style guidelines"
+          assets:
+            - path: "templates/report.md"
+              type: template
+        ---
     """
 
     name: str = Field(..., pattern=r"^[a-z0-9-_]+$")
     description: str
     version: str = Field(default="0.1.0")
-    quenda: SkillQuendaMetadata | None = None
+    resources: ResourceCatalog | None = None
 
 
 __all__ = [
-    "ActivationTrigger",
     "ResourceReference",
     "AssetReference",
     "ResourceCatalog",
-    "ToolRequirements",
-    "TrustMetadata",
-    "SkillQuendaMetadata",
     "SkillFrontmatter",
 ]

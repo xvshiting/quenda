@@ -79,7 +79,7 @@ Skills are composable capability packages that extend your behavior with special
 
 **Creating a New Skill:**
 
-To create a skill for a specific workspace, create a directory with a SKILL.md file:
+To create a skill, create a directory with a SKILL.md file:
 
 ```
 ~/.quenda/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md
@@ -88,29 +88,38 @@ To create a skill for a specific workspace, create a directory with a SKILL.md f
 Example `SKILL.md`:
 ```yaml
 ---
-name: <skill-name>
-description: <what this skill does>
+name: code-review
+description: Use when reviewing code, checking code quality, or providing feedback on code changes.
 version: "1.0.0"
-quenda:                           # Optional Quenda-specific config
-  activates_on:
-    - command: "/<command>"     # Slash command trigger
-  resources:
-    references:                 # Reference documents
-      - path: "guide.md"
-        description: "Reference guide"
-    assets:                     # Templates and other assets
-      - path: "template.md"
-        type: template
-        description: "Output template"
+resources:
+  references:
+    - path: "guides/style-guide.md"
+      description: "Style guidelines"
+  assets:
+    - path: "templates/report.md"
+      type: template
 ---
-# Skill Instructions
 
-Your instructions here...
+# Code Review
+
+When reviewing code, provide thorough, constructive feedback...
 ```
 
-**Bundling Skills with Agent Package:**
+**SKILL.md Schema:**
 
-If you are creating an agent package, you can bundle skills:
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
+| `description` | Yes | Human-readable description - primary triggering mechanism |
+| `version` | No | Semantic version (default: "0.1.0") |
+| `resources` | No | References and assets |
+
+**Resources:**
+
+- `references`: Documents for context (guides, checklists, references)
+- `assets`: Templates, scripts, and other files used in output
+
+**Bundling Skills with Agent Package:**
 
 ```
 <agent-package>/
@@ -128,33 +137,11 @@ skills:
   - <skill-name>              # Auto-activate bundled skill
 ```
 
-Or with structured skill config:
-```yaml
-skills:
-  activate:
-    - <skill-name>
-  include_catalog: true       # Expose lightweight skill catalog to the model
-```
-
-If a skill exists in one of the skill directories but is not listed in
-`config.yaml`, it is still discoverable as an available skill, but it
-will not be active by default.
-
 **Using Skills:**
 - `/skill list` - See available skills (from all sources)
 - `/skill activate <name>` - Activate a skill
 - `/skill deactivate <name>` - Deactivate a skill
 - `/skill resources` - View resources from active skills
-
-Skills can also be auto-activated via agent's `config.yaml`:
-```yaml
-skills:
-  - <skill-name>
-```
-
-When `skills.include_catalog: true` is enabled, the model may see the
-available skill catalog and use `request_skill_activation` to ask Host to
-activate one of those skills before a follow-up phase.
 
 ### Important Notes
 
@@ -426,8 +413,7 @@ def resolve_instruction_sources(
                         relative = str(r.path.relative_to(skill.path))
                     except ValueError:
                         relative = r.path.name
-                    safe_marker = " [executable]" if r.safe_to_execute else ""
-                    resource_lines.append(f"  <file>{relative}{safe_marker}</file>")
+                    resource_lines.append(f"  <file>{relative}</file>")
                 resource_lines.append("</skill_resources>")
                 resource_listing = "\n".join(resource_lines)
 

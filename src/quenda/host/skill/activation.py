@@ -172,9 +172,8 @@ class SkillActivator:
 
             uri = f"skill://{skill.name}/{relative_path}"
             resource_type = resource.type
-            safe_marker = " [executable]" if resource.safe_to_execute else ""
             desc = f" - {resource.description}" if resource.description else ""
-            lines.append(f"- `{uri}` ({resource_type}){safe_marker}{desc}")
+            lines.append(f"- `{uri}` ({resource_type}){desc}")
 
         lines.append("")
         lines.append("Use tools to access resources:")

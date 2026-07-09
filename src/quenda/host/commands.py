@@ -328,6 +328,39 @@ class HelpCommand:
     def __init__(self, registry: CommandRegistry) -> None:
         self._registry = registry
 
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Help is always ready to execute."""
+        return CommandResolution(status="ready", normalized_args=args.strip())
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Get command name candidates."""
+        partial = args.strip()
+        candidates = []
+        for cmd in self._registry.list_commands():
+            if partial and not cmd.name.startswith(partial):
+                continue
+            candidates.append(CommandCandidate(
+                id=cmd.name,
+                label=cmd.name,
+                value=cmd.name,
+                description=cmd.description,
+                kind="argument",
+            ))
+        return candidates
+
+    def get_completions(self, args: str) -> list[str]:
+        """Complete command names."""
+        partial = args.strip()
+        return [c.name for c in self._registry.list_commands() if c.name.startswith(partial)]
+
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         commands = self._registry.list_commands()
 
@@ -364,6 +397,26 @@ class ClearCommand:
     def usage(self) -> str:
         return "/clear"
 
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Clear command has no args, always ready."""
+        return CommandResolution(status="ready", normalized_args="")
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Clear has no candidates."""
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        """Clear has no completions."""
+        return []
+
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         count = len(context.session)
         context.session.clear()
@@ -395,6 +448,26 @@ class ExitCommand:
     @property
     def usage(self) -> str:
         return "/exit"
+
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Exit command has no args, always ready."""
+        return CommandResolution(status="ready", normalized_args="")
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Exit has no candidates."""
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        """Exit has no completions."""
+        return []
 
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         return CommandResult(
@@ -1163,6 +1236,92 @@ class ContextCommand:
     def usage(self) -> str:
         return "/context [show|tools|session]"
 
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Resolve context command arguments."""
+        if not args.strip():
+            # No args: show candidates
+            return CommandResolution(
+                status="needs_input",
+                message="Select a subcommand",
+                candidates=[
+                    CommandCandidate(
+                        id="show",
+                        label="show",
+                        value="show",
+                        description="Show the system prompt",
+                        kind="subcommand",
+                        is_default=True,
+                    ),
+                    CommandCandidate(
+                        id="tools",
+                        label="tools",
+                        value="tools",
+                        description="List available tools",
+                        kind="subcommand",
+                    ),
+                    CommandCandidate(
+                        id="session",
+                        label="session",
+                        value="session",
+                        description="Show session info",
+                        kind="subcommand",
+                    ),
+                ],
+            )
+
+        subcommand = args.strip().split()[0]
+        if subcommand in ("show", "tools", "session"):
+            return CommandResolution(status="ready", normalized_args=subcommand)
+
+        return CommandResolution(
+            status="invalid",
+            message=f"Unknown subcommand: `{subcommand}`. Use show, tools, or session.",
+        )
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Get subcommand candidates."""
+        partial = args.strip().lower()
+        candidates = [
+            CommandCandidate(
+                id="show",
+                label="show",
+                value="show",
+                description="Show the system prompt",
+                kind="subcommand",
+                is_default=True,
+            ),
+            CommandCandidate(
+                id="tools",
+                label="tools",
+                value="tools",
+                description="List available tools",
+                kind="subcommand",
+            ),
+            CommandCandidate(
+                id="session",
+                label="session",
+                value="session",
+                description="Show session info",
+                kind="subcommand",
+            ),
+        ]
+        if partial:
+            return [c for c in candidates if c.value.startswith(partial)]
+        return candidates
+
+    def get_completions(self, args: str) -> list[str]:
+        """Complete subcommand names."""
+        partial = args.strip().lower()
+        return [s for s in ["show", "tools", "session"] if s.startswith(partial)]
+
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         parts = args.strip().split()
         subcommand = parts[0] if parts else "show"
@@ -1261,6 +1420,26 @@ class ResetCommand:
     def usage(self) -> str:
         return "/reset"
 
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Reset command has no args, always ready."""
+        return CommandResolution(status="ready", normalized_args="")
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Reset has no candidates."""
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        """Reset has no completions."""
+        return []
+
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         count = len(context.session)
         context.session.clear()
@@ -1301,6 +1480,52 @@ class CompressCommand:
     def usage(self) -> str:
         return "/compress [force]"
 
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Resolve compress command arguments."""
+        args = args.strip().lower()
+
+        if not args:
+            # No args: ready to execute (normal compress)
+            return CommandResolution(status="ready", normalized_args="")
+
+        if args == "force":
+            # Force mode: ready to execute
+            return CommandResolution(status="ready", normalized_args="force")
+
+        # Unknown argument
+        return CommandResolution(
+            status="invalid",
+            message=f"Unknown argument: `{args}`. Use `/compress` or `/compress force`.",
+        )
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Get candidates for compress command."""
+        if args.strip():
+            return []  # Already has args, no candidates needed
+
+        return [
+            CommandCandidate(
+                id="force",
+                label="force",
+                value="force",
+                description="Force compression with lower threshold",
+                kind="argument",
+            ),
+        ]
+
+    def get_completions(self, args: str) -> list[str]:
+        """Complete compress arguments (legacy)."""
+        partial = args.strip().lower()
+        return ["force"] if "force".startswith(partial) else []
+
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         # Check if compressor is available
         if context.compressor is None:
@@ -1325,18 +1550,41 @@ class CompressCommand:
         from quenda.runtime.compression import CompressionDecision
 
         force = args.strip().lower() == "force"
+        keep_last_n = 10 if not force else 2  # Force keeps fewer messages
         decision = CompressionDecision(
             compress=True,
-            keep_last_n_messages=10,
+            keep_last_n_messages=keep_last_n,
             target_budget_tokens=None,
             archive_raw_messages=True,
             summarizer_id="default",
             reason="manual trigger" + (" (forced)" if force else ""),
         )
 
+        # Check if there's enough messages to compress
+        if before_count <= keep_last_n:
+            return CommandResult(
+                status="ok",
+                message=(
+                    f"No compression needed. Session has {before_count} messages, "
+                    f"which is less than the threshold ({keep_last_n}).\n"
+                    f"Use `/compress force` to compress with a lower threshold."
+                ),
+            )
+
         # Execute compression
         try:
             result = context.compressor.compress(session_state, decision)
+
+            # Check if compression actually happened
+            if result.archived_message_count == 0:
+                return CommandResult(
+                    status="ok",
+                    message=(
+                        f"No messages were compressed. Session has {before_count} messages, "
+                        f"but no valid split point was found (tool calls/results may be incomplete).\n"
+                        f"Remaining: {len(session_state.messages)} messages"
+                    ),
+                )
 
             # Apply result to session state
             from quenda.runtime.session import SummaryBlock
@@ -1395,6 +1643,26 @@ class StatusCommand:
     @property
     def usage(self) -> str:
         return "/status"
+
+    def resolve(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> CommandResolution:
+        """Status command has no args, always ready."""
+        return CommandResolution(status="ready", normalized_args="")
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        """Status has no candidates."""
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        """Status has no completions."""
+        return []
 
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         session_state = context.session.state
@@ -1470,6 +1738,18 @@ class RebindCommand:
     @property
     def usage(self) -> str:
         return "/rebind"
+
+    def resolve(self, args: str, context: CommandContext) -> CommandResolution:
+        """Rebind command has no args, always ready."""
+        return CommandResolution(status="ready", normalized_args="")
+
+    def get_candidates(self, args: str, context: CommandContext) -> list[CommandCandidate]:
+        """Rebind has no candidates."""
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        """Rebind has no completions."""
+        return []
 
     def execute(self, args: str, context: CommandContext) -> CommandResult:
         """Show rebind information.

@@ -8,10 +8,9 @@ A **Skill** is a reusable package that provides:
 
 - **Instructions** - How and when to use a capability
 - **Resource catalog** - Reference documents, templates, and assets
-- **Optional triggers** - Commands that activate the skill
 
 ```text
-Skill = instructions + resource catalog + optional tools + optional policy metadata
+Skill = instructions + resource catalog
 ```
 
 Skills differ from Tools:
@@ -64,8 +63,10 @@ Skills are discovered in this priority order:
 | Priority | Location | Source | Description |
 |----------|----------|--------|-------------|
 | 1 (highest) | `~/.quenda/users/<user>/workspaces/<ws_id>/skills/` | user_workspace | User-specific, highest priority |
-| 2 | `<agent-package>/skills/` | agent_package | Bundled with agent |
-| 3 (lowest) | `~/.quenda/skills/` | user | Shared across workspaces |
+| 2 | `<workspace>/.quenda/skills/` | workspace | Project-shared skills |
+| 3 | `<workspace>/.agents/skills/` | workspace | Cross-client project skills |
+| 4 | `<agent-package>/skills/` | agent_package | Bundled with agent |
+| 5 (lowest) | `~/.quenda/skills/` | user | Shared across workspaces |
 
 ### User-Workspace Skills
 
@@ -79,6 +80,26 @@ These skills:
 - Are isolated per user and per workspace
 - Have the highest priority (can override bundled skills)
 - Support multi-user environments
+
+### Project Skills
+
+Skills checked into or installed under a project workspace:
+
+```
+<workspace>/.quenda/skills/<skill-name>/SKILL.md
+```
+
+These skills:
+- Are shared by anyone using the workspace
+- Are useful for project-specific conventions, architecture notes, or workflows
+- Can override agent-bundled and user-global skills
+- Can be overridden by user-workspace skills for personal customization
+
+Quenda also discovers ecosystem-compatible project skills under:
+
+```
+<workspace>/.agents/skills/<skill-name>/SKILL.md
+```
 
 ### Agent Package Bundled Skills
 
@@ -139,28 +160,20 @@ Skills are defined in `SKILL.md` files within a skill directory:
 ```yaml
 ---
 name: code-review
-description: Comprehensive code review with style enforcement
+description: Apply when reviewing code, checking code quality, or providing feedback on code changes.
 version: "1.0.0"
-
-quenda:                          # Optional Quenda-specific metadata
-  activates_on:
-    - command: "/review"      # Command trigger
-  resources:
-    references:
-      - path: "guides/style-guide.md"
-        description: "Style guidelines"
-    assets:
-      - path: "templates/review-report.md"
-        type: template
+resources:
+  references:
+    - path: "guides/style-guide.md"
+      description: "Style guidelines"
+  assets:
+    - path: "templates/review-report.md"
+      type: template
 ---
 
-# Code Review Skill
+# Code Review
 
-When performing a code review:
-1. Check code style against the style guide
-2. Verify test coverage
-3. Review documentation
-...
+When reviewing code, provide thorough, constructive feedback...
 ```
 
 ### Frontmatter Fields
@@ -168,34 +181,35 @@ When performing a code review:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
-| `description` | Yes | Human-readable description |
+| `description` | Yes | Human-readable description - primary triggering mechanism |
 | `version` | No | Semantic version (default: "0.1.0") |
-| `quenda` | No | Quenda-specific configuration |
+| `resources` | No | References and assets |
 
-### Quenda Metadata
+### Resources
 
-The `quenda` section supports:
+The `resources` section supports:
 
 ```yaml
-quenda:
-  activates_on:
-    - command: "/review"      # Slash command trigger
-  resources:
-    references:               # Documents for the model to reference
-      - path: "guides/style-guide.md"
-        description: "Style guidelines"
-    assets:                   # Templates and other assets
-      - path: "templates/report.md"
-        type: template
+resources:
+  references:               # Documents for the model to reference
+    - path: "guides/style-guide.md"
+      description: "Style guidelines"
+  assets:                   # Templates and other assets
+    - path: "templates/report.md"
+      type: template
 ```
+
+Asset types: `template`, `script`, `data`, `other`
 
 ## Discovery Locations
 
 Skills are discovered in this priority order:
 
-1. **Workspace skills** - `.quenda/skills/<name>/` (highest priority)
-2. **Ecosystem skills** - `.agents/skills/<name>/` (for compatibility)
-3. **User skills** - `~/.quenda/skills/<name>/`
+1. **User-workspace skills** - `~/.quenda/users/<user>/workspaces/<ws_id>/skills/<name>/`
+2. **Project skills** - `.quenda/skills/<name>/`
+3. **Ecosystem project skills** - `.agents/skills/<name>/`
+4. **Agent package skills** - `<agent-package>/skills/<name>/`
+5. **User skills** - `~/.quenda/skills/<name>/`
 
 ## Using Skills
 
@@ -208,15 +222,6 @@ Activate skills by default in `config.yaml`:
 skills:
   - code-review
   - testing
-```
-
-Or with structured format:
-
-```yaml
-skills:
-  activate:
-    - code-review
-    - testing
 ```
 
 ### In REPL
@@ -276,16 +281,25 @@ Framework → Agent AGENT.md → Agent Instructions → User instructions → Wo
 
 ### Skill Injection
 
-**1. Active Skill Instructions (only for activated skills)**
+**Active Skill Instructions (only for activated skills)**
 
 Activated skills get their full instructions injected:
 
 ```markdown
-## Active Skill: code-review
+<skill_content name="code-review">
 
 # Code Review
 
 When reviewing code, provide thorough, constructive feedback...
+
+Skill directory: /path/to/skill
+Relative paths in this skill are relative to the skill directory.
+
+<skill_resources>
+  <file>guides/style-guide.md</file>
+  <file>templates/review-report.md</file>
+</skill_resources>
+</skill_content>
 ```
 
 ### How It Works
@@ -296,34 +310,6 @@ When reviewing code, provide thorough, constructive feedback...
 4. **Resource loading**: References, templates, and other assets are read only when needed
 
 Discovered skill catalogs stay host-side by default. They can still be surfaced explicitly for debugging or routing flows, but they are not injected into every run prompt.
-
-## Resource Types
-
-### References
-
-Documents the model can reference for context:
-
-```yaml
-resources:
-  references:
-    - path: "guides/style-guide.md"
-      description: "Code style guidelines"
-```
-
-### Assets
-
-Templates, data files, and other resources:
-
-```yaml
-resources:
-  assets:
-    - path: "templates/report.md"
-      type: template
-```
-
-Asset types: `template`, `script`, `data`, `other`
-
-Scripts should stay inert unless the host explicitly decides to run them under trust controls.
 
 ## Example Skills
 

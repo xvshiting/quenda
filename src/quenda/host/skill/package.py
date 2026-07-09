@@ -27,7 +27,6 @@ class SkillResource:
     type: Literal["reference", "asset"]
     description: str = ""
     content: str | None = None  # Lazy-loaded
-    safe_to_execute: bool = False
 
 
 @dataclass
@@ -53,7 +52,6 @@ class SkillPackage:
         skill_md: Cached SKILL.md content, loaded lazily
         instructions: Body content (after frontmatter) - lazy loaded
         resources: Resolved resource files
-        commands: Commands that activate this skill
         source: Where the skill was discovered
         active: Whether the skill is currently active
     """
@@ -73,9 +71,8 @@ class SkillPackage:
     # Resolved resources
     resources: list[SkillResource] = field(default_factory=list)
 
-    # Activation metadata
-    commands: list[str] = field(default_factory=list)  # Commands that activate this skill
-    source: Literal["user_workspace", "agent_package", "user", "system"] = "user_workspace"
+    # Discovery metadata
+    source: Literal["user_workspace", "workspace", "agent_package", "user", "system"] = "user_workspace"
 
     # Runtime state
     active: bool = False

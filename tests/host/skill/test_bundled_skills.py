@@ -198,10 +198,9 @@ Test agent.
         (skill_dir / "SKILL.md").write_text("""---
 name: docs-gen
 description: Documentation generator
-quenda:
-  resources:
-    references:
-      - path: "templates/api.md"
+resources:
+  references:
+    - path: "templates/api.md"
 ---
 # Docs Generator
 """)

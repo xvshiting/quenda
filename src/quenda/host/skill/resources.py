@@ -40,7 +40,6 @@ class ResourceInfo:
     resource_path: str = ""  # Relative path within skill (e.g., "references/checklist.md")
     description: str = ""
     exists: bool = True
-    safe_to_execute: bool = False  # For script assets
 
     def __post_init__(self) -> None:
         """Derive resource_path from path if not provided."""
@@ -67,7 +66,6 @@ class LoadedResource:
     path: Path
     resource_path: str = ""  # Relative path within skill
     description: str = ""
-    safe_to_execute: bool = False
 
     def __post_init__(self) -> None:
         """Derive resource_path from path if not provided."""
@@ -178,7 +176,6 @@ class ResourceResolver:
                     path=resource.path,
                     description=resource.description,
                     exists=resource.path.exists(),
-                    safe_to_execute=resource.safe_to_execute,
                 ))
 
         return resources
@@ -235,7 +232,6 @@ class ResourceResolver:
             content=content,
             path=resource.path,
             description=resource.description,
-            safe_to_execute=resource.safe_to_execute,
         )
 
     def render_template(
@@ -347,7 +343,6 @@ class ResourceResolver:
             path=resource.path,
             description=resource.description,
             exists=resource.path.exists(),
-            safe_to_execute=resource.safe_to_execute,
         )
 
     def list_resource_uris(self, skill_name: str | None = None) -> list[str]:
@@ -396,7 +391,6 @@ class ResourceResolver:
             content=content,
             path=resource.path,
             description=resource.description,
-            safe_to_execute=resource.safe_to_execute,
         )
 
     def _find_resource_by_path(

@@ -23,13 +23,10 @@ class TestSkillDiscovery:
 name: test-skill
 description: A test skill
 version: "1.0.0"
-quenda:
-  activates_on:
-    - command: "/test"
-  resources:
-    references:
-      - path: "guide.md"
-        description: "Test guide"
+resources:
+  references:
+    - path: "guide.md"
+      description: "Test guide"
 ---
 # Test Skill Instructions
 This is a test skill.
@@ -48,7 +45,6 @@ This is a test skill.
         assert len(skills) == 1
         assert skills[0].name == "test-skill"
         assert skills[0].description == "A test skill"
-        assert "/test" in skills[0].commands
 
     def test_skill_resources_resolved(self, user_workspace_skills: Path) -> None:
         """Test that resources are resolved correctly."""
@@ -108,7 +104,6 @@ description: Minimal skill
         assert len(skills) == 1
         assert skills[0].name == "minimal"
         assert skills[0].version == "0.1.0"  # Default version
-        assert len(skills[0].commands) == 0
         assert len(skills[0].resources) == 0
 
     def test_multiple_skills(self, tmp_path: Path) -> None:
@@ -129,6 +124,84 @@ description: Skill {i}
         assert len(skills) == 3
         names = {s.name for s in skills}
         assert names == {"skill-0", "skill-1", "skill-2"}
+
+    def test_discovers_project_quenda_skills(self, tmp_path: Path) -> None:
+        """Project-level .quenda/skills are discovered from workspace_path."""
+        workspace = tmp_path / "workspace"
+        skill_dir = workspace / ".quenda" / "skills" / "project-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("""---
+name: project-skill
+description: Project skill
+---
+# Project Skill
+""")
+
+        discovery = SkillDiscovery(workspace_path=workspace)
+        skills = discovery.discover_skills()
+
+        assert len(skills) == 1
+        assert skills[0].name == "project-skill"
+        assert skills[0].source == "workspace"
+
+    def test_project_quenda_skill_overrides_agents_and_bundled(self, tmp_path: Path) -> None:
+        """Project .quenda/skills take priority over .agents and bundled skills."""
+        workspace = tmp_path / "workspace"
+        agent_dir = workspace / "agents" / "dev-agent"
+
+        for base, title in [
+            (workspace / ".quenda" / "skills", "Project Quenda"),
+            (workspace / ".agents" / "skills", "Project Agents"),
+            (agent_dir / "skills", "Bundled"),
+        ]:
+            skill_dir = base / "shared-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(f"""---
+name: shared-skill
+description: {title}
+---
+# {title}
+""")
+
+        discovery = SkillDiscovery(
+            workspace_path=workspace,
+            agent_package_path=agent_dir,
+        )
+        skills = discovery.discover_skills()
+
+        assert len([skill for skill in skills if skill.name == "shared-skill"]) == 1
+        skill = discovery.get_skill("shared-skill")
+        assert skill is not None
+        assert skill.source == "workspace"
+        assert "Project Quenda" in skill.instructions
+
+    def test_user_workspace_skill_overrides_project_quenda_skill(self, tmp_path: Path) -> None:
+        """User-workspace skills remain the highest-priority override."""
+        workspace = tmp_path / "workspace"
+        user_skills = tmp_path / "user-workspace-skills"
+
+        for base, title in [
+            (user_skills, "User Workspace"),
+            (workspace / ".quenda" / "skills", "Project Quenda"),
+        ]:
+            skill_dir = base / "shared-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(f"""---
+name: shared-skill
+description: {title}
+---
+# {title}
+""")
+
+        discovery = SkillDiscovery(
+            user_workspace_skills_path=user_skills,
+            workspace_path=workspace,
+        )
+        skill = discovery.get_skill("shared-skill")
+
+        assert skill is not None
+        assert skill.source == "user_workspace"
+        assert "User Workspace" in skill.instructions
 
     def test_priority_order_user_workspace_over_user(self, tmp_path: Path) -> None:
         """Test that user-workspace skills override user skills."""
@@ -213,14 +286,13 @@ class TestSkillPackage:
         (skill_dir / "SKILL.md").write_text("""---
 name: resource-skill
 description: Skill with resources
-quenda:
-  resources:
-    references:
-      - path: "docs/guide.md"
-        description: "Main guide"
-    assets:
-      - path: "templates/report.md"
-        type: template
+resources:
+  references:
+    - path: "docs/guide.md"
+      description: "Main guide"
+  assets:
+    - path: "templates/report.md"
+      type: template
 ---
 # Instructions
 """)

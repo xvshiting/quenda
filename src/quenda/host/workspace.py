@@ -304,6 +304,26 @@ class WorkspaceResolver:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def get_user_root_path(self, user: User) -> Path:
+        """
+        Get user root storage path.
+
+        This is the root directory for all user-specific data.
+        Agents should have full access to this directory as it contains
+        all Host-managed user state.
+
+        Layout: ~/.quenda/users/<user_id>/
+
+        Args:
+            user: The user.
+
+        Returns:
+            The user root path.
+        """
+        path = self.user_storage_root / "users" / user.id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def get_user_agent_path(self, user: User, agent_name: str) -> Path:
         """
         Get user-agent storage path (workspace-independent).

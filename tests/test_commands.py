@@ -208,7 +208,7 @@ class TestDefaultRegistry:
         self.registry = create_default_registry()
 
     def test_has_all_builtin_commands(self) -> None:
-        expected = {"help", "clear", "exit", "session", "model", "mode", "context", "reset", "compress", "status", "skill"}
+        expected = {"help", "clear", "exit", "session", "model", "mode", "context", "reset", "compress", "status", "skill", "rebind"}
         actual = {c.name for c in self.registry.list_commands()}
         assert actual == expected
 

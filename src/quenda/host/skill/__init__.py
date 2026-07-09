@@ -6,7 +6,7 @@ to modify agent behavior. They differ from tools in that they
 provide instructions, references, and resources rather than
 executable functions.
 
-Skill = instructions + resource catalog + optional tools + optional policy metadata
+Skill = instructions + resource catalog
 
 This module provides:
 - SkillFrontmatter: Pydantic model for SKILL.md parsing
@@ -36,14 +36,10 @@ Usage:
 """
 
 from quenda.host.skill.models import (
-    ActivationTrigger,
     AssetReference,
     ResourceCatalog,
     ResourceReference,
     SkillFrontmatter,
-    SkillQuendaMetadata,
-    ToolRequirements,
-    TrustMetadata,
 )
 from quenda.host.skill.package import SkillPackage, SkillResource
 from quenda.host.skill.discovery import SkillDiscovery
@@ -63,14 +59,10 @@ from quenda.host.skill.uri import SkillResourceURI
 
 __all__ = [
     # Models
-    "ActivationTrigger",
     "AssetReference",
     "ResourceCatalog",
     "ResourceReference",
     "SkillFrontmatter",
-    "SkillQuendaMetadata",
-    "ToolRequirements",
-    "TrustMetadata",
     # Package
     "SkillPackage",
     "SkillResource",

@@ -170,7 +170,8 @@ class MCPClientManager:
         Parse a qualified name into server_id and tool_name.
 
         Args:
-            qualified_name: Name in format "server_id.tool_name".
+            qualified_name: Name in format "mcp__server_id__tool_name".
+                Legacy "server_id.tool_name" names are also accepted.
 
         Returns:
             Tuple of (server_id, tool_name).
@@ -178,11 +179,16 @@ class MCPClientManager:
         Raises:
             ValueError: If the name format is invalid.
         """
+        if qualified_name.startswith("mcp__"):
+            parts = qualified_name.split("__", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                return parts[1], parts[2]
+
         parts = qualified_name.split(".", 1)
         if len(parts) != 2:
             raise ValueError(
                 f"Invalid qualified name '{qualified_name}'. "
-                f"Expected format: 'server_id.tool_name'"
+                f"Expected format: 'mcp__server_id__tool_name'"
             )
         return parts[0], parts[1]
 

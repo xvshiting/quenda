@@ -27,17 +27,16 @@ class TestResourceResolver:
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-quenda:
-  resources:
-    references:
-      - path: "guides/style-guide.md"
-        description: "Code style guidelines"
-      - path: "docs/checklist.md"
-        description: "Review checklist"
-    assets:
-      - path: "templates/report.md"
-        type: template
-        description: "Review report template"
+resources:
+  references:
+    - path: "guides/style-guide.md"
+      description: "Code style guidelines"
+    - path: "docs/checklist.md"
+      description: "Review checklist"
+  assets:
+    - path: "templates/report.md"
+      type: template
+      description: "Review report template"
 ---
 # Code Review
 
@@ -63,10 +62,9 @@ Perform code review.
         (skill_dir2 / "SKILL.md").write_text("""---
 name: testing
 description: Testing skill
-quenda:
-  resources:
-    references:
-      - path: "test-guide.md"
+resources:
+  references:
+    - path: "test-guide.md"
 ---
 # Testing
 """)

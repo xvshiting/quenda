@@ -3,8 +3,10 @@ Skill discovery - Finding and loading skills from configured paths.
 
 Skills are discovered in priority order:
 1. User-workspace skills: ~/.quenda/users/<user>/workspaces/<ws_id>/skills/ (highest priority)
-2. Agent-package bundled: <agent_package>/skills/
-3. User-level: ~/.quenda/skills/
+2. Project skills: <workspace>/.quenda/skills/
+3. Project ecosystem skills: <workspace>/.agents/skills/
+4. Agent-package bundled: <agent_package>/skills/
+5. User-level: ~/.quenda/skills/
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from quenda.host.skill.models import SkillFrontmatter
+from quenda.host.skill.models import SkillFrontmatter, ResourceCatalog
 from quenda.host.skill.package import SkillPackage, SkillResource
 
 if TYPE_CHECKING:
@@ -41,6 +43,7 @@ class SkillDiscovery:
     def __init__(
         self,
         user_workspace_skills_path: Path | None = None,
+        workspace_path: Path | None = None,
         agent_package_path: Path | None = None,
     ) -> None:
         """
@@ -49,9 +52,13 @@ class SkillDiscovery:
         Args:
             user_workspace_skills_path: Path to user-workspace skills directory
                 (e.g., ~/.quenda/users/<user>/workspaces/<ws_id>/skills/).
+            workspace_path: Optional project workspace path. If provided,
+                <workspace>/.quenda/skills and <workspace>/.agents/skills
+                are discovered as project-level skills.
             agent_package_path: Optional path to agent package for bundled skills.
         """
         self.user_workspace_skills_path = user_workspace_skills_path
+        self.workspace_path = workspace_path
         self.agent_package_path = agent_package_path
 
     def discover_skills(self) -> list[SkillPackage]:
@@ -103,10 +110,11 @@ class SkillDiscovery:
 
         Priority order (per Agent Skills specification):
         1. User-workspace: ~/.quenda/users/<user>/workspaces/<ws_id>/skills/ (highest)
-        2. Project-level .agents/skills/ (cross-client interoperability)
-        3. Agent package: <agent_package>/skills/ (bundled skills)
-        4. User-level ~/.agents/skills/ (cross-client interoperability)
-        5. User-level ~/.quenda/skills/ (client-specific, lowest priority)
+        2. Project-level .quenda/skills/ (project-specific shared skills)
+        3. Project-level .agents/skills/ (cross-client interoperability)
+        4. Agent package: <agent_package>/skills/ (bundled skills)
+        5. User-level ~/.agents/skills/ (cross-client interoperability)
+        6. User-level ~/.quenda/skills/ (client-specific, lowest priority)
         """
         dirs: list[Path] = []
 
@@ -114,14 +122,20 @@ class SkillDiscovery:
         if self.user_workspace_skills_path:
             dirs.append(self.user_workspace_skills_path)
 
-        # Project-level .agents/skills/ (cross-client interoperability)
-        if self.agent_package_path:
-            # Agent package is typically in project, check for .agents/skills/
+        project_root = self.workspace_path
+        if project_root is None and self.agent_package_path:
             project_root = self._find_project_root(self.agent_package_path)
-            if project_root:
-                agents_skills = project_root / ".agents" / "skills"
-                if agents_skills.exists():
-                    dirs.append(agents_skills)
+
+        # Project-level .quenda/skills/ (project-specific shared skills)
+        if project_root:
+            quenda_skills = project_root / ".quenda" / "skills"
+            if quenda_skills.exists():
+                dirs.append(quenda_skills)
+
+            # Project-level .agents/skills/ (cross-client interoperability)
+            agents_skills = project_root / ".agents" / "skills"
+            if agents_skills.exists():
+                dirs.append(agents_skills)
 
         # Agent package bundled skills
         if self.agent_package_path:
@@ -163,14 +177,7 @@ class SkillDiscovery:
                 return None
 
             # Resolve resources
-            resources = self._resolve_resources(skill_dir, frontmatter)
-
-            # Extract commands
-            commands: list[str] = []
-            if frontmatter.quenda:
-                for trigger in frontmatter.quenda.activates_on:
-                    if trigger.command:
-                        commands.append(trigger.command)
+            resources = self._resolve_resources(skill_dir, frontmatter.resources)
 
             # Determine source
             source = self._determine_source(skill_dir)
@@ -183,7 +190,6 @@ class SkillDiscovery:
                 skill_md_path=skill_file,
                 frontmatter=frontmatter,
                 resources=resources,
-                commands=commands,
                 source=source,
             )
         except Exception as e:
@@ -214,15 +220,13 @@ class SkillDiscovery:
     def _resolve_resources(
         self,
         skill_dir: Path,
-        frontmatter: SkillFrontmatter,
+        catalog: ResourceCatalog | None,
     ) -> list[SkillResource]:
         """Resolve resource references from skill directory."""
         resources: list[SkillResource] = []
 
-        if frontmatter.quenda is None:
+        if catalog is None:
             return resources
-
-        catalog = frontmatter.quenda.resources
 
         for ref in catalog.references:
             ref_path = skill_dir / ref.path
@@ -240,16 +244,16 @@ class SkillDiscovery:
                     path=asset_path,
                     type="asset",
                     description=asset.description,
-                    safe_to_execute=asset.safe,
                 ))
 
         return resources
 
-    def _determine_source(self, skill_dir: Path) -> Literal["user_workspace", "agent_package", "user", "system"]:
+    def _determine_source(self, skill_dir: Path) -> Literal["user_workspace", "workspace", "agent_package", "user", "system"]:
         """Determine the source level of a skill.
 
         Priority order matches discovery order:
         - user_workspace: user-specific skills for this workspace (highest)
+        - workspace: project-shared skills under .quenda/skills or .agents/skills
         - agent_package: bundled with agent
         - user: shared across workspaces (lowest)
         - system: fallback for any other location
@@ -259,6 +263,19 @@ class SkillDiscovery:
             try:
                 skill_dir.relative_to(self.user_workspace_skills_path)
                 return "user_workspace"
+            except ValueError:
+                pass
+
+        # Check project workspace skills
+        if self.workspace_path:
+            try:
+                skill_dir.relative_to(self.workspace_path / ".quenda" / "skills")
+                return "workspace"
+            except ValueError:
+                pass
+            try:
+                skill_dir.relative_to(self.workspace_path / ".agents" / "skills")
+                return "workspace"
             except ValueError:
                 pass
 

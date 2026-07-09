@@ -21,9 +21,6 @@ class TestSkillActivator:
             (skill_dir / "SKILL.md").write_text(f"""---
 name: skill-{i}
 description: Skill {i}
-quenda:
-  activates_on:
-    - command: "/cmd{i}"
 ---
 # Instructions {i}
 Content for skill {i}.
@@ -197,12 +194,9 @@ class TestSkillActivationWithDiscovery:
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-quenda:
-  activates_on:
-    - command: "/review"
-  resources:
-    references:
-      - path: "checklist.md"
+resources:
+  references:
+    - path: "checklist.md"
 ---
 # Code Review
 
@@ -213,7 +207,7 @@ When reviewing code:
 """)
         (skill_dir / "checklist.md").write_text("- [ ] Style check\n- [ ] Test check")
 
-        # Skill without command triggers
+        # Skill without resources
         skill_dir2 = tmp_path / "skills" / "testing"
         skill_dir2.mkdir(parents=True)
         (skill_dir2 / "SKILL.md").write_text("""---
@@ -227,25 +221,26 @@ Focus on test coverage and quality.
 
         return tmp_path
 
-    def test_skill_with_command_trigger(
+    def test_skill_with_resources(
         self, workspace_with_skills: Path
     ) -> None:
-        """Test skill that has command triggers."""
+        """Test skill that has resources."""
         discovery = SkillDiscovery(user_workspace_skills_path=workspace_with_skills / "skills")
         skill = discovery.get_skill("code-review")
 
         assert skill is not None
-        assert "/review" in skill.commands
+        assert len(skill.resources) == 1
+        assert skill.resources[0].path.name == "checklist.md"
 
-    def test_skill_without_command_trigger(
+    def test_skill_without_resources(
         self, workspace_with_skills: Path
     ) -> None:
-        """Test skill without command triggers."""
+        """Test skill without resources."""
         discovery = SkillDiscovery(user_workspace_skills_path=workspace_with_skills / "skills")
         skill = discovery.get_skill("testing")
 
         assert skill is not None
-        assert len(skill.commands) == 0
+        assert len(skill.resources) == 0
 
     def test_activation_loads_instructions_lazily(
         self, workspace_with_skills: Path

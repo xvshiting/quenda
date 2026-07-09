@@ -3,25 +3,20 @@ name: calculate-nums
 description: Perform mathematical calculations (add, subtract, multiply, divide) on two or more numbers. Use when user asks to compute, calculate, or perform math operations on numbers.
 version: "1.0.0"
 
-quenda:
-  resources:
-    assets:
-      - path: "scripts/add.py"
-        description: "Add two or more numbers"
-        type: script
-        safe: true
-      - path: "scripts/subtract.py"
-        description: "Subtract numbers"
-        type: script
-        safe: true
-      - path: "scripts/multiply.py"
-        description: "Multiply two or more numbers"
-        type: script
-        safe: true
-      - path: "scripts/divide.py"
-        description: "Divide numbers"
-        type: script
-        safe: true
+resources:
+  assets:
+    - path: "scripts/add.py"
+      description: "Add two or more numbers"
+      type: script
+    - path: "scripts/subtract.py"
+      description: "Subtract numbers"
+      type: script
+    - path: "scripts/multiply.py"
+      description: "Multiply two or more numbers"
+      type: script
+    - path: "scripts/divide.py"
+      description: "Divide numbers"
+      type: script
 ---
 
 # Calculate

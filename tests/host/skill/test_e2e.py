@@ -53,16 +53,13 @@ skills:
 name: code-review
 description: Code review capability
 version: "1.0.0"
-quenda:
-  activates_on:
-    - command: "/review"
-  resources:
-    references:
-      - path: "guides/style.md"
-        description: "Style guide"
-    assets:
-      - path: "templates/report.md"
-        type: template
+resources:
+  references:
+    - path: "guides/style.md"
+      description: "Style guide"
+  assets:
+    - path: "templates/report.md"
+      type: template
 ---
 # Code Review
 
@@ -221,10 +218,9 @@ skills:
         (skill_dir / "SKILL.md").write_text("""---
 name: broken-skill
 description: Skill with missing resource
-quenda:
-  resources:
-    references:
-      - path: "missing.md"
+resources:
+  references:
+    - path: "missing.md"
 ---
 # Instructions
 """)
@@ -282,8 +278,8 @@ Shared agent.
         # Skills paths would be different (user-workspace path)
         # Each user-workspace has its own skills directory
 
-    def test_skill_commands_discovered(self, complete_workspace: Path) -> None:
-        """Test that skill commands are properly discovered."""
+    def test_skill_resources_discovered(self, complete_workspace: Path) -> None:
+        """Test that skill resources are properly discovered."""
         agent_dir = complete_workspace / "agents" / "dev-agent"
 
         # Create empty user-workspace skills path
@@ -297,7 +293,7 @@ Shared agent.
         skill = discovery.get_skill("code-review")
 
         assert skill is not None
-        assert "/review" in skill.commands
+        assert len(skill.resources) == 2  # style.md and report.md
 
     def test_progressive_disclosure_e2e(self, complete_workspace: Path) -> None:
         """Test progressive disclosure in the complete flow."""
