@@ -73,10 +73,10 @@ Take full-page or viewport screenshots.
 ```python
 from playwright_scripts import screenshot
 
-# Full page screenshot
+# Full page screenshot (default - captures entire scrollable page)
 screenshot(url="https://example.com", output="page.png")
 
-# Viewport only
+# Viewport only (visible area only)
 screenshot(url="https://example.com", output="viewport.png", full_page=False)
 
 # Specific element
@@ -86,6 +86,21 @@ screenshot(
     selector="#chart-container"
 )
 
+# Wait for lazy-loaded content + extra delay
+screenshot(
+    url="https://image-heavy-site.com",
+    output="full.png",
+    wait_for=".gallery-loaded",
+    delay=2.0  # Extra 2 seconds after scroll
+)
+
+# Disable auto-scroll (if causing issues)
+screenshot(
+    url="https://example.com",
+    output="page.png",
+    scroll_to_load=False
+)
+
 # Custom viewport size
 screenshot(
     url="https://example.com",
@@ -93,6 +108,12 @@ screenshot(
     viewport={"width": 375, "height": 667}
 )
 ```
+
+**Full-page screenshot behavior:**
+- By default, scrolls through the entire page to trigger lazy-loaded content
+- Waits for images and dynamic content to load
+- Use `scroll_to_load=False` to disable auto-scroll
+- Use `delay=N` to add extra wait time after scrolling
 
 ### interact - Browser Interactions
 
@@ -179,6 +200,8 @@ All scripts support these common options:
 | `viewport` | dict | 1280x720 | Browser viewport size |
 | `user_agent` | str | Default Chrome UA | Custom user agent |
 | `cookies` | list | [] | Cookies to set before navigation |
+| `delay` | float | 0 | Extra delay before screenshot (screenshot only) |
+| `scroll_to_load` | bool | True | Auto-scroll to trigger lazy content (screenshot only) |
 
 ## Examples
 
