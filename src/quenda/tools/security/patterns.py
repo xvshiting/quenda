@@ -134,6 +134,8 @@ SANDBOX_ALLOWED_MODULES: list[str] = [
     "pandas",
     "matplotlib",
     "scipy",
+    # Web automation (for JS rendering in web_fetch)
+    "playwright",
 ]
 
 SANDBOX_BLOCKED_MODULES: list[str] = [
