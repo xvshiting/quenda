@@ -3,12 +3,10 @@ Tool policies for Quenda Runtime.
 
 This module defines policy interfaces for tool execution control.
 
-NOTE: These interfaces are target contracts. Full implementation requires
-Runtime ownership of:
+Runtime owns the tool phase and calls these policies at concrete handoff
+points:
 - Tool-call approval before execution (ToolSelectionPolicy)
-- Tool-result writeback before messages are updated (ToolResultProcessingPolicy)
-
-See docs/architecture/hook-interface-drafts.md for implementation readiness.
+- Tool-result processing before messages are updated (ToolResultProcessingPolicy)
 
 Usage (future):
     from quenda.runtime.tool_policy import (
@@ -102,8 +100,8 @@ class ToolSelectionPolicy(Protocol):
     The model sees all available tools; this policy controls which
     calls are actually allowed to run.
 
-    NOTE: This interface is a target contract. Current implementation
-    requires Runtime ownership of tool-call gating before execution.
+    Runtime owns this handoff and applies the returned decision before
+    executing any approved tool calls.
     """
 
     def select_tools(self, request: ToolSelectionRequest) -> ToolSelectionDecision:
@@ -256,9 +254,8 @@ class ToolResultProcessingPolicy(Protocol):
     The policy can modify content while raw_content is preserved
     for trace/debug purposes.
 
-    NOTE: This interface is a target contract. Current implementation
-    requires Runtime ownership of tool-result writeback before
-    messages are updated.
+    Runtime owns this handoff and writes the processed result back to
+    the model loop while preserving raw result content for trace/debug.
     """
 
     def process_result(self, result: ToolResultEnvelope) -> ProcessedToolResult:

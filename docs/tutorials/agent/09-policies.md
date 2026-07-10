@@ -1,492 +1,348 @@
 # Policy 系统
 
-策略钩子 (Policy Hooks) 是 Quenda 的扩展机制，让你可以在不修改核心代码的情况下控制 Agent 的行为。
+Policy 是 Quenda 用来保持框架简洁、又允许 agent 定制行为的主要扩展点。
+
+核心原则是：
+
+- **Runtime/Kernel 负责机制**：模型调用、工具执行、消息写回、状态转换。
+- **Policy 负责策略**：什么时候停止、哪些工具能执行、工具结果如何进入上下文。
+- **没有配置时使用默认行为**：不写 `policies:` 时，Quenda 保持当前默认执行方式。
+
+这让框架更接近 Unix 哲学：小核心、清晰协议、可组合策略，而不是在 runner 里 hard code 某个产品的工作流。
 
 ---
 
-## 概述
+## 支持的 Policy 点
 
-Quenda 的 Policy 系统遵循 **"简单默认，可扩展设计"** 原则：
+| Policy | 触发点 | 能改变控制流 | 常见用途 |
+|--------|--------|--------------|----------|
+| `TerminationPolicy` | model/tool step 之后 | 是 | 步数、时间、token、错误预算 |
+| `ToolSelectionPolicy` | 模型返回 tool calls 后、执行前 | 是 | allowlist / denylist / 风险审批 |
+| `ToolResultProcessingPolicy` | 工具执行后、写回上下文前 | 否，但可改写结果 | 截断、限行、摘要、脱敏 |
+| `TraceSink` | 每个 runtime event 发出时 | 否 | JSONL trace、评估、观测 |
+| `CompressionPolicy` | 每次 run 开始前检查上下文时 | 是 | 何时压缩上下文 |
+| `PermissionPolicy` | 文件/命令等工具执行前 | 是 | workspace 边界、危险命令、用户授权 |
 
-- **Core 定义执行机制和默认行为**
-- **Policy 定义策略逻辑**
+本教程重点讲可以从 agent `config.yaml` 绑定的三类 runtime policy：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       Host Layer                             │
-│  (配置、存储、身份、权限)                                      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Runtime Layer                           │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
-│  │ TraceSink   │  │ Termination  │  │ Tool Policies    │    │
-│  │ (Observer)  │  │   Policy     │  │ (Target Contract)│    │
-│  └─────────────┘  └──────────────┘  └──────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       Kernel Layer                           │
-│  (纯执行引擎，不包含策略逻辑)                                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 可用的 Policy Seams
-
-| Seam | 角色 | 当前状态 | 用途 |
-|------|------|----------|------|
-| `TraceSink` | Observer | ✅ 可用 | 记录运行事件，调试分析 |
-| `TerminationPolicy` | Policy | ✅ 可用 | 控制何时停止执行 |
-| `ToolSelectionPolicy` | Policy | ⚠️ Target Contract | 工具执行审批 |
-| `ToolResultProcessingPolicy` | Policy | ⚠️ Target Contract | 工具结果处理 |
+- `termination`
+- `tool_selection`
+- `tool_result_processing`
 
 ---
 
-## TraceSink：事件观察器
+## 在 config.yaml 中使用内置 Policy
 
-`TraceSink` 是一个纯观察接口，用于记录 Agent 运行过程中的所有事件。
+不写 `policies:` 时，默认行为保持不变：
 
-### 基础用法
+- 不提前终止，直到模型自然结束或硬保护触发
+- 模型请求的工具默认都允许执行
+- 工具结果默认原样写回上下文
 
-```python
-from quenda.runtime import Run, JsonlTraceSink
+配置示例：
 
-# 创建 TraceSink
-sink = JsonlTraceSink("traces/run.jsonl")
+```yaml
+tools:
+  bundles:
+    - core
+    - network
 
-# 注入到 Run
-run = Run.create(
-    agent=agent,
-    session=session,
-    model=model,
-    trace_sink=sink,
-)
+policies:
+  termination:
+    type: max_steps
+    max_steps: 30
 
-# 运行时自动记录事件
-events = await run.execute_to_completion("你好")
+  tool_selection:
+    type: allowlist
+    allowed:
+      - list_files
+      - search_text
+      - read_file
+      - apply_patch
+      - run_shell
+      - request_interaction
+
+  tool_result_processing:
+    type: truncate
+    max_chars: 6000
 ```
 
-### 事件类型
-
-所有事件都继承自 `Event` 基类：
-
-```python
-from quenda.runtime import (
-    RunStarted,      # Run 开始
-    RunCompleted,    # Run 正常完成
-    RunTerminated,   # Run 被策略终止
-    RunInterrupted,  # Run 被用户中断
-    ModelResponded,  # 模型响应
-    ToolExecuted,    # 工具执行完成
-    ErrorOccurred,   # 发生错误
-)
-```
-
-### 自定义 TraceSink
-
-```python
-from quenda.runtime import TraceSink, AnyEvent
-
-class MyTraceSink:
-    """自定义 TraceSink 实现。"""
-    
-    def record(self, event: AnyEvent) -> None:
-        """记录事件（不能抛出异常）。"""
-        # 根据 event.type 分发处理
-        if event.type == "model_responded":
-            print(f"[Model] {event.content[:50]}...")
-        elif event.type == "tool_executed":
-            print(f"[Tool] {event.tool_name} ({event.duration_ms}ms)")
-        elif event.type == "run_completed":
-            print(f"[Done] {event.total_steps} steps, {event.duration_ms}ms")
-
-# 使用自定义 sink
-run = Run.create(agent, session, model, trace_sink=MyTraceSink())
-```
-
-### 内置实现
-
-| 实现 | 说明 |
-|------|------|
-| `NullTraceSink` | 空实现，默认值 |
-| `JsonlTraceSink` | 写入 JSONL 文件，便于后续分析 |
+Host 会在 setup 阶段解析这些配置，并把生成的 policy 绑定到 `Agent -> Session -> Run`。
 
 ---
 
-## TerminationPolicy：终止策略
+## 常见内置 Policy
 
-`TerminationPolicy` 让你可以控制 Agent 何时停止执行，而不是让它无限运行。
+### TerminationPolicy
 
-### 基础用法
+限制执行规模，防止 agent 失控或成本爆炸。
 
-```python
-from quenda.runtime import Run, MaxStepsPolicy
-
-# 限制最多 20 步
-policy = MaxStepsPolicy(max_steps=20)
-
-run = Run.create(
-    agent=agent,
-    session=session,
-    model=model,
-    termination_policy=policy,
-)
-
-# 超过 20 步后自动停止
-events = await run.execute_to_completion("帮我分析这个项目")
-
-# 检查是否被终止
-from quenda.runtime import RunTerminated
-terminated = [e for e in events if isinstance(e, RunTerminated)]
-if terminated:
-    print(f"被终止: {terminated[0].reason}")
+```yaml
+policies:
+  termination:
+    type: max_steps
+    max_steps: 50
 ```
 
-### 内置策略
+可用类型：
 
-#### MaxStepsPolicy
-
-限制最大步骤数：
-
-```python
-from quenda.runtime import MaxStepsPolicy
-
-policy = MaxStepsPolicy(max_steps=50)
-```
-
-#### TimeBudgetPolicy
-
-限制执行时间（毫秒）：
-
-```python
-from quenda.runtime import TimeBudgetPolicy
-
-# 最多运行 5 分钟
-policy = TimeBudgetPolicy(max_time_ms=5 * 60 * 1000)
-```
-
-#### TokenBudgetPolicy
-
-限制 Token 使用量：
-
-```python
-from quenda.runtime import TokenBudgetPolicy
-
-# 最多使用 100k tokens
-policy = TokenBudgetPolicy(max_total_tokens=100_000)
-```
-
-#### ConsecutiveErrorPolicy
-
-连续错误时停止：
-
-```python
-from quenda.runtime import ConsecutiveErrorPolicy
-
-# 连续 3 次错误后停止
-policy = ConsecutiveErrorPolicy(max_consecutive_errors=3)
-```
-
-### 组合策略
-
-使用 `CompositeTerminationPolicy` 组合多个策略：
-
-```python
-from quenda.runtime import (
-    CompositeTerminationPolicy,
-    MaxStepsPolicy,
-    TokenBudgetPolicy,
-    ConsecutiveErrorPolicy,
-)
-
-# 任一条件满足即停止
-policy = CompositeTerminationPolicy([
-    MaxStepsPolicy(max_steps=50),
-    TokenBudgetPolicy(max_total_tokens=100_000),
-    ConsecutiveErrorPolicy(max_consecutive_errors=5),
-])
-
-run = Run.create(
-    agent=agent,
-    session=session,
-    model=model,
-    termination_policy=policy,
-)
-```
-
-### 自定义 TerminationPolicy
-
-```python
-from quenda.runtime import (
-    TerminationPolicy,
-    TerminationState,
-    TerminationDecision,
-)
-
-class NoProgressPolicy:
-    """检测无进展并停止。"""
-    
-    def __init__(self, max_same_tool_calls: int = 3):
-        self.max_same_tool_calls = max_same_tool_calls
-        self._call_history: list[str] = []
-    
-    def should_terminate(self, state: TerminationState) -> TerminationDecision:
-        # 自定义逻辑：检测重复工具调用
-        # 注意：这是一个示例，实际需要更多信息
-        
-        if state.step_count > 10 and state.tool_round_count < 2:
-            # 执行了多步但几乎没有工具调用
-            return TerminationDecision(
-                should_stop=True,
-                reason="no_progress_detected",
-            )
-        
-        return TerminationDecision(should_stop=False)
-
-# 使用自定义策略
-run = Run.create(
-    agent=agent,
-    session=session,
-    model=model,
-    termination_policy=NoProgressPolicy(),
-)
-```
-
-### TerminationState 字段
-
-```python
-@dataclass(frozen=True)
-class TerminationState:
-    # 执行进度
-    step_count: int           # 已执行步数
-    tool_round_count: int     # 工具轮次
-    elapsed_time_ms: int      # 已用时间（毫秒）
-    
-    # Token 使用（累计）
-    total_input_tokens: int
-    total_output_tokens: int
-    total_tokens: int
-    
-    # 错误追踪
-    error_count: int
-    consecutive_error_count: int
-    
-    # 上下文
-    run_id: str
-    session_id: str
-    agent_name: str
-    last_step_type: str | None    # "model" 或 "tool"
-    last_stop_reason: str | None  # 模型停止原因
-```
-
----
-
-## 组合使用
-
-可以将 `TraceSink` 和 `TerminationPolicy` 组合使用：
-
-```python
-from quenda.runtime import (
-    Run,
-    JsonlTraceSink,
-    CompositeTerminationPolicy,
-    MaxStepsPolicy,
-    TokenBudgetPolicy,
-)
-
-# 创建 Run 时注入所有策略
-run = Run.create(
-    agent=agent,
-    session=session,
-    model=model,
-    
-    # 观察器
-    trace_sink=JsonlTraceSink("traces/session.jsonl"),
-    
-    # 终止策略
-    termination_policy=CompositeTerminationPolicy([
-        MaxStepsPolicy(max_steps=30),
-        TokenBudgetPolicy(max_total_tokens=50_000),
-    ]),
-)
-
-# 执行
-events = await run.execute_to_completion("帮我重构这个模块")
-
-# 分析结果
-from quenda.runtime import RunCompleted, RunTerminated
-
-completed = [e for e in events if isinstance(e, RunCompleted)]
-terminated = [e for e in events if isinstance(e, RunTerminated)]
-
-if completed:
-    print(f"✅ 完成: {completed[0].total_steps} 步")
-elif terminated:
-    print(f"⏹️ 终止: {terminated[0].reason}")
-```
-
----
-
-## Tool Policies（Target Contract）
-
-`ToolSelectionPolicy` 和 `ToolResultProcessingPolicy` 是 **Target Contract**，表示接口已定义，但需要 Runtime/Kernel 重构后才能完整集成。
+| type | 参数 | 说明 |
+|------|------|------|
+| `max_steps` | `max_steps` | 达到最大 step 数后停止 |
+| `time_budget` | `max_time_ms` | 达到时间预算后停止 |
+| `token_budget` | `max_total_tokens` | 达到 token 预算后停止 |
+| `consecutive_errors` | `max_consecutive_errors` | 连续错误过多后停止 |
+| `default` / `never` | 无 | 不配置提前终止 |
 
 ### ToolSelectionPolicy
 
-用于审批工具执行请求：
+控制模型请求的 tool call 是否真的执行。
 
-```python
-from quenda.runtime import (
-    ToolSelectionPolicy,
-    ToolSelectionRequest,
-    ToolSelectionDecision,
-    RejectedToolCall,
-    DenylistToolSelectionPolicy,
-    AllowlistToolSelectionPolicy,
-)
+Allowlist：
 
-# 拒绝危险工具
-policy = DenylistToolSelectionPolicy(
-    denied={"run_shell", "python_execution"}
-)
-
-# 或只允许特定工具
-policy = AllowlistToolSelectionPolicy(
-    allowed={"read_file", "search_text", "list_files"}
-)
+```yaml
+policies:
+  tool_selection:
+    type: allowlist
+    allowed:
+      - read_file
+      - search_text
+      - apply_patch
 ```
 
-**注意**：当前版本需要 Runtime ownership of tool-call gating 才能完整集成。
+Denylist：
+
+```yaml
+policies:
+  tool_selection:
+    type: denylist
+    denied:
+      - run_shell
+      - execute_python
+```
+
+可用类型：
+
+| type | 参数 | 说明 |
+|------|------|------|
+| `allowlist` | `allowed` | 只允许列出的工具执行 |
+| `denylist` | `denied` | 禁止列出的工具执行 |
+| `default` / `allow_all` | 无 | 保持默认：允许所有请求 |
+
+被拒绝的工具调用不会消失。Runtime 会写回一个显式 denial result，让模型知道请求被拒绝以及原因。
 
 ### ToolResultProcessingPolicy
 
-用于处理工具输出：
+控制工具结果进入模型上下文前的形态。
 
-```python
-from quenda.runtime import (
-    ToolResultProcessingPolicy,
-    ToolResultEnvelope,
-    ProcessedToolResult,
-    TruncatingToolResultProcessingPolicy,
-    LineLimitedToolResultProcessingPolicy,
-)
+字符截断：
 
-# 截断长输出
-policy = TruncatingToolResultProcessingPolicy(max_chars=4000)
-
-# 或限制行数
-policy = LineLimitedToolResultProcessingPolicy(max_lines=100)
+```yaml
+policies:
+  tool_result_processing:
+    type: truncate
+    max_chars: 8000
 ```
 
-**注意**：当前版本需要 Runtime ownership of tool-result writeback 才能完整集成。
+行数限制：
 
----
+```yaml
+policies:
+  tool_result_processing:
+    type: line_limit
+    max_lines: 120
+```
 
-## 设计原则
+可用类型：
 
-### 1. Observer vs Policy
-
-| 类型 | 影响 | 示例 |
+| type | 参数 | 说明 |
 |------|------|------|
-| Observer | 只观察，不影响控制流 | `TraceSink` |
-| Policy | 做决策，影响执行 | `TerminationPolicy` |
+| `passthrough` | 无 | 原样写回 |
+| `truncate` | `max_chars`, `suffix` | 按字符截断 |
+| `line_limit` | `max_lines`, `suffix` | 按行数截断 |
 
-### 2. Kernel Guard vs Runtime Policy
+Trace 中仍会保留 raw result，方便调试和审计。
 
-```python
-# Kernel Guard: 硬编码安全限制，不可配置
-kernel = Kernel(model, tools, max_iterations=100)
+---
 
-# Runtime Policy: 可配置的策略，用户可控
-run.termination_policy = MaxStepsPolicy(max_steps=20)
+## 定义自定义 Policy
+
+自定义 policy 放在 agent 包的：
+
+```text
+extensions/policies/
 ```
 
-两者共存：
-- **Kernel Guard** 是最后一道防线
-- **Runtime Policy** 是用户策略层
-
-### 3. 默认行为
-
-所有 Policy 都有默认实现，保持向后兼容：
+目录下。推荐用 `policies` 字典导出：
 
 ```python
-# 不配置时使用默认值
-run = Run.create(agent, session, model)
-# trace_sink = None → NullTraceSink
-# termination_policy = None → NeverTerminatePolicy
+# extensions/policies/safe_tools.py
+from quenda.runtime.tool_policy import (
+    RejectedToolCall,
+    ToolSelectionDecision,
+)
+
+
+class NoShellPolicy:
+    def select_tools(self, request):
+        approved = []
+        rejected = []
+
+        for call in request.tool_calls:
+            if call.name == "run_shell":
+                rejected.append(RejectedToolCall(call, "run_shell disabled"))
+            else:
+                approved.append(call)
+
+        return ToolSelectionDecision(approved, rejected)
+
+
+policies = {
+    "no_shell": NoShellPolicy(),
+}
+```
+
+然后在 `config.yaml` 使用：
+
+```yaml
+policies:
+  tool_selection:
+    type: local
+    name: no_shell
 ```
 
 ---
 
-## 完整示例
+## 使用 Factory 接收配置
+
+如果 policy 需要参数，导出 factory：
 
 ```python
-import asyncio
+# extensions/policies/result_limits.py
+from quenda.runtime.tool_policy import ProcessedToolResult
+
+
+class RedactingPolicy:
+    def __init__(self, marker: str = "[redacted]"):
+        self.marker = marker
+
+    def process_result(self, result):
+        content = result.raw_content.replace("SECRET", self.marker)
+        return ProcessedToolResult(
+            content=content,
+            is_error=result.is_error,
+            display_hint=result.display_hint,
+            change_preview=result.change_preview,
+            result_summary=result.result_summary,
+        )
+
+
+def make_redactor(config):
+    return RedactingPolicy(marker=config.get("marker", "[redacted]"))
+
+
+policies = {
+    "redactor": make_redactor,
+}
+```
+
+配置：
+
+```yaml
+policies:
+  tool_result_processing:
+    type: local
+    name: redactor
+    marker: "[secret removed]"
+```
+
+Host 会把除 `type` / `name` 之外的字段作为 `config` 传给 factory。
+
+---
+
+## register(builder) 形式
+
+也可以显式注册：
+
+```python
+# extensions/policies/my_policies.py
+from quenda.host import PolicyRegistryBuilder
+
+
+def register(builder: PolicyRegistryBuilder):
+    builder.register_factory("my_policy", lambda config: MyPolicy(config))
+```
+
+这种形式适合一个文件注册多个 policy，或需要更复杂的初始化逻辑。
+
+---
+
+## 程序化使用
+
+如果不是通过 agent package，而是直接写 Python，也可以直接传实例：
+
+```python
 from quenda import Agent
-from quenda.runtime import (
-    JsonlTraceSink,
-    CompositeTerminationPolicy,
-    MaxStepsPolicy,
-    TokenBudgetPolicy,
-    ConsecutiveErrorPolicy,
-    RunTerminated,
+from quenda.runtime.termination import MaxStepsPolicy
+from quenda.runtime.tool_policy import (
+    AllowlistToolSelectionPolicy,
+    TruncatingToolResultProcessingPolicy,
 )
 
-async def main():
-    # 创建 Agent
-    agent = Agent(
-        name="code-assistant",
-        system_prompt="你是一个代码助手...",
-        tools=get_core_tools("/workspace"),
-    )
-    
-    # 打开会话
-    session = agent.open_session()
-    
-    # 创建带策略的 Run
-    run = Run.create(
-        agent=agent.config,
-        session=session.state,
-        model=agent.model,
-        
-        # 记录事件
-        trace_sink=JsonlTraceSink(f"traces/{session.id}.jsonl"),
-        
-        # 终止策略
-        termination_policy=CompositeTerminationPolicy([
-            MaxStepsPolicy(max_steps=50),
-            TokenBudgetPolicy(max_total_tokens=100_000),
-            ConsecutiveErrorPolicy(max_consecutive_errors=3),
-        ]),
-    )
-    
-    # 执行
-    events = await run.execute_to_completion("帮我优化这个函数")
-    
-    # 检查结果
-    terminated = [e for e in events if isinstance(e, RunTerminated)]
-    if terminated:
-        print(f"执行被终止: {terminated[0].reason}")
-        print(f"已完成步骤: {terminated[0].steps_completed}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+agent = Agent(
+    name="safe-agent",
+    tools=tools,
+    model=model,
+    termination_policy=MaxStepsPolicy(max_steps=30),
+    tool_selection_policy=AllowlistToolSelectionPolicy({
+        "read_file",
+        "search_text",
+        "apply_patch",
+    }),
+    tool_result_processing_policy=TruncatingToolResultProcessingPolicy(max_chars=6000),
+)
 ```
+
+---
+
+## TraceSink
+
+`TraceSink` 是观察器，不改变控制流。常用于记录运行轨迹：
+
+```python
+from quenda.runtime import JsonlTraceSink
+
+agent = Agent(
+    name="traced-agent",
+    tools=tools,
+    model=model,
+    trace_sink=JsonlTraceSink("traces/run.jsonl"),
+)
+```
+
+自定义 TraceSink：
+
+```python
+class PrintTrace:
+    def record(self, event):
+        print(event.type)
+```
+
+注意：`record()` 不应该抛异常。Runtime 会尽量吞掉 trace sink 错误，避免观测逻辑影响主流程。
+
+---
+
+## 设计建议
+
+- 把 policy 做小：一个 policy 只处理一个决策点。
+- 默认保守：不配置时让框架行为保持简单。
+- 安全策略优先放在 `ToolSelectionPolicy` 和 `PermissionPolicy`。
+- 上下文成本控制优先放在 `ToolResultProcessingPolicy`、`CompressionPolicy` 和 `TerminationPolicy`。
+- 不要把产品工作流 hard code 到 runner；放到 agent-local policy、tool、MCP 或上层 Host extension。
 
 ---
 
 ## 下一步
 
-- [API 参考](./08-references.md) — 完整 API 速查表
-- [事件系统](./06-events.md) — 事件驱动开发
-- [架构决策记录](../../architecture/) — 了解设计背景
-
----
-
-<div align="right">
-  <a href="./07-advanced.md">← 上一页</a> ·
-  <a href="../README.md">📚 教程首页</a> · <a href="../../README.md">🏠 项目首页</a> ·
-  <a href="./08-references.md">API 参考 →</a>
-</div>
+- [API 参考](./08-references.md)
+- [事件系统](./06-events.md)

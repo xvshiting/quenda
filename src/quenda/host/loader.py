@@ -339,6 +339,79 @@ class ExecutionConfig:
 
 
 @dataclass
+class PolicySpecConfig:
+    """
+    One configured policy binding.
+
+    The `type` field selects a built-in policy or `local`; all remaining keys
+    are passed as policy-specific parameters.
+    """
+
+    type: str = ""
+    name: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PolicySpecConfig:
+        if not data:
+            return cls()
+
+        policy_type = str(data.get("type", data.get("name", "")))
+        name = str(data.get("name", ""))
+        config = {k: v for k, v in data.items() if k not in {"type", "name"}}
+        nested_config = data.get("config")
+        if isinstance(nested_config, dict):
+            config.update(nested_config)
+            config.pop("config", None)
+
+        return cls(type=policy_type, name=name, config=config)
+
+
+@dataclass
+class PoliciesConfig:
+    """
+    Policy bindings requested by an agent package.
+
+    Example config.yaml:
+        policies:
+          termination:
+            type: max_steps
+            max_steps: 30
+          tool_selection:
+            type: allowlist
+            allowed:
+              - read_file
+              - search_text
+          tool_result_processing:
+            type: truncate
+            max_chars: 6000
+    """
+
+    termination: PolicySpecConfig | None = None
+    tool_selection: PolicySpecConfig | None = None
+    tool_result_processing: PolicySpecConfig | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PoliciesConfig:
+        if not data:
+            return cls()
+
+        termination = data.get("termination")
+        tool_selection = data.get("tool_selection")
+        tool_result_processing = data.get("tool_result_processing")
+
+        return cls(
+            termination=PolicySpecConfig.from_dict(termination) if isinstance(termination, dict) else None,
+            tool_selection=PolicySpecConfig.from_dict(tool_selection) if isinstance(tool_selection, dict) else None,
+            tool_result_processing=(
+                PolicySpecConfig.from_dict(tool_result_processing)
+                if isinstance(tool_result_processing, dict)
+                else None
+            ),
+        )
+
+
+@dataclass
 class AgentConfigYaml:
     """
     Machine-readable agent configuration from config.yaml.
@@ -354,6 +427,7 @@ class AgentConfigYaml:
         compression: Compression configuration (ADR-015).
         tools: Tool capability request.
         execution: Execution capability request.
+        policies: Runtime policy bindings.
     """
 
     model_provider: str | None = None
@@ -367,6 +441,7 @@ class AgentConfigYaml:
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    policies: PoliciesConfig = field(default_factory=PoliciesConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentConfigYaml:
@@ -378,6 +453,7 @@ class AgentConfigYaml:
         compression_data = data.get("compression", {})
         tools_data = data.get("tools", {})
         execution_data = data.get("execution", {})
+        policies_data = data.get("policies", {})
         mcp_data = data.get("mcp", {})
 
         # Skills can be at top level or under skills.activate
@@ -441,6 +517,7 @@ class AgentConfigYaml:
             compression=CompressionConfig.from_dict(compression_data),
             tools=ToolsConfig.from_dict(tools_data),
             execution=ExecutionConfig.from_dict(execution_data),
+            policies=PoliciesConfig.from_dict(policies_data),
         )
 
 
@@ -906,6 +983,63 @@ def load_agent_tools(
     return loaded
 
 
+def load_agent_policies(
+    agent_path: Path,
+    builder: "PolicyRegistryBuilder",
+) -> int:
+    """
+    Load policy extensions from an agent package.
+
+    Scans `extensions/policies/*.py` in the agent package directory.
+
+    Loading contract (one of):
+    1. `policies` dict - mapping policy name to policy instance or factory
+    2. `register(builder)` function - called to register policies
+    """
+    from quenda.host.policy_registry import PolicyRegistryBuilder
+
+    policies_dir = agent_path / "extensions" / "policies"
+    if not policies_dir.exists():
+        return 0
+
+    loaded = 0
+    for py_file in policies_dir.glob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+
+        try:
+            module = _load_extension_module(py_file, namespace="policies")
+            if module is None:
+                continue
+
+            if hasattr(module, "policies"):
+                policies = module.policies
+                if not isinstance(policies, dict):
+                    raise ValueError("policies must be a dict of name -> policy/factory")
+                for name, policy in policies.items():
+                    if callable(policy):
+                        builder.register_factory(str(name), policy, source="agent_local")
+                    else:
+                        builder.register(str(name), policy, source="agent_local")
+                loaded += 1
+            elif hasattr(module, "register"):
+                module.register(builder)
+                loaded += 1
+
+        except ValueError:
+            raise
+        except Exception as e:
+            import warnings
+
+            warnings.warn(
+                f"Failed to load policy extension {py_file}: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    return loaded
+
+
 def load_agent_providers(
     agent_path: Path,
 ) -> int:
@@ -1061,6 +1195,8 @@ __all__ = [
     "ToolsConfig",
     "PythonExecutionConfig",
     "ExecutionConfig",
+    "PolicySpecConfig",
+    "PoliciesConfig",
     "AgentConfigYaml",
     "AgentPackage",
     "load_agent_from_markdown",
@@ -1068,6 +1204,7 @@ __all__ = [
     "load_agent_commands",
     "load_agent_interactions",
     "load_agent_tools",
+    "load_agent_policies",
     "load_agent_providers",
     "find_builtin_agent",
 ]

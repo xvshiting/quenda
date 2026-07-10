@@ -32,10 +32,12 @@ from quenda.host.loader import (
     AgentPackage,
     ExecutionConfig,
     load_agent_package,
+    load_agent_policies,
     load_agent_tools,
     load_agent_providers,
 )
 from quenda.host.mcp import MCPClientManager
+from quenda.host.policy_registry import LoadedPolicyCatalog, NamedPolicySpec, PolicyRegistryBuilder
 from quenda.host.registry import LoadedToolCatalog, NamedToolSpec, ToolRegistryBuilder
 from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
 from quenda.host.storage import FileStorage, FileStorageConfig
@@ -110,6 +112,9 @@ class StableHostBinding:
     agent_package: AgentPackage | None = None
     skill_activator: SkillActivator | None = None
     mcp_manager: MCPClientManager | None = None
+    tool_selection_policy: Any | None = None
+    tool_result_processing_policy: Any | None = None
+    termination_policy: Any | None = None
 
 
 @dataclass
@@ -341,6 +346,178 @@ def _apply_permission_policy(tool: Tool, permission_policy: "PermissionPolicy" |
         pass
 
 
+def _coerce_int(value: object, default: int) -> int:
+    """Coerce config values from the simple YAML parser into integers."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_str_set(value: object) -> set[str]:
+    """Coerce a scalar/list config value into a string set."""
+    if value is None:
+        return set()
+    if isinstance(value, list):
+        return {str(item) for item in value}
+    if isinstance(value, str):
+        return {item.strip() for item in value.split(",") if item.strip()}
+    return {str(value)}
+
+
+def _instantiate_policy(spec: NamedPolicySpec, config: dict[str, object]) -> object:
+    """Instantiate a policy from a loaded policy spec."""
+    if spec.policy is not None:
+        return spec.policy
+
+    if spec.factory is not None:
+        try:
+            return spec.factory(config)
+        except TypeError:
+            return spec.factory()
+
+    raise ValueError(f"Policy spec '{spec.name}' has neither policy nor factory")
+
+
+def _resolve_policy_bindings(
+    config: AgentConfigYaml | None,
+    loaded_policy_catalog: LoadedPolicyCatalog | None = None,
+) -> tuple[object | None, object | None, object | None]:
+    """Resolve configured runtime policies, preserving defaults when omitted."""
+    if config is None or config.policies is None:
+        return None, None, None
+
+    policies = config.policies
+    return (
+        _resolve_tool_selection_policy(policies.tool_selection, loaded_policy_catalog),
+        _resolve_tool_result_processing_policy(policies.tool_result_processing, loaded_policy_catalog),
+        _resolve_termination_policy(policies.termination, loaded_policy_catalog),
+    )
+
+
+def _resolve_tool_selection_policy(
+    policy_config: object | None,
+    loaded_policy_catalog: LoadedPolicyCatalog | None,
+) -> object | None:
+    if policy_config is None:
+        return None
+
+    from quenda.host.loader import PolicySpecConfig
+    from quenda.runtime.tool_policy import AllowlistToolSelectionPolicy, DenylistToolSelectionPolicy
+
+    if not isinstance(policy_config, PolicySpecConfig):
+        return None
+
+    policy_type = policy_config.type or policy_config.name
+    data = policy_config.config
+
+    if policy_type == "allowlist":
+        return AllowlistToolSelectionPolicy(_coerce_str_set(data.get("allowed")))
+    if policy_type == "denylist":
+        return DenylistToolSelectionPolicy(_coerce_str_set(data.get("denied")))
+    if policy_type == "local":
+        name = policy_config.name
+        if not name:
+            raise ValueError("Local tool_selection policy requires name")
+        spec = loaded_policy_catalog.get(name) if loaded_policy_catalog else None
+        if spec is None:
+            raise ValueError(f"Local policy '{name}' not found")
+        return _instantiate_policy(spec, data)
+    if policy_type in ("", "default", "allow_all"):
+        return None
+
+    raise ValueError(f"Unknown tool_selection policy type: {policy_type}")
+
+
+def _resolve_tool_result_processing_policy(
+    policy_config: object | None,
+    loaded_policy_catalog: LoadedPolicyCatalog | None,
+) -> object | None:
+    if policy_config is None:
+        return None
+
+    from quenda.host.loader import PolicySpecConfig
+    from quenda.runtime.tool_policy import (
+        LineLimitedToolResultProcessingPolicy,
+        PassthroughToolResultProcessingPolicy,
+        TruncatingToolResultProcessingPolicy,
+    )
+
+    if not isinstance(policy_config, PolicySpecConfig):
+        return None
+
+    policy_type = policy_config.type or policy_config.name
+    data = policy_config.config
+
+    if policy_type in ("passthrough", "default"):
+        return PassthroughToolResultProcessingPolicy()
+    if policy_type in ("truncate", "truncating"):
+        return TruncatingToolResultProcessingPolicy(
+            max_chars=_coerce_int(data.get("max_chars"), 4000),
+            suffix=str(data.get("suffix", "\n... [truncated]")),
+        )
+    if policy_type in ("line_limit", "line_limited"):
+        return LineLimitedToolResultProcessingPolicy(
+            max_lines=_coerce_int(data.get("max_lines"), 100),
+            suffix=str(data.get("suffix", "\n... [more lines truncated]")),
+        )
+    if policy_type == "local":
+        name = policy_config.name
+        if not name:
+            raise ValueError("Local tool_result_processing policy requires name")
+        spec = loaded_policy_catalog.get(name) if loaded_policy_catalog else None
+        if spec is None:
+            raise ValueError(f"Local policy '{name}' not found")
+        return _instantiate_policy(spec, data)
+    if policy_type == "":
+        return None
+
+    raise ValueError(f"Unknown tool_result_processing policy type: {policy_type}")
+
+
+def _resolve_termination_policy(
+    policy_config: object | None,
+    loaded_policy_catalog: LoadedPolicyCatalog | None,
+) -> object | None:
+    if policy_config is None:
+        return None
+
+    from quenda.host.loader import PolicySpecConfig
+    from quenda.runtime.termination import (
+        ConsecutiveErrorPolicy,
+        MaxStepsPolicy,
+        TimeBudgetPolicy,
+        TokenBudgetPolicy,
+    )
+
+    if not isinstance(policy_config, PolicySpecConfig):
+        return None
+
+    policy_type = policy_config.type or policy_config.name
+    data = policy_config.config
+
+    if policy_type == "max_steps":
+        return MaxStepsPolicy(_coerce_int(data.get("max_steps"), 100))
+    if policy_type == "time_budget":
+        return TimeBudgetPolicy(_coerce_int(data.get("max_time_ms"), 300000))
+    if policy_type == "token_budget":
+        return TokenBudgetPolicy(_coerce_int(data.get("max_total_tokens"), 100000))
+    if policy_type == "consecutive_errors":
+        return ConsecutiveErrorPolicy(_coerce_int(data.get("max_consecutive_errors"), 3))
+    if policy_type == "local":
+        name = policy_config.name
+        if not name:
+            raise ValueError("Local termination policy requires name")
+        spec = loaded_policy_catalog.get(name) if loaded_policy_catalog else None
+        if spec is None:
+            raise ValueError(f"Local policy '{name}' not found")
+        return _instantiate_policy(spec, data)
+    if policy_type in ("", "default", "never"):
+        return None
+
+    raise ValueError(f"Unknown termination policy type: {policy_type}")
+
+
 def _resolve_sandbox_config(config: AgentConfigYaml | None) -> SandboxConfig:
     """
     Resolve sandbox configuration based on agent capability request.
@@ -511,7 +688,17 @@ def setup_host_binding(
         load_agent_tools(agent_dir, tool_builder)
         loaded_tool_catalog = tool_builder.build()
 
-        # 13. Resolve tools (capability grant)
+        # 13. Load and resolve agent-local policies
+        policy_builder = PolicyRegistryBuilder()
+        load_agent_policies(agent_dir, policy_builder)
+        loaded_policy_catalog = policy_builder.build()
+        (
+            tool_selection_policy,
+            tool_result_processing_policy,
+            termination_policy,
+        ) = _resolve_policy_bindings(agent_package.config, loaded_policy_catalog)
+
+        # 14. Resolve tools (capability grant)
         if tools is None:
             tools = _resolve_tools(
                 workspace,
@@ -524,14 +711,14 @@ def setup_host_binding(
             for tool in tools:
                 _apply_permission_policy(tool, permission_policy)
 
-        # 14. Resolve sandbox config
+        # 15. Resolve sandbox config
         sandbox_config = _resolve_sandbox_config(agent_package.config)
 
-        # 15. Setup storage
+        # 16. Setup storage
         storage_path = resolver.get_user_workspace_path(user, agent_package.name, binding)
         storage = FileStorage(config=FileStorageConfig(base_dir=storage_path))
 
-        # 15.1 Pre-grant permissions for Host-managed user directories
+        # 16.1 Pre-grant permissions for Host-managed user directories
         # These are trusted directories that agents should be able to write to without prompting
         # Grant access to entire ~/.quenda/users/<user_id>/ directory
         if permission_policy is not None:
@@ -546,7 +733,7 @@ def setup_host_binding(
                     lifetime=PermissionLifetime.SESSION,
                 )
 
-        # 16. Setup compression (if configured)
+        # 17. Setup compression (if configured)
         compression_policy = None
         compressor = None
 
@@ -576,7 +763,7 @@ def setup_host_binding(
 
             compressor = SummarizerCompressor(model=summary_model, storage=storage)
 
-        # 17. Setup MCP manager (not connected yet - async connection happens later)
+        # 18. Setup MCP manager (not connected yet - async connection happens later)
         mcp_manager = None
         if agent_package.config and agent_package.config.mcp:
             mcp_manager = MCPClientManager()
@@ -602,6 +789,9 @@ def setup_host_binding(
             agent_package=agent_package,
             skill_activator=skill_activator,
             mcp_manager=mcp_manager,
+            tool_selection_policy=tool_selection_policy,
+            tool_result_processing_policy=tool_result_processing_policy,
+            termination_policy=termination_policy,
         )
 
     except Exception:
@@ -868,6 +1058,9 @@ def setup_agent(
             storage=binding.storage,
             compression_policy=binding.compression_policy,
             compressor=binding.compressor,
+            tool_selection_policy=binding.tool_selection_policy,
+            tool_result_processing_policy=binding.tool_result_processing_policy,
+            termination_policy=binding.termination_policy,
             vision_model=binding.vision_model_instance,
             capability_routing=binding.capability_routing,
         )

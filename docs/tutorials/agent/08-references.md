@@ -67,7 +67,7 @@ from quenda.runtime import (
     ConsecutiveErrorPolicy,     # 连续错误
     CompositeTerminationPolicy, # 组合策略
 
-    # Tool Policies (Target Contract)
+    # Tool Policies
     ToolSelectionRequest,
     ToolSelectionDecision,
     ToolSelectionPolicy,
@@ -572,7 +572,7 @@ policy = CompositeTerminationPolicy([
 run = Run.create(agent, session, model, termination_policy=policy)
 ```
 
-### Tool Policies (Target Contract)
+### Tool Policies
 
 ```python
 # ToolSelectionPolicy - 工具执行审批

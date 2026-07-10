@@ -40,6 +40,11 @@ from quenda.host.permission import (
     CompositePolicy,
     create_default_policy,
 )
+from quenda.host.policy_registry import (
+    LoadedPolicyCatalog,
+    NamedPolicySpec,
+    PolicyRegistryBuilder,
+)
 from quenda.host.instructions import (
     InstructionScope,
     InstructionSource,
@@ -141,6 +146,10 @@ __all__ = [
     "PermissivePolicy",
     "CompositePolicy",
     "create_default_policy",
+    # Policy registry
+    "LoadedPolicyCatalog",
+    "NamedPolicySpec",
+    "PolicyRegistryBuilder",
     # Instructions
     "InstructionScope",
     "InstructionSource",

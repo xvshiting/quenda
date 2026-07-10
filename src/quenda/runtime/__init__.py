@@ -104,7 +104,7 @@ __all__ = [
     "TokenBudgetPolicy",
     "ConsecutiveErrorPolicy",
     "CompositeTerminationPolicy",
-    # Tool Policy (target contracts)
+    # Tool Policy
     "ToolSelectionRequest",
     "RejectedToolCall",
     "ToolSelectionDecision",
