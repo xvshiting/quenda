@@ -188,15 +188,12 @@ class TestSkillActivationWithDiscovery:
     @pytest.fixture
     def workspace_with_skills(self, tmp_path: Path) -> Path:
         """Create workspace with various skill configurations."""
-        # Skill with resources
+        # Skill with resources in references/ directory
         skill_dir = tmp_path / "skills" / "code-review"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-resources:
-  references:
-    - path: "checklist.md"
 ---
 # Code Review
 
@@ -205,7 +202,9 @@ When reviewing code:
 2. Check tests
 3. Check documentation
 """)
-        (skill_dir / "checklist.md").write_text("- [ ] Style check\n- [ ] Test check")
+        references = skill_dir / "references"
+        references.mkdir()
+        (references / "checklist.md").write_text("- [ ] Style check\n- [ ] Test check")
 
         # Skill without resources
         skill_dir2 = tmp_path / "skills" / "testing"
@@ -224,13 +223,14 @@ Focus on test coverage and quality.
     def test_skill_with_resources(
         self, workspace_with_skills: Path
     ) -> None:
-        """Test skill that has resources."""
+        """Test skill that has resources auto-discovered from references/."""
         discovery = SkillDiscovery(user_workspace_skills_path=workspace_with_skills / "skills")
         skill = discovery.get_skill("code-review")
 
         assert skill is not None
         assert len(skill.resources) == 1
         assert skill.resources[0].path.name == "checklist.md"
+        assert skill.resources[0].type == "reference"
 
     def test_skill_without_resources(
         self, workspace_with_skills: Path

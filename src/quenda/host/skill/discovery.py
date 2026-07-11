@@ -7,6 +7,12 @@ Skills are discovered in priority order:
 3. Project ecosystem skills: <workspace>/.agents/skills/
 4. Agent-package bundled: <agent_package>/skills/
 5. User-level: ~/.quenda/skills/
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources
+- templates/ → template resources
+- assets/ → asset resources
+- scripts/ → executable scripts (.py files)
 """
 
 from __future__ import annotations
@@ -17,8 +23,13 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from quenda.host.skill.models import SkillFrontmatter, ResourceCatalog
-from quenda.host.skill.package import SkillPackage, SkillResource
+from quenda.host.skill.models import SkillFrontmatter
+from quenda.host.skill.package import (
+    SkillPackage,
+    SkillResource,
+    RESOURCE_DIRECTORIES,
+    EXECUTABLE_DIRECTORIES,
+)
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -167,6 +178,7 @@ class SkillDiscovery:
         Implements progressive disclosure (ADR-002):
         - Only parses frontmatter during discovery
         - Instructions are lazy-loaded when accessed
+        - Resources are auto-discovered from directory structure
         """
         try:
             content = skill_file.read_text()
@@ -176,8 +188,8 @@ class SkillDiscovery:
                 logger.warning(f"Skill {skill_dir} has invalid frontmatter")
                 return None
 
-            # Resolve resources
-            resources = self._resolve_resources(skill_dir, frontmatter.resources)
+            # Auto-discover resources from directory structure
+            resources = self._discover_resources(skill_dir)
 
             # Determine source
             source = self._determine_source(skill_dir)
@@ -217,33 +229,36 @@ class SkillDiscovery:
             logger.warning(f"Failed to parse frontmatter: {e}")
             return None
 
-    def _resolve_resources(
-        self,
-        skill_dir: Path,
-        catalog: ResourceCatalog | None,
-    ) -> list[SkillResource]:
-        """Resolve resource references from skill directory."""
+    def _discover_resources(self, skill_dir: Path) -> list[SkillResource]:
+        """
+        Auto-discover resources from directory structure.
+
+        Resource directories:
+        - references/ → reference resources (read-only)
+        - templates/ → template resources (read-only)
+        - assets/ → asset resources (read-only)
+        - scripts/ → executable scripts (.py files only)
+        """
         resources: list[SkillResource] = []
 
-        if catalog is None:
-            return resources
+        for dir_name, resource_type in RESOURCE_DIRECTORIES.items():
+            resource_dir = skill_dir / dir_name
+            if not resource_dir.exists() or not resource_dir.is_dir():
+                continue
 
-        for ref in catalog.references:
-            ref_path = skill_dir / ref.path
-            if ref_path.exists():
-                resources.append(SkillResource(
-                    path=ref_path,
-                    type="reference",
-                    description=ref.description,
-                ))
+            is_executable_dir = dir_name in EXECUTABLE_DIRECTORIES
 
-        for asset in catalog.assets:
-            asset_path = skill_dir / asset.path
-            if asset_path.exists():
+            for file_path in sorted(resource_dir.rglob("*")):
+                if not file_path.is_file():
+                    continue
+
+                # Only .py files in scripts/ are executable
+                executable = is_executable_dir and file_path.suffix == ".py"
+
                 resources.append(SkillResource(
-                    path=asset_path,
-                    type="asset",
-                    description=asset.description,
+                    path=file_path,
+                    type=resource_type,  # type: ignore
+                    executable=executable,
                 ))
 
         return resources

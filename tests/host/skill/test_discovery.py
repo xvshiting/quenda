@@ -1,5 +1,11 @@
 """
 Tests for skill discovery and parsing.
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources
+- templates/ → template resources
+- assets/ → asset resources
+- scripts/ → executable scripts (.py files only)
 """
 
 import pytest
@@ -23,17 +29,15 @@ class TestSkillDiscovery:
 name: test-skill
 description: A test skill
 version: "1.0.0"
-resources:
-  references:
-    - path: "guide.md"
-      description: "Test guide"
 ---
 # Test Skill Instructions
 This is a test skill.
 """)
 
-        # Create referenced resource
-        (skill_dir / "guide.md").write_text("# Guide Content")
+        # Create resources in references/ directory
+        references = skill_dir / "references"
+        references.mkdir()
+        (references / "guide.md").write_text("# Guide Content")
 
         return tmp_path / "skills"
 
@@ -47,7 +51,7 @@ This is a test skill.
         assert skills[0].description == "A test skill"
 
     def test_skill_resources_resolved(self, user_workspace_skills: Path) -> None:
-        """Test that resources are resolved correctly."""
+        """Test that resources are auto-discovered from directory structure."""
         discovery = SkillDiscovery(user_workspace_skills_path=user_workspace_skills)
         skills = discovery.discover_skills()
 
@@ -55,6 +59,7 @@ This is a test skill.
         assert len(skill.resources) == 1
         assert skill.resources[0].type == "reference"
         assert skill.resources[0].path.name == "guide.md"
+        assert skill.resources[0].executable is False
 
     def test_get_skill_by_name(self, user_workspace_skills: Path) -> None:
         """Test getting a specific skill by name."""
@@ -279,32 +284,33 @@ class TestSkillPackage:
 
     @pytest.fixture
     def skill_with_resources(self, tmp_path: Path) -> SkillPackage:
-        """Create a skill with resources."""
+        """Create a skill with resources in standard directories."""
         skill_dir = tmp_path / "skills" / "resource-skill"
         skill_dir.mkdir(parents=True)
 
         (skill_dir / "SKILL.md").write_text("""---
 name: resource-skill
 description: Skill with resources
-resources:
-  references:
-    - path: "docs/guide.md"
-      description: "Main guide"
-  assets:
-    - path: "templates/report.md"
-      type: template
 ---
 # Instructions
 """)
 
-        # Create resources
-        docs = skill_dir / "docs"
-        docs.mkdir()
-        (docs / "guide.md").write_text("# Guide\nContent here.")
+        # Create resources in standard directories
+        references = skill_dir / "references"
+        references.mkdir()
+        (references / "guide.md").write_text("# Guide\nContent here.")
 
         templates = skill_dir / "templates"
         templates.mkdir()
         (templates / "report.md").write_text("# Report\n{{content}}")
+
+        assets = skill_dir / "assets"
+        assets.mkdir()
+        (assets / "data.json").write_text('{"key": "value"}')
+
+        scripts = skill_dir / "scripts"
+        scripts.mkdir()
+        (scripts / "calc.py").write_text("print('hello')")
 
         discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
         skills = discovery.discover_skills()
@@ -316,13 +322,30 @@ resources:
 
         assert resource is not None
         assert resource.type == "reference"
+        assert resource.executable is False
+
+    def test_get_template(self, skill_with_resources: SkillPackage) -> None:
+        """Test getting a template resource."""
+        resource = skill_with_resources.get_template("report.md")
+
+        assert resource is not None
+        assert resource.type == "template"
+        assert resource.executable is False
 
     def test_get_asset(self, skill_with_resources: SkillPackage) -> None:
         """Test getting an asset resource."""
-        resource = skill_with_resources.get_asset("report.md")
+        resource = skill_with_resources.get_asset("data.json")
 
         assert resource is not None
         assert resource.type == "asset"
+
+    def test_get_script(self, skill_with_resources: SkillPackage) -> None:
+        """Test getting an executable script."""
+        resource = skill_with_resources.get_script("calc.py")
+
+        assert resource is not None
+        assert resource.type == "script"
+        assert resource.executable is True
 
     def test_get_nonexistent_resource(self, skill_with_resources: SkillPackage) -> None:
         """Test getting a non-existent resource."""

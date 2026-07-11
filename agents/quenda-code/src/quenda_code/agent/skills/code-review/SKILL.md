@@ -2,17 +2,6 @@
 name: code-review
 description: Apply when reviewing code, checking code quality, or providing feedback on code changes. Use this skill when the user asks you to look at, check, review, or evaluate code.
 version: "1.0.0"
-
-resources:
-  references:
-    - path: "references/review-checklist.md"
-      description: "Comprehensive code review checklist"
-    - path: "references/python-style.md"
-      description: "Python style guidelines"
-  assets:
-    - path: "templates/review-report.md"
-      description: "Code review report template"
-      type: template
 ---
 
 # Code Review

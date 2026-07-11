@@ -182,7 +182,7 @@ This user-workspace skill overrides the bundled one.
     def test_agent_package_skill_with_resources(
         self, tmp_path: Path
     ) -> None:
-        """Test bundled skill with resources."""
+        """Test bundled skill with resources auto-discovered from directory."""
         # Create agent package with skill that has resources
         agent_dir = tmp_path / "agent"
         agent_dir.mkdir(parents=True)
@@ -198,15 +198,18 @@ Test agent.
         (skill_dir / "SKILL.md").write_text("""---
 name: docs-gen
 description: Documentation generator
-resources:
-  references:
-    - path: "templates/api.md"
 ---
 # Docs Generator
 """)
+        # Create resources in templates/ directory
         templates = skill_dir / "templates"
         templates.mkdir()
         (templates / "api.md").write_text("# API Template")
+
+        # Create scripts for executable resources
+        scripts = skill_dir / "scripts"
+        scripts.mkdir()
+        (scripts / "generate.py").write_text("print('generating...')")
 
         user_ws_skills = tmp_path / "user-ws-skills"
         user_ws_skills.mkdir(parents=True)
@@ -219,7 +222,16 @@ resources:
 
         skill = next(s for s in skills if s.name == "docs-gen")
         assert skill.source == "agent_package"
-        assert len(skill.resources) == 1
+        assert len(skill.resources) == 2  # 1 template + 1 script
+
+        # Check resource types and executable flags
+        template = next((r for r in skill.resources if r.type == "template"), None)
+        assert template is not None
+        assert template.executable is False
+
+        script = next((r for r in skill.resources if r.type == "script"), None)
+        assert script is not None
+        assert script.executable is True
 
     def test_mixed_skill_sources(self, tmp_path: Path) -> None:
         """Test skills from multiple sources."""

@@ -2,21 +2,6 @@
 name: mcp-builder
 version: "1.0.0"
 description: Guide for creating high-quality MCP (Model Context Protocol) servers that enable LLMs to interact with external services through well-designed tools. Use when building MCP servers to integrate external APIs or services, whether in Python (FastMCP) or Node/TypeScript (MCP SDK).
-
-resources:
-  references:
-    - path: "reference/mcp_best_practices.md"
-      description: "Core MCP guidelines"
-    - path: "reference/python_mcp_server.md"
-      description: "Python/FastMCP implementation guide"
-    - path: "reference/node_mcp_server.md"
-      description: "TypeScript implementation guide"
-    - path: "reference/evaluation.md"
-      description: "MCP server evaluation guide"
-  assets:
-    - path: "scripts/"
-      type: script
-      description: "MCP development scripts"
 ---
 
 # MCP Server Development Guide

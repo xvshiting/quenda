@@ -172,13 +172,13 @@ class SkillActivator:
 
             uri = f"skill://{skill.name}/{relative_path}"
             resource_type = resource.type
-            desc = f" - {resource.description}" if resource.description else ""
-            lines.append(f"- `{uri}` ({resource_type}){desc}")
+            exec_marker = " [executable]" if resource.executable else ""
+            lines.append(f"- `{uri}` ({resource_type}){exec_marker}")
 
         lines.append("")
         lines.append("Use tools to access resources:")
         lines.append("- `read_skill_resource(uri)` - Read resource content")
-        lines.append("- `execute_skill_asset(uri, args)` - Execute executable assets")
+        lines.append("- `execute_skill_asset(uri, args)` - Execute executable scripts")
         lines.append("- `list_skill_resources()` - List all available resources")
 
         return "\n".join(lines)

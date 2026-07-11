@@ -2,15 +2,6 @@
 name: webapp-testing
 version: "1.0.0"
 description: Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.
-
-resources:
-  assets:
-    - path: "scripts/"
-      type: script
-      description: "Server management and testing scripts"
-    - path: "examples/"
-      type: other
-      description: "Example Playwright scripts"
 ---
 
 # Web Application Testing

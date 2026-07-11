@@ -7,11 +7,16 @@ These tools allow the model to:
 - Execute executable skill assets (scripts)
 
 All resources are accessed via skill:// URIs for stable identification.
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources (read-only)
+- templates/ → template resources (read-only)
+- assets/ → asset resources (read-only)
+- scripts/ → executable scripts (.py files only)
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from typing import TYPE_CHECKING, override
@@ -120,7 +125,7 @@ class ListSkillResourcesTool(Tool):
         return """List resources available from active skills.
 
 Returns skill:// URIs that can be used with read_skill_resource.
-Executable assets are marked with [executable]."""
+Executable scripts are marked with [executable]."""
 
     @property
     @override
@@ -134,7 +139,7 @@ Executable assets are marked with [executable]."""
                 },
                 "type": {
                     "type": "string",
-                    "enum": ["reference", "asset", "all"],
+                    "enum": ["reference", "template", "asset", "script", "all"],
                     "description": "Filter by resource type (default: all)",
                 },
             },
@@ -169,14 +174,14 @@ Executable assets are marked with [executable]."""
 
         lines = ["## Available Skill Resources\n"]
         for r in resources:
-            safe_marker = " [executable]" if r.safe_to_execute else ""
-            lines.append(f"- `{r.uri()}` ({r.resource_type}){safe_marker}")
+            exec_marker = " [executable]" if r.executable else ""
+            lines.append(f"- `{r.uri()}` ({r.resource_type}){exec_marker}")
             if r.description:
                 lines.append(f"  {r.description}")
 
         lines.append("")
         lines.append("Use `read_skill_resource(uri)` to read content.")
-        lines.append("Use `execute_skill_asset(uri, args)` to run executable assets.")
+        lines.append("Use `execute_skill_asset(uri, args)` to run executable scripts.")
 
         return ToolResult(
             call_id="",
@@ -190,7 +195,7 @@ class ExecuteSkillAssetTool(Tool):
     Execute a skill asset (script) with safety controls.
 
     SECURITY:
-    - Only assets marked safe_to_execute=True can run
+    - Only scripts/*.py files can be executed (auto-discovered)
     - Script receives arguments via command line
     - Output is captured and returned
 
@@ -211,10 +216,10 @@ class ExecuteSkillAssetTool(Tool):
     @property
     @override
     def description(self) -> str:
-        return """Execute a skill asset script.
+        return """Execute a skill script.
 
-Only assets marked as 'safe' by the skill author can be executed.
-Use list_skill_resources to see which assets are executable (marked with [executable]).
+Only scripts/*.py files can be executed (auto-discovered from directory structure).
+Use list_skill_resources to see which scripts are executable (marked with [executable]).
 
 Arguments are passed as command-line arguments to the script."""
 
@@ -226,7 +231,7 @@ Arguments are passed as command-line arguments to the script."""
             "properties": {
                 "uri": {
                     "type": "string",
-                    "description": "Skill asset URI (must be marked executable)",
+                    "description": "Skill script URI (must be in scripts/ directory)",
                     "pattern": "^skill://[a-z0-9-_]+/.+\\.py$",
                 },
                 "arguments": {
@@ -259,23 +264,23 @@ Arguments are passed as command-line arguments to the script."""
                 is_error=True,
             )
 
-        # Resolve the resource info first to check safe_to_execute
+        # Resolve the resource info first to check executable flag
         info = self._resolver.resolve_uri_to_info(uri)
         if info is None:
             return ToolResult(
                 call_id="",
                 name=self.name,
-                content=f"Error: Asset not found: {uri}\n\nUse list_skill_resources to see available assets.",
+                content=f"Error: Asset not found: {uri}\n\nUse list_skill_resources to see available scripts.",
                 is_error=True,
             )
 
-        # SECURITY: Check safe_to_execute flag
-        if not info.safe_to_execute:
+        # SECURITY: Check executable flag (only scripts/*.py are executable)
+        if not info.executable:
             return ToolResult(
                 call_id="",
                 name=self.name,
-                content="Error: Asset not executable.\n\nOnly assets marked 'safe: true' in SKILL.md can be executed.\n"
-                        "This is a security measure to prevent accidental execution of untrusted scripts.",
+                content="Error: Asset not executable.\n\nOnly scripts/*.py files can be executed.\n"
+                        "This is a security measure to prevent execution of non-script files.",
                 is_error=True,
             )
 
@@ -285,7 +290,7 @@ Arguments are passed as command-line arguments to the script."""
             return ToolResult(
                 call_id="",
                 name=self.name,
-                content=f"Error: Could not load asset: {uri}",
+                content=f"Error: Could not load script: {uri}",
                 is_error=True,
             )
 

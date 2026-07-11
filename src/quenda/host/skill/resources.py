@@ -6,6 +6,12 @@ ResourceResolver provides:
 - Listing available resources
 - Template rendering for template assets
 - URI-based resource access (skill://<skill-name>/<resource-path>)
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources (read-only)
+- templates/ → template resources (read-only)
+- assets/ → asset resources (read-only)
+- scripts/ → executable scripts (.py files only)
 """
 
 from __future__ import annotations
@@ -35,7 +41,8 @@ class ResourceInfo:
 
     skill_name: str
     resource_name: str  # Filename only (e.g., "checklist.md")
-    resource_type: str  # "reference" or "asset"
+    resource_type: str  # "reference", "template", "asset", or "script"
+    executable: bool  # True only for scripts/*.py files
     path: Path  # Absolute filesystem path
     resource_path: str = ""  # Relative path within skill (e.g., "references/checklist.md")
     description: str = ""
@@ -62,6 +69,7 @@ class LoadedResource:
     skill_name: str
     resource_name: str  # Filename only
     resource_type: str
+    executable: bool  # True only for scripts/*.py files
     content: str
     path: Path
     resource_path: str = ""  # Relative path within skill
@@ -173,6 +181,7 @@ class ResourceResolver:
                     resource_name=resource.path.name,
                     resource_path=relative_path,
                     resource_type=resource.type,
+                    executable=resource.executable,
                     path=resource.path,
                     description=resource.description,
                     exists=resource.path.exists(),
@@ -229,6 +238,7 @@ class ResourceResolver:
             resource_name=resource.path.name,
             resource_path=relative_path,
             resource_type=resource.type,
+            executable=resource.executable,
             content=content,
             path=resource.path,
             description=resource.description,
@@ -340,6 +350,7 @@ class ResourceResolver:
             resource_name=resource.path.name,
             resource_path=relative_path,
             resource_type=resource.type,
+            executable=resource.executable,
             path=resource.path,
             description=resource.description,
             exists=resource.path.exists(),
@@ -388,6 +399,7 @@ class ResourceResolver:
             resource_name=resource.path.name,
             resource_path=relative_path,
             resource_type=resource.type,
+            executable=resource.executable,
             content=content,
             path=resource.path,
             description=resource.description,

@@ -1,5 +1,11 @@
 """
 Tests for skill resource management.
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources
+- templates/ → template resources
+- assets/ → asset resources
+- scripts/ → executable scripts (.py files only)
 """
 
 import pytest
@@ -19,42 +25,38 @@ class TestResourceResolver:
 
     @pytest.fixture
     def skill_with_resources(self, tmp_path: Path) -> Path:
-        """Create skills with resources."""
-        # Create skill with references and assets
+        """Create skills with resources in standard directories."""
+        # Create skill with references, templates, and scripts
         skill_dir = tmp_path / "skills" / "code-review"
         skill_dir.mkdir(parents=True)
 
         (skill_dir / "SKILL.md").write_text("""---
 name: code-review
 description: Code review skill
-resources:
-  references:
-    - path: "guides/style-guide.md"
-      description: "Code style guidelines"
-    - path: "docs/checklist.md"
-      description: "Review checklist"
-  assets:
-    - path: "templates/report.md"
-      type: template
-      description: "Review report template"
 ---
 # Code Review
 
 Perform code review.
 """)
 
-        # Create resource files
-        guides = skill_dir / "guides"
+        # Create references
+        guides = skill_dir / "references"
         guides.mkdir()
         (guides / "style-guide.md").write_text("# Style Guide\n\n- Use 4 spaces\n- Max line length 100")
 
-        docs = skill_dir / "docs"
-        docs.mkdir()
+        docs = skill_dir / "references"
+        # Already created, add another file
         (docs / "checklist.md").write_text("# Checklist\n\n- [ ] Style check\n- [ ] Test check")
 
+        # Create templates
         templates = skill_dir / "templates"
         templates.mkdir()
         (templates / "report.md").write_text("# Review Report\n\nAuthor: {{author}}\nDate: {{date}}")
+
+        # Create scripts
+        scripts = skill_dir / "scripts"
+        scripts.mkdir()
+        (scripts / "analyze.py").write_text("print('analyzing...')")
 
         # Create another skill
         skill_dir2 = tmp_path / "skills" / "testing"
@@ -62,13 +64,12 @@ Perform code review.
         (skill_dir2 / "SKILL.md").write_text("""---
 name: testing
 description: Testing skill
-resources:
-  references:
-    - path: "test-guide.md"
 ---
 # Testing
 """)
-        (skill_dir2 / "test-guide.md").write_text("# Test Guide")
+        references2 = skill_dir2 / "references"
+        references2.mkdir()
+        (references2 / "test-guide.md").write_text("# Test Guide")
 
         return tmp_path / "skills"
 
@@ -82,11 +83,14 @@ resources:
         resolver = ResourceResolver(activator.active_skills)
         resources = resolver.list_resources()
 
-        assert len(resources) == 4  # 3 from code-review, 1 from testing
+        # code-review: 2 references + 1 template + 1 script = 4
+        # testing: 1 reference = 1
+        assert len(resources) == 5
         resource_names = [r.resource_name for r in resources]
         assert "style-guide.md" in resource_names
         assert "checklist.md" in resource_names
         assert "report.md" in resource_names
+        assert "analyze.py" in resource_names
         assert "test-guide.md" in resource_names
 
     def test_list_references(self, skill_with_resources: Path) -> None:
@@ -98,22 +102,43 @@ resources:
         resolver = ResourceResolver(activator.active_skills)
         refs = resolver.list_references()
 
-        assert len(refs) == 2
+        assert len(refs) == 2  # style-guide.md and checklist.md
         for r in refs:
             assert r.resource_type == "reference"
 
     def test_list_assets(self, skill_with_resources: Path) -> None:
-        """Test listing only asset resources."""
+        """Test listing only asset (template) resources."""
         discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
         activator = SkillActivator(discovery)
         activator.activate_skill("code-review")
 
         resolver = ResourceResolver(activator.active_skills)
-        assets = resolver.list_assets()
+        # Filter by template type
+        all_resources = resolver.list_resources()
+        templates = [r for r in all_resources if r.resource_type == "template"]
 
-        assert len(assets) == 1
-        assert assets[0].resource_name == "report.md"
-        assert assets[0].resource_type == "asset"
+        assert len(templates) == 1
+        assert templates[0].resource_name == "report.md"
+        assert templates[0].resource_type == "template"
+
+    def test_executable_scripts(self, skill_with_resources: Path) -> None:
+        """Test that scripts/*.py are marked as executable."""
+        discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
+        activator = SkillActivator(discovery)
+        activator.activate_skill("code-review")
+
+        resolver = ResourceResolver(activator.active_skills)
+        resources = resolver.list_resources()
+
+        scripts = [r for r in resources if r.resource_type == "script"]
+        assert len(scripts) == 1
+        assert scripts[0].resource_name == "analyze.py"
+        assert scripts[0].executable is True
+
+        # Non-script resources should not be executable
+        refs = [r for r in resources if r.resource_type == "reference"]
+        for ref in refs:
+            assert ref.executable is False
 
     def test_load_resource(self, skill_with_resources: Path) -> None:
         """Test loading a specific resource."""
@@ -201,22 +226,6 @@ resources:
         assert path.exists()
         assert path.name == "style-guide.md"
 
-    def test_resource_info_contains_description(
-        self, skill_with_resources: Path
-    ) -> None:
-        """Test that ResourceInfo includes description."""
-        discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
-        activator = SkillActivator(discovery)
-        activator.activate_skill("code-review")
-
-        resolver = ResourceResolver(activator.active_skills)
-        resources = resolver.list_resources()
-
-        style_guide = next(
-            r for r in resources if r.resource_name == "style-guide.md"
-        )
-        assert style_guide.description == "Code style guidelines"
-
     def test_empty_resolver(self, tmp_path: Path) -> None:
         """Test resolver with no active skills."""
         resolver = ResourceResolver([])
@@ -256,16 +265,29 @@ class TestResourceInfo:
             skill_name="test-skill",
             resource_name="guide.md",
             resource_type="reference",
+            executable=False,
             path=tmp_path / "guide.md",
-            description="Test guide",
             exists=True,
         )
 
         assert info.skill_name == "test-skill"
         assert info.resource_name == "guide.md"
         assert info.resource_type == "reference"
-        assert info.description == "Test guide"
+        assert info.executable is False
         assert info.exists is True
+
+    def test_executable_resource_info(self, tmp_path: Path) -> None:
+        """Test creating an executable ResourceInfo."""
+        info = ResourceInfo(
+            skill_name="test-skill",
+            resource_name="calc.py",
+            resource_type="script",
+            executable=True,
+            path=tmp_path / "calc.py",
+        )
+
+        assert info.resource_type == "script"
+        assert info.executable is True
 
 
 class TestLoadedResource:
@@ -277,10 +299,25 @@ class TestLoadedResource:
             skill_name="test-skill",
             resource_name="guide.md",
             resource_type="reference",
+            executable=False,
             content="# Guide\n\nContent here.",
             path=tmp_path / "guide.md",
-            description="Test guide",
         )
 
         assert resource.skill_name == "test-skill"
         assert resource.content == "# Guide\n\nContent here."
+        assert resource.executable is False
+
+    def test_loaded_script_resource(self, tmp_path: Path) -> None:
+        """Test creating a LoadedResource for a script."""
+        resource = LoadedResource(
+            skill_name="test-skill",
+            resource_name="calc.py",
+            resource_type="script",
+            executable=True,
+            content="print('hello')",
+            path=tmp_path / "calc.py",
+        )
+
+        assert resource.resource_type == "script"
+        assert resource.executable is True

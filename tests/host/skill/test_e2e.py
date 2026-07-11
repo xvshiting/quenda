@@ -2,6 +2,12 @@
 End-to-end tests for Skills framework.
 
 Tests the complete flow from skill discovery to instruction composition.
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources
+- templates/ → template resources
+- assets/ → asset resources
+- scripts/ → executable scripts (.py files only)
 """
 
 import pytest
@@ -45,7 +51,7 @@ skills:
   - testing
 """)
 
-        # Create bundled skills in agent package
+        # Create bundled skills in agent package with new directory structure
         cr_skill = agent_dir / "skills" / "code-review"
         cr_skill.mkdir(parents=True)
 
@@ -53,13 +59,6 @@ skills:
 name: code-review
 description: Code review capability
 version: "1.0.0"
-resources:
-  references:
-    - path: "guides/style.md"
-      description: "Style guide"
-  assets:
-    - path: "templates/report.md"
-      type: template
 ---
 # Code Review
 
@@ -69,13 +68,18 @@ When reviewing code:
 3. Check documentation
 """)
 
-        guides = cr_skill / "guides"
-        guides.mkdir()
-        (guides / "style.md").write_text("# Style Guide\n\nUse 4 spaces for indentation.")
+        # Create resources in standard directories
+        references = cr_skill / "references"
+        references.mkdir()
+        (references / "style.md").write_text("# Style Guide\n\nUse 4 spaces for indentation.")
 
         templates = cr_skill / "templates"
         templates.mkdir()
         (templates / "report.md").write_text("# Review Report\nAuthor: {{author}}")
+
+        scripts = cr_skill / "scripts"
+        scripts.mkdir()
+        (scripts / "analyze.py").write_text("print('analyzing...')")
 
         # Create testing skill
         test_skill = agent_dir / "skills" / "testing"
@@ -212,15 +216,12 @@ skills:
   - broken-skill
 """)
 
-        # Create skill referencing missing file
+        # Create skill - resources are auto-discovered from directory
         skill_dir = agent_dir / "skills" / "broken-skill"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("""---
 name: broken-skill
-description: Skill with missing resource
-resources:
-  references:
-    - path: "missing.md"
+description: Skill without resource directory
 ---
 # Instructions
 """)
@@ -235,14 +236,10 @@ resources:
         # Skill should be activated
         assert setup.skill_activator.is_active("broken-skill")
 
-        # Resources are not listed if files don't exist (by design)
+        # No resources because references/ directory doesn't exist
         resolver = ResourceResolver(setup.skill_activator.active_skills)
         resources = resolver.list_resources()
-        assert len(resources) == 0  # No resources because file doesn't exist
-
-        # Loading should return None
-        loaded = resolver.load_resource("broken-skill", "missing.md")
-        assert loaded is None
+        assert len(resources) == 0  # No resources because directory doesn't exist
 
     def test_multiple_workspaces_isolation(self, tmp_path: Path) -> None:
         """Test that skills from different user-workspaces are isolated."""
@@ -279,7 +276,7 @@ Shared agent.
         # Each user-workspace has its own skills directory
 
     def test_skill_resources_discovered(self, complete_workspace: Path) -> None:
-        """Test that skill resources are properly discovered."""
+        """Test that skill resources are properly discovered from directory structure."""
         agent_dir = complete_workspace / "agents" / "dev-agent"
 
         # Create empty user-workspace skills path
@@ -293,7 +290,21 @@ Shared agent.
         skill = discovery.get_skill("code-review")
 
         assert skill is not None
-        assert len(skill.resources) == 2  # style.md and report.md
+        # resources: references/style.md, templates/report.md, scripts/analyze.py
+        assert len(skill.resources) == 3
+
+        # Check types
+        types = {r.type for r in skill.resources}
+        assert "reference" in types
+        assert "template" in types
+        assert "script" in types
+
+        # Check executable flags
+        for r in skill.resources:
+            if r.type == "script":
+                assert r.executable is True
+            else:
+                assert r.executable is False
 
     def test_progressive_disclosure_e2e(self, complete_workspace: Path) -> None:
         """Test progressive disclosure in the complete flow."""

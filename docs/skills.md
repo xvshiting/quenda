@@ -7,10 +7,21 @@ Skills are composable capability packages that extend agent behavior with instru
 A **Skill** is a reusable package that provides:
 
 - **Instructions** - How and when to use a capability
-- **Resource catalog** - Reference documents, templates, and assets
+- **Resources** - Reference documents, templates, and executable scripts
 
 ```text
-Skill = instructions + resource catalog
+Skill = instructions + resources
+```
+
+Resources are auto-discovered from directory structure:
+
+```text
+skill-name/
+├── SKILL.md           # Skill definition (required)
+├── references/        # Reference documents (read-only)
+├── templates/         # Template files (read-only)
+├── assets/            # Other assets (read-only)
+└── scripts/           # Executable Python scripts
 ```
 
 Skills differ from Tools:
@@ -111,7 +122,9 @@ Skills bundled with the agent package. When distributing via PyPI, include in pa
 ├── config.yaml
 ├── skills/                    # Bundled skills
 │   ├── code-review/
-│   │   └── SKILL.md
+│   │   ├── SKILL.md
+│   │   ├── references/
+│   │   └── scripts/
 │   └── repo-navigation/
 │       └── SKILL.md
 └── ...
@@ -149,10 +162,12 @@ Skills are defined in `SKILL.md` files within a skill directory:
 .quenda/skills/
 └── code-review/
     ├── SKILL.md
-    ├── guides/
+    ├── references/
     │   └── style-guide.md
-    └── templates/
-        └── review-report.md
+    ├── templates/
+    │   └── review-report.md
+    └── scripts/
+        └── analyze.py
 ```
 
 ### SKILL.md Schema
@@ -162,13 +177,6 @@ Skills are defined in `SKILL.md` files within a skill directory:
 name: code-review
 description: Apply when reviewing code, checking code quality, or providing feedback on code changes.
 version: "1.0.0"
-resources:
-  references:
-    - path: "guides/style-guide.md"
-      description: "Style guidelines"
-  assets:
-    - path: "templates/review-report.md"
-      type: template
 ---
 
 # Code Review
@@ -183,23 +191,23 @@ When reviewing code, provide thorough, constructive feedback...
 | `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
 | `description` | Yes | Human-readable description - primary triggering mechanism |
 | `version` | No | Semantic version (default: "0.1.0") |
-| `resources` | No | References and assets |
 
-### Resources
+### Resource Directories
 
-The `resources` section supports:
+Resources are auto-discovered from these directories:
 
-```yaml
-resources:
-  references:               # Documents for the model to reference
-    - path: "guides/style-guide.md"
-      description: "Style guidelines"
-  assets:                   # Templates and other assets
-    - path: "templates/report.md"
-      type: template
-```
+| Directory | Type | Description | Executable |
+|-----------|------|-------------|------------|
+| `references/` | reference | Documentation and guides | No |
+| `templates/` | template | Template files | No |
+| `assets/` | asset | Other asset files | No |
+| `scripts/` | script | Python scripts | Yes (*.py only) |
 
-Asset types: `template`, `script`, `data`, `other`
+**Executable Scripts:**
+- Only `.py` files in `scripts/` directory are executable
+- Other resources are read-only
+- Scripts receive arguments via command line (`sys.argv`)
+- Output is captured and returned to the model
 
 ## Discovery Locations
 
@@ -296,8 +304,9 @@ Skill directory: /path/to/skill
 Relative paths in this skill are relative to the skill directory.
 
 <skill_resources>
-  <file>guides/style-guide.md</file>
+  <file>references/style-guide.md</file>
   <file>templates/review-report.md</file>
+  <file executable="true">scripts/analyze.py</file>
 </skill_resources>
 </skill_content>
 ```
@@ -318,11 +327,13 @@ Discovered skill catalogs stay host-side by default. They can still be surfaced 
 ```
 .quenda/skills/code-review/
 ├── SKILL.md
-├── guides/
+├── references/
 │   ├── style-guide.md
 │   └── security-checklist.md
-└── templates/
-    └── review-report.md
+├── templates/
+│   └── review-report.md
+└── scripts/
+    └── analyze.py
 ```
 
 ### Testing Skill
@@ -339,7 +350,8 @@ Discovered skill catalogs stay host-side by default. They can still be surfaced 
 
 - Skills are trusted workspace configuration
 - Skills can influence model behavior and tool selection
-- Scripts in skills are not automatically executed
+- Only `scripts/*.py` files are executable
+- Script execution has a 30-second timeout
 - Future third-party skills will require explicit trust controls
 
 ## Architecture

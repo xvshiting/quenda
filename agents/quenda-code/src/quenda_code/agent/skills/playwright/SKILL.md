@@ -2,12 +2,6 @@
 name: playwright
 version: "1.0.0"
 description: Use this skill for browser automation and web scraping requiring JavaScript rendering. Includes fetching dynamic content, taking screenshots, filling forms, logging into websites, and exporting pages to PDF. Activate this skill when web_fetch fails due to JavaScript-dependent content or when you need browser interactions beyond simple HTTP requests.
-
-resources:
-  assets:
-    - path: "scripts/"
-      description: "Playwright automation scripts"
-      type: script
 ---
 
 # Playwright Browser Automation

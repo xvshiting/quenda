@@ -8,6 +8,12 @@ executable functions.
 
 Skill = instructions + resource catalog
 
+Resources are auto-discovered from directory structure:
+- references/ → reference resources (read-only)
+- templates/ → template resources (read-only)
+- assets/ → asset resources (read-only)
+- scripts/ → executable scripts (.py files only)
+
 This module provides:
 - SkillFrontmatter: Pydantic model for SKILL.md parsing
 - SkillPackage: Dataclass for loaded skill
@@ -35,13 +41,13 @@ Usage:
     content = resolver.load_resource("code-review", "checklist.md")
 """
 
-from quenda.host.skill.models import (
-    AssetReference,
-    ResourceCatalog,
-    ResourceReference,
-    SkillFrontmatter,
+from quenda.host.skill.models import SkillFrontmatter
+from quenda.host.skill.package import (
+    SkillPackage,
+    SkillResource,
+    RESOURCE_DIRECTORIES,
+    EXECUTABLE_DIRECTORIES,
 )
-from quenda.host.skill.package import SkillPackage, SkillResource
 from quenda.host.skill.discovery import SkillDiscovery
 from quenda.host.skill.activation import SkillActivator
 from quenda.host.skill.routing import (
@@ -59,13 +65,12 @@ from quenda.host.skill.uri import SkillResourceURI
 
 __all__ = [
     # Models
-    "AssetReference",
-    "ResourceCatalog",
-    "ResourceReference",
     "SkillFrontmatter",
     # Package
     "SkillPackage",
     "SkillResource",
+    "RESOURCE_DIRECTORIES",
+    "EXECUTABLE_DIRECTORIES",
     # Discovery
     "SkillDiscovery",
     # Activation

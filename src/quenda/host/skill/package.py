@@ -3,6 +3,12 @@ SkillPackage dataclass - A loaded skill package.
 
 Analogous to AgentPackage, a SkillPackage represents a fully loaded
 skill with all its resources and metadata.
+
+Resources are auto-discovered from directory structure:
+- references/ → reference resources (read-only)
+- templates/ → template resources (read-only)
+- assets/ → asset resources (read-only)
+- scripts/ → executable scripts (.py files only)
 """
 
 from __future__ import annotations
@@ -15,16 +21,36 @@ if TYPE_CHECKING:
     from quenda.host.skill.models import SkillFrontmatter
 
 
+# Resource directories and their types
+RESOURCE_DIRECTORIES: dict[str, str] = {
+    "references": "reference",
+    "templates": "template",
+    "assets": "asset",
+    "scripts": "script",
+}
+
+# Directories that contain executable scripts
+EXECUTABLE_DIRECTORIES = {"scripts"}
+
+
 @dataclass
 class SkillResource:
     """
     A resolved resource within a skill.
 
     Resources are lazily loaded - content is None until explicitly loaded.
+
+    Attributes:
+        path: Absolute path to the resource file
+        type: Resource type (reference, template, asset, script)
+        executable: Whether this resource can be executed (scripts/*.py only)
+        description: Optional description (currently unused, for future use)
+        content: Lazy-loaded content
     """
 
     path: Path
-    type: Literal["reference", "asset"]
+    type: Literal["reference", "template", "asset", "script"]
+    executable: bool = False
     description: str = ""
     content: str | None = None  # Lazy-loaded
 
@@ -42,6 +68,12 @@ class SkillPackage:
     - Activation: Instructions are parsed
     - Usage: Resources are loaded on demand
 
+    Resources are auto-discovered from directory structure:
+    - references/ → reference resources
+    - templates/ → template resources
+    - assets/ → asset resources
+    - scripts/ → executable scripts (.py files)
+
     Attributes:
         path: Directory containing the skill
         name: Unique skill identifier
@@ -51,7 +83,7 @@ class SkillPackage:
         skill_md_path: Path to SKILL.md
         skill_md: Cached SKILL.md content, loaded lazily
         instructions: Body content (after frontmatter) - lazy loaded
-        resources: Resolved resource files
+        resources: Auto-discovered resource files
         source: Where the skill was discovered
         active: Whether the skill is currently active
     """
@@ -68,7 +100,7 @@ class SkillPackage:
     skill_md: str | None = None  # Lazy-loaded raw SKILL.md content
     _instructions: str | None = field(default=None, repr=False)  # Lazy-loaded
 
-    # Resolved resources
+    # Auto-discovered resources
     resources: list[SkillResource] = field(default_factory=list)
 
     # Discovery metadata
@@ -115,10 +147,24 @@ class SkillPackage:
                 return r
         return None
 
+    def get_template(self, name: str) -> SkillResource | None:
+        """Get a template resource by filename."""
+        for r in self.resources:
+            if r.type == "template" and r.path.name == name:
+                return r
+        return None
+
     def get_asset(self, name: str) -> SkillResource | None:
         """Get an asset resource by filename."""
         for r in self.resources:
             if r.type == "asset" and r.path.name == name:
+                return r
+        return None
+
+    def get_script(self, name: str) -> SkillResource | None:
+        """Get an executable script by filename."""
+        for r in self.resources:
+            if r.executable and r.path.name == name:
                 return r
         return None
 
@@ -132,4 +178,6 @@ class SkillPackage:
 __all__ = [
     "SkillResource",
     "SkillPackage",
+    "RESOURCE_DIRECTORIES",
+    "EXECUTABLE_DIRECTORIES",
 ]
