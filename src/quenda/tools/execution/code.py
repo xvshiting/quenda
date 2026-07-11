@@ -1,149 +1,167 @@
 """
-Python code execution tool for Quenda.
+execute_python tool - Execute Python code in a subprocess.
 
-Executes Python code in a sandboxed environment with:
-- AST validation
-- Import restrictions
-- Restricted builtins
-- Timeout and memory limits
+This tool provides a convenient way to execute Python code. It uses
+the unified CommandRunner internally.
+
+ADR-029 Compliance:
+- Uses subprocess execution (not in-process exec)
+- Real Python behavior (sys, os, requests, etc. work normally)
+- Skill Python path via PYTHONPATH
+- Killable processes with real timeout
+
+Security Statement:
+- cwd controls where the process starts, not what it can access
+- Python code can still read files, access network, spawn children
+- Strong isolation belongs to a future SandboxBackend
 """
 
 from __future__ import annotations
 
-import ast
-import traceback
-from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass, field
-from io import StringIO
+import logging
+import os
+import sys
 from pathlib import Path
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
-from quenda.tools.security.patterns import (
-    SANDBOX_ALLOWED_BUILTINS,
-    SANDBOX_ALLOWED_MODULES,
-    SANDBOX_BLOCKED_MODULES,
+from quenda.tools.execution.command import (
+    CommandRequest,
+    CommandRunner,
+    ExecutionLimits,
 )
 
+if TYPE_CHECKING:
+    from quenda.host.skill.package import SkillPackage
 
-@dataclass
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Legacy types for backward compatibility
+# =============================================================================
+
+
 class SandboxConfig:
-    """Configuration for Python sandbox."""
-
-    allowed_modules: list[str] = field(default_factory=lambda: SANDBOX_ALLOWED_MODULES.copy())
-    blocked_modules: list[str] = field(default_factory=lambda: SANDBOX_BLOCKED_MODULES.copy())
-    allowed_builtins: list[str] = field(default_factory=lambda: SANDBOX_ALLOWED_BUILTINS.copy())
-    default_timeout: int = 30
-    max_timeout: int = 60
-    max_output_bytes: int = 1_000_000
-    max_ast_nodes: int = 5000
-
-
-class RestrictedImporter:
     """
-    Custom import hook for module restrictions.
+    Configuration for Python execution.
 
-    Replaces __import__ in the sandbox to control which modules can be imported.
+    DEPRECATED: Use ExecutionLimits instead.
+
+    This class is kept for backward compatibility but the module whitelist
+    and AST validation features have been removed. All fields except timeout
+    and output limits are now ignored.
     """
 
-    def __init__(self, config: SandboxConfig) -> None:
-        self.config = config
-        self._original_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+    def __init__(
+        self,
+        allowed_modules: list[str] | None = None,
+        blocked_modules: list[str] | None = None,
+        allowed_builtins: list[str] | None = None,
+        default_timeout: int = 30,
+        max_timeout: int = 60,
+        max_output_bytes: int = 1_000_000,
+        max_ast_nodes: int = 5000,
+    ) -> None:
+        # These are ignored (legacy compatibility)
+        self.allowed_modules = allowed_modules or []
+        self.blocked_modules = blocked_modules or []
+        self.allowed_builtins = allowed_builtins or []
+        self.max_ast_nodes = max_ast_nodes
 
-    def __call__(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        """Import hook that checks against allowlist and blocklist."""
-        base_module = name.split(".")[0]
+        # These are still used
+        self.default_timeout = default_timeout
+        self.max_timeout = max_timeout
+        self.max_output_bytes = max_output_bytes
 
-        # Check blocklist first
-        if base_module in self.config.blocked_modules:
-            raise ImportError(f"Module '{name}' is blocked for security")
-
-        # Check allowlist
-        if base_module not in self.config.allowed_modules:
-            raise ImportError(
-                f"Module '{name}' is not in the allowed list. "
-                f"Allowed modules include: {', '.join(self.config.allowed_modules[:10])}..."
-            )
-
-        return self._original_import(name, *args, **kwargs)
+    def to_limits(self) -> ExecutionLimits:
+        """Convert to ExecutionLimits."""
+        return ExecutionLimits(
+            default_timeout=self.default_timeout,
+            max_timeout=self.max_timeout,
+            max_output_chars=self.max_output_bytes,
+        )
 
 
-class ASTValidator(ast.NodeVisitor):
+# =============================================================================
+# Helper functions
+# =============================================================================
+
+
+def build_python_env(
+    active_skills: list[SkillPackage] | None = None,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
     """
-    Validate AST for dangerous patterns.
+    Build environment for Python execution with Skill import paths.
 
-    Checks for:
-    - Dangerous syntax (async/await that can bypass restrictions)
-    - AST complexity (prevent AST bombs)
+    Adds active Skill `scripts/` directories to PYTHONPATH, allowing
+    model to import and reuse Skill Python code.
+
+    Args:
+        active_skills: List of active SkillPackage objects
+        base_env: Base environment (defaults to os.environ)
+
+    Returns:
+        Environment dict with PYTHONPATH set for Skill imports
+
+    Example:
+        Skill playwright has scripts/quenda_playwright/capture.py
+        Model can write:
+            from quenda_playwright.capture import capture_screenshot
     """
+    env = dict(base_env or os.environ)
 
-    DANGEROUS_NODE_TYPES: set[type[ast.AST]] = {
-        # Async can bypass some sync restrictions
-        ast.AsyncFunctionDef,
-        ast.AsyncWith,
-        ast.AsyncFor,
-        ast.Await,
-    }
+    if not active_skills:
+        return env
 
-    def __init__(self, config: SandboxConfig) -> None:
-        self.config = config
-        self.node_count = 0
-        self.errors: list[str] = []
+    # Collect skill script paths
+    skill_script_paths: list[str] = []
+    for skill in active_skills:
+        scripts_dir = skill.path / "scripts"
+        if scripts_dir.is_dir():
+            skill_script_paths.append(str(scripts_dir))
+            logger.debug(f"Added Skill scripts to PYTHONPATH: {scripts_dir}")
 
-    def visit(self, node: ast.AST) -> None:
-        """Visit node and check for issues."""
-        self.node_count += 1
+    # Merge with existing PYTHONPATH
+    if skill_script_paths:
+        existing = env.get("PYTHONPATH")
+        if existing:
+            skill_script_paths.append(existing)
 
-        # Check AST complexity
-        if self.node_count > self.config.max_ast_nodes:
-            self.errors.append(
-                f"Code too complex: exceeds {self.config.max_ast_nodes} AST nodes"
-            )
-            return
+        env["PYTHONPATH"] = os.pathsep.join(skill_script_paths)
 
-        # Check for dangerous node types
-        if type(node) in self.DANGEROUS_NODE_TYPES:
-            self.errors.append(f"Blocked syntax: {type(node).__name__}")
+    return env
 
-        self.generic_visit(node)
 
-    def validate(self, code: str) -> list[str]:
-        """
-        Validate code string.
-
-        Returns:
-            List of error messages (empty if valid).
-        """
-        try:
-            # Limit code length to prevent AST bomb
-            if len(code) > 100000:  # 100KB limit
-                return ["Code too large: exceeds 100KB limit"]
-
-            tree = ast.parse(code)
-            self.visit(tree)
-            return self.errors
-        except RecursionError:
-            return ["Code too complex: recursion depth exceeded during parsing"]
-        except SyntaxError as e:
-            return [f"Syntax error: line {e.lineno}: {e.msg}"]
+# =============================================================================
+# Tool implementation
+# =============================================================================
 
 
 class PythonExecutionTool(Tool):
     """
-    Tool to execute Python code in a sandbox.
+    Tool to execute Python code.
 
-    Provides a safe environment for running untrusted Python code.
+    This tool executes Python code in a subprocess (not in-process),
+    providing real Python behavior with sys, os, and other modules
+    working normally.
+
+    Active Skills' `scripts/` directories are automatically added
+    to PYTHONPATH for code reuse.
     """
 
     def __init__(
         self,
         workspace: Path | str | None = None,
         config: SandboxConfig | None = None,
+        active_skills: list[SkillPackage] | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve() if workspace else Path.cwd()
         self.config = config or SandboxConfig()
-        self._validator = ASTValidator(self.config)
+        self.active_skills = active_skills
+        self._runner = CommandRunner(self.config.to_limits())
 
     @property
     @override
@@ -153,7 +171,14 @@ class PythonExecutionTool(Tool):
     @property
     @override
     def description(self) -> str:
-        return "Execute Python code in a sandboxed environment. Some modules and functions are restricted."
+        return """Execute Python code in a subprocess.
+
+All standard Python modules work normally (sys, os, subprocess, etc.).
+Use for data processing, file manipulation, or any task where Python is convenient.
+
+If Skills are active, their `scripts/` directories are available for import:
+    from quenda_playwright.capture import capture_screenshot
+"""
 
     @property
     @override
@@ -187,161 +212,55 @@ class PythonExecutionTool(Tool):
                 is_error=True,
             )
 
-        # Validate AST
-        errors = self._validator.validate(code)
-        if errors:
+        if not code.strip():
             return ToolResult(
                 call_id="",
                 name=self.name,
-                content="Error: Code validation failed:\n" + "\n".join(f"  - {e}" for e in errors),
+                content="Error: code cannot be empty",
                 is_error=True,
             )
 
-        # Clamp timeout
-        timeout_seconds = min(
-            int(timeout) if isinstance(timeout, (int, float)) else self.config.default_timeout,
-            self.config.max_timeout,
+        # Build Python environment with Skill paths
+        python_env = build_python_env(self.active_skills)
+
+        # Execute via CommandRunner
+        request = CommandRequest(
+            argv=[sys.executable, "-"],
+            cwd=self.workspace,
+            stdin=code,
+            env=python_env,
+            timeout=int(timeout) if isinstance(timeout, (int, float)) else self.config.default_timeout,
         )
 
-        # Create sandbox environment
-        sandbox_globals = self._create_sandbox_globals()
-        sandbox_locals: dict[str, Any] = {}
+        result = self._runner.run(request)
 
-        # Capture output
-        stdout_capture = StringIO()
-        stderr_capture = StringIO()
+        return self._result_to_tool_result(result)
 
-        try:
-            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                self._execute_with_timeout(
-                    code=code,
-                    globals_dict=sandbox_globals,
-                    locals_dict=sandbox_locals,
-                    timeout=timeout_seconds,
-                )
-
-            return self._format_result(
-                stdout=stdout_capture.getvalue(),
-                stderr=stderr_capture.getvalue(),
-                success=True,
-            )
-
-        except TimeoutError:
-            return ToolResult(
-                call_id="",
-                name=self.name,
-                content=f"Error: Execution timed out after {timeout_seconds} seconds",
-                is_error=True,
-            )
-        except MemoryError:
-            return ToolResult(
-                call_id="",
-                name=self.name,
-                content=f"Error: Execution exceeded memory limit",
-                is_error=True,
-            )
-        except Exception as e:
-            return self._format_result(
-                stdout=stdout_capture.getvalue(),
-                stderr=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
-                success=False,
-            )
-
-    def _create_sandbox_globals(self) -> dict[str, Any]:
-        """Create restricted global namespace for sandbox."""
-        # Build restricted builtins dict
-        builtins_dict: dict[str, Any] = {}
-
-        # Get the actual builtins module
-        actual_builtins = __builtins__ if isinstance(__builtins__, dict) else __builtins__.__dict__
-
-        for name in self.config.allowed_builtins:
-            if name in actual_builtins:
-                builtins_dict[name] = actual_builtins[name]
-
-        # Replace __import__ with restricted version
-        builtins_dict["__import__"] = RestrictedImporter(self.config)
-
-        return {
-            "__builtins__": builtins_dict,
-            "__name__": "__main__",
-            "__file__": "<sandbox>",
-        }
-
-    def _execute_with_timeout(
-        self,
-        code: str,
-        globals_dict: dict[str, Any],
-        locals_dict: dict[str, Any],
-        timeout: int,
-    ) -> None:
-        """
-        Execute code with timeout.
-
-        Uses threading for cross-platform timeout support.
-        Works in both main thread and worker threads.
-        """
-        import threading
-
-        result: dict[str, Any] = {"exception": None}
-        finished = threading.Event()
-
-        def run_code() -> None:
-            try:
-                exec(code, globals_dict, locals_dict)
-            except Exception as e:
-                result["exception"] = e
-            finally:
-                finished.set()
-
-        thread = threading.Thread(target=run_code, daemon=True)
-        thread.start()
-
-        # Wait for completion or timeout
-        if not finished.wait(timeout=timeout):
-            # Thread is still running - timeout occurred
-            # Note: we can't actually kill the thread, but we can return
-            # The daemon=True ensures the thread won't block program exit
-            raise TimeoutError(f"Execution timed out after {timeout} seconds")
-
-        # Check if an exception occurred in the thread
-        if result["exception"] is not None:
-            raise result["exception"]
-
-    def _format_result(
-        self,
-        stdout: str,
-        stderr: str,
-        success: bool,
-    ) -> ToolResult:
-        """Format execution result."""
+    def _result_to_tool_result(self, result: Any) -> ToolResult:
+        """Convert CommandResult to ToolResult."""
+        # Build output
         parts = []
 
-        if stdout:
-            stdout = self._truncate(stdout)
-            parts.append(f"[stdout]\n{stdout}")
+        if result.stdout:
+            parts.append(f"[stdout]\n{result.stdout}")
 
-        if stderr:
-            stderr = self._truncate(stderr)
-            parts.append(f"[stderr]\n{stderr}")
+        if result.stderr:
+            parts.append(f"[stderr]\n{result.stderr}")
 
         if not parts:
             parts.append("Execution completed (no output)")
 
         content = "\n\n".join(parts)
 
+        if result.timed_out:
+            content += f"\n\n[process timed out after {self.config.default_timeout}s]"
+
         return ToolResult(
             call_id="",
             name=self.name,
             content=content,
-            is_error=not success,
+            is_error=result.exit_code != 0 or result.timed_out,
         )
-
-    def _truncate(self, text: str) -> str:
-        """Truncate text to max output size."""
-        if len(text) > self.config.max_output_bytes:
-            return text[: self.config.max_output_bytes] + "\n... [output truncated]"
-        return text
 
 
 def get_python_execution_tool(
@@ -353,9 +272,17 @@ def get_python_execution_tool(
 
     Args:
         workspace: Optional workspace directory.
-        config: Sandbox configuration.
+        config: Execution configuration.
 
     Returns:
         PythonExecutionTool instance.
     """
     return PythonExecutionTool(workspace, config)
+
+
+__all__ = [
+    "PythonExecutionTool",
+    "SandboxConfig",
+    "build_python_env",
+    "get_python_execution_tool",
+]

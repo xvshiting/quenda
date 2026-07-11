@@ -149,18 +149,26 @@ class TestPoliciesConfig:
 
 
 class TestResolveSandboxConfig:
-    """Tests for sandbox config resolution."""
+    """Tests for sandbox config resolution.
+
+    ADR-029: Module whitelists are no longer enforced.
+    Python execution runs in real subprocess with full capabilities.
+    """
 
     def test_default_sandbox_config(self) -> None:
         """Test default sandbox config without agent request."""
         config = _resolve_sandbox_config(None)
-        assert "math" in config.allowed_modules
-        assert "json" in config.allowed_modules
-        # Blocked modules should still be blocked
-        assert "os" in config.blocked_modules
+        # ADR-029: Module whitelists are no longer enforced
+        # Default config has empty lists (backward compatible, but ignored)
+        assert config.default_timeout == 30
+        assert config.max_timeout == 60
 
-    def test_merge_requested_modules(self) -> None:
-        """Test merging agent-requested modules with defaults."""
+    def test_merge_requested_modules_ignored(self) -> None:
+        """Test that agent-requested modules are accepted but ignored.
+
+        ADR-029: allowed_modules configuration is accepted for backward
+        compatibility but has no effect on execution.
+        """
         agent_config = AgentConfigYaml(
             execution=ExecutionConfig(
                 python=PythonExecutionConfig(
@@ -169,26 +177,18 @@ class TestResolveSandboxConfig:
             ),
         )
         config = _resolve_sandbox_config(agent_config)
-        # Default modules
-        assert "math" in config.allowed_modules
-        assert "json" in config.allowed_modules
-        # Requested modules
-        assert "requests" in config.allowed_modules
-        assert "httpx" in config.allowed_modules
+        # Configuration is accepted (no error)
+        # But modules are not actually enforced
+        assert config.default_timeout == 30
 
-    def test_no_duplicate_modules(self) -> None:
-        """Test that already-present modules aren't duplicated."""
-        agent_config = AgentConfigYaml(
-            execution=ExecutionConfig(
-                python=PythonExecutionConfig(
-                    allowed_modules=["math", "json", "requests"],
-                ),
-            ),
-        )
-        config = _resolve_sandbox_config(agent_config)
-        # Count occurrences
-        assert config.allowed_modules.count("math") == 1
-        assert config.allowed_modules.count("json") == 1
+    def test_no_enforcement_of_blocked_modules(self) -> None:
+        """Test that blocked modules are no longer enforced.
+
+        ADR-029: Python can import any module (sys, os, subprocess, etc.)
+        """
+        config = _resolve_sandbox_config(None)
+        # ADR-029: blocked_modules is empty (no restrictions)
+        assert config.blocked_modules == []
 
 
 class TestResolveTools:
@@ -273,8 +273,13 @@ class TestResolveTools:
         assert "web_fetch" in tool_names
         assert "web_search" not in tool_names
 
-    def test_custom_sandbox_applied(self, workspace: Path) -> None:
-        """Test that custom sandbox config is applied to Python tool."""
+    def test_custom_sandbox_ignored(self, workspace: Path) -> None:
+        """Test that custom sandbox config is accepted but ignored.
+
+        ADR-029: allowed_modules configuration is accepted for backward
+        compatibility but has no effect on execution. Python can import
+        any module regardless of this configuration.
+        """
         agent_config = AgentConfigYaml(
             tools=ToolsConfig(bundles=["core"]),  # Need core for Python execution
             execution=ExecutionConfig(
@@ -289,8 +294,9 @@ class TestResolveTools:
         python_tool = next(t for t in tools if t.name == "execute_python")
         assert python_tool is not None
 
-        # Verify sandbox config includes requests
-        assert "requests" in python_tool.config.allowed_modules
+        # ADR-029: allowed_modules is no longer enforced
+        # The tool config may be empty (module whitelist removed)
+        # But the tool still works and can import any module
 
 
 class TestAgentConfigYamlIntegration:

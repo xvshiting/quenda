@@ -522,40 +522,26 @@ def _resolve_sandbox_config(config: AgentConfigYaml | None) -> SandboxConfig:
     """
     Resolve sandbox configuration based on agent capability request.
 
-    Agent can request additional allowed modules via:
-    ```yaml
-    execution:
-      python:
-        allowed_modules:
-          - requests
-          - httpx
-    ```
+    ADR-029: Module whitelists are no longer enforced. Python execution
+    now runs in a real subprocess with full Python capabilities.
 
-    Host merges requested modules with the default allowlist.
-    Blocked modules are always enforced for security.
+    The `allowed_modules` configuration is still accepted for backward
+    compatibility, but it has no effect on execution.
 
     Args:
         config: Agent configuration from config.yaml.
 
     Returns:
-        SandboxConfig with resolved allowed modules.
+        SandboxConfig with execution limits (timeout, output size).
     """
     from quenda.tools.execution import SandboxConfig
-    from quenda.tools.security.patterns import SANDBOX_ALLOWED_MODULES
 
-    # Start with default allowed modules
-    allowed = list(SANDBOX_ALLOWED_MODULES)
+    # ADR-029: Return default SandboxConfig
+    # Module whitelists are no longer enforced
+    # The SandboxConfig is kept for backward compatibility
+    # but only timeout and output limits are actually used
 
-    # Merge agent-requested modules
-    if config and config.execution and config.execution.python:
-        requested = config.execution.python.allowed_modules
-        if requested:
-            # Add requested modules that aren't already in the list
-            for module in requested:
-                if module not in allowed:
-                    allowed.append(module)
-
-    return SandboxConfig(allowed_modules=allowed)
+    return SandboxConfig()
 
 
 # =============================================================================

@@ -1,10 +1,25 @@
 """
 Tests for Python code execution tool.
+
+ADR-029 Compliance:
+- Python executes in subprocess (not in-process)
+- Real Python behavior (sys, os, subprocess work normally)
+- No module whitelist or AST validation
+- Skill Python path available via PYTHONPATH
 """
+
+import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
-from quenda.tools.execution import PythonExecutionTool, SandboxConfig
+from quenda.tools.execution import (
+    PythonExecutionTool,
+    SandboxConfig,
+    build_python_env,
+)
+from quenda.tools.execution.command import ExecutionLimits
 
 
 class TestPythonExecutionTool:
@@ -26,56 +41,64 @@ class TestPythonExecutionTool:
         assert not result.is_error
         assert "4" in result.content
 
-    def test_allowed_module_import(self) -> None:
-        """Test importing allowed module."""
+    def test_sys_module_works(self) -> None:
+        """Test that sys module works (was blocked in old sandbox)."""
         tool = PythonExecutionTool()
-        result = tool.execute(code="import math; print(math.pi)")
+        result = tool.execute(code="import sys; print(sys.version_info.major)")
 
         assert not result.is_error
-        assert "3.14" in result.content
+        assert str(sys.version_info.major) in result.content
 
-    def test_allowed_module_datetime(self) -> None:
-        """Test importing datetime."""
+    def test_os_module_works(self) -> None:
+        """Test that os module works (was blocked in old sandbox)."""
         tool = PythonExecutionTool()
-        result = tool.execute(code="import datetime; print(datetime.date.today())")
+        result = tool.execute(code="import os; print(os.getcwd())")
 
         assert not result.is_error
 
-    def test_blocked_module_os(self) -> None:
-        """Test importing blocked module os."""
+    def test_subprocess_module_works(self) -> None:
+        """Test that subprocess module works (was blocked in old sandbox)."""
         tool = PythonExecutionTool()
-        result = tool.execute(code="import os")
+        result = tool.execute(
+            code="import subprocess; result = subprocess.run(['echo', 'hello'], capture_output=True, text=True); print(result.stdout)"
+        )
 
-        assert result.is_error
-        assert "blocked" in result.content.lower() or "not in" in result.content.lower()
+        assert not result.is_error
+        assert "hello" in result.content
 
-    def test_blocked_module_subprocess(self) -> None:
-        """Test importing blocked module subprocess."""
+    def test_file_operations_work(self) -> None:
+        """Test that file operations work (open was blocked in old sandbox)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tool = PythonExecutionTool(workspace=tmpdir)
+            result = tool.execute(
+                code=f"""
+import os
+with open('test.txt', 'w') as f:
+    f.write('hello')
+with open('test.txt', 'r') as f:
+    print(f.read())
+"""
+            )
+
+            assert not result.is_error
+            assert "hello" in result.content
+
+    def test_async_code_works(self) -> None:
+        """Test that async code works (was blocked in old sandbox)."""
         tool = PythonExecutionTool()
-        result = tool.execute(code="import subprocess")
+        result = tool.execute(
+            code="""
+import asyncio
 
-        assert result.is_error
+async def main():
+    print('async works')
 
-    def test_blocked_module_sys(self) -> None:
-        """Test importing blocked module sys."""
-        tool = PythonExecutionTool()
-        result = tool.execute(code="import sys")
+asyncio.run(main())
+"""
+        )
 
-        assert result.is_error
-
-    def test_blocked_module_socket(self) -> None:
-        """Test importing blocked module socket."""
-        tool = PythonExecutionTool()
-        result = tool.execute(code="import socket")
-
-        assert result.is_error
-
-    def test_blocked_builtin_open(self) -> None:
-        """Test blocked builtin open."""
-        tool = PythonExecutionTool()
-        result = tool.execute(code="open('/tmp/test.txt', 'w')")
-
-        assert result.is_error
+        assert not result.is_error
+        assert "async works" in result.content
 
     def test_syntax_error_reported(self) -> None:
         """Test syntax error is reported."""
@@ -83,7 +106,7 @@ class TestPythonExecutionTool:
         result = tool.execute(code="print('unclosed")
 
         assert result.is_error
-        assert "syntax" in result.content.lower()
+        assert "syntax" in result.content.lower() or "error" in result.content.lower()
 
     def test_runtime_error_reported(self) -> None:
         """Test runtime error is reported."""
@@ -91,33 +114,15 @@ class TestPythonExecutionTool:
         result = tool.execute(code="1/0")
 
         assert result.is_error
-        assert "zerodivision" in result.content.lower() or "division" in result.content.lower() or "error" in result.content.lower()
+        assert "zero" in result.content.lower() or "division" in result.content.lower() or "error" in result.content.lower()
 
     def test_timeout(self) -> None:
         """Test execution timeout."""
         tool = PythonExecutionTool(config=SandboxConfig(default_timeout=1))
-        result = tool.execute(code="while True: pass", timeout=1)
+        result = tool.execute(code="import time; time.sleep(60); print('done')", timeout=1)
 
         assert result.is_error
         assert "timed out" in result.content.lower()
-
-    def test_ast_bomb_blocked(self) -> None:
-        """Test AST bomb is blocked."""
-        tool = PythonExecutionTool()
-        # Generate deeply nested AST
-        code = "x = " + "+".join(["1"] * 10000)
-        result = tool.execute(code=code)
-
-        assert result.is_error
-        assert "complex" in result.content.lower() or "large" in result.content.lower() or "recursion" in result.content.lower()
-
-    def test_async_blocked(self) -> None:
-        """Test async syntax is blocked."""
-        tool = PythonExecutionTool()
-        result = tool.execute(code="async def f(): pass")
-
-        assert result.is_error
-        assert "async" in result.content.lower() or "blocked" in result.content.lower()
 
     def test_no_output(self) -> None:
         """Test code with no output."""
@@ -142,7 +147,7 @@ print(f"Sum: {total}")
         assert "Sum: 15" in result.content
 
     def test_json_operations(self) -> None:
-        """Test JSON module is allowed."""
+        """Test JSON module works."""
         tool = PythonExecutionTool()
         result = tool.execute(
             code="""
@@ -155,24 +160,66 @@ print(json.dumps(data))
         assert not result.is_error
         assert '{"key": "value"}' in result.content
 
-    def test_io_module_allowed(self) -> None:
-        """Test in-memory IO helpers are allowed."""
+    def test_io_module_works(self) -> None:
+        """Test in-memory IO helpers work."""
         tool = PythonExecutionTool()
         result = tool.execute(
             code="""
 import io
 buffer = io.StringIO()
-buffer.write("image search helper")
+buffer.write("hello from StringIO")
 print(buffer.getvalue())
 """
         )
 
         assert not result.is_error
-        assert "image search helper" in result.content
+        assert "hello from StringIO" in result.content
+
+    def test_requests_if_installed(self) -> None:
+        """Test that requests works if installed (was not in whitelist)."""
+        pytest.importorskip("requests")
+        tool = PythonExecutionTool()
+        result = tool.execute(code="import requests; print('requests imported')")
+
+        assert not result.is_error
+        assert "requests imported" in result.content
+
+    def test_stdin_input_via_dash(self) -> None:
+        """Test that code is passed via stdin."""
+        tool = PythonExecutionTool()
+        result = tool.execute(code="print('stdin test')")
+
+        assert not result.is_error
+        assert "stdin test" in result.content
+
+    def test_unicode_handling(self) -> None:
+        """Test unicode handling."""
+        tool = PythonExecutionTool()
+        result = tool.execute(code="print('你好世界 🌍')")
+
+        assert not result.is_error
+        assert "你好世界" in result.content
+        assert "🌍" in result.content
+
+    def test_empty_code_error(self) -> None:
+        """Test error for empty code."""
+        tool = PythonExecutionTool()
+        result = tool.execute(code="")
+
+        assert result.is_error
+        assert "empty" in result.content.lower()
+
+    def test_non_string_code_error(self) -> None:
+        """Test error for non-string code."""
+        tool = PythonExecutionTool()
+        result = tool.execute(code=123)  # type: ignore
+
+        assert result.is_error
+        assert "string" in result.content.lower()
 
 
 class TestSandboxConfig:
-    """Tests for SandboxConfig."""
+    """Tests for SandboxConfig (backward compatibility)."""
 
     def test_default_timeout(self) -> None:
         """Test default timeout value."""
@@ -184,48 +231,189 @@ class TestSandboxConfig:
         config = SandboxConfig()
         assert config.max_timeout == 60
 
-    def test_max_ast_nodes(self) -> None:
-        """Test max AST nodes value."""
-        config = SandboxConfig()
-        assert config.max_ast_nodes == 5000
-
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         config = SandboxConfig(
             default_timeout=10,
             max_timeout=30,
-            max_ast_nodes=1000,
         )
         assert config.default_timeout == 10
         assert config.max_timeout == 30
-        assert config.max_ast_nodes == 1000
+
+    def test_to_limits(self) -> None:
+        """Test conversion to ExecutionLimits."""
+        config = SandboxConfig(
+            default_timeout=15,
+            max_timeout=45,
+            max_output_bytes=50_000,
+        )
+        limits = config.to_limits()
+
+        assert limits.default_timeout == 15
+        assert limits.max_timeout == 45
+        assert limits.max_output_chars == 50_000
+
+    def test_legacy_fields_ignored(self) -> None:
+        """Test that legacy whitelist fields are accepted but ignored."""
+        config = SandboxConfig(
+            allowed_modules=["os", "sys"],
+            blocked_modules=["subprocess"],
+            allowed_builtins=["print", "open"],
+            max_ast_nodes=10000,
+        )
+        # These should be accepted (no error) but ignored
+        assert config.allowed_modules == ["os", "sys"]
+        assert config.blocked_modules == ["subprocess"]
+        # The tool should still allow all modules
+        tool = PythonExecutionTool(config=config)
+        result = tool.execute(code="import subprocess; print('ok')")
+        assert not result.is_error
 
 
-class TestASTValidator:
-    """Tests for AST validation."""
+class TestBuildPythonEnv:
+    """Tests for build_python_env helper."""
 
-    def test_valid_code(self) -> None:
-        """Test valid code passes validation."""
-        from quenda.tools.execution.code import ASTValidator
+    def test_no_skills(self) -> None:
+        """Test environment without skills."""
+        env = build_python_env()
+        assert "PYTHONPATH" not in env or env.get("PYTHONPATH") == ""
 
-        validator = ASTValidator(SandboxConfig())
-        errors = validator.validate("print('hello')")
-        assert len(errors) == 0
+    def test_with_skills(self, tmp_path: Path) -> None:
+        """Test environment with skills."""
+        # Create mock skill
+        skill_dir = tmp_path / "test_skill"
+        scripts_dir = skill_dir / "scripts"
+        scripts_dir.mkdir(parents=True)
 
-    def test_syntax_error_detected(self) -> None:
-        """Test syntax error is detected."""
-        from quenda.tools.execution.code import ASTValidator
+        # Create mock SkillPackage-like object
+        class MockSkill:
+            def __init__(self, path: Path):
+                self.path = path
 
-        validator = ASTValidator(SandboxConfig())
-        errors = validator.validate("print('unclosed")
-        assert len(errors) > 0
-        assert "syntax" in errors[0].lower()
+        skill = MockSkill(skill_dir)
+        env = build_python_env(active_skills=[skill])  # type: ignore
 
-    def test_async_blocked(self) -> None:
-        """Test async is blocked."""
-        from quenda.tools.execution.code import ASTValidator
+        assert "PYTHONPATH" in env
+        assert str(scripts_dir) in env["PYTHONPATH"]
 
-        validator = ASTValidator(SandboxConfig())
-        errors = validator.validate("async def f(): pass")
-        assert len(errors) > 0
-        assert "async" in errors[0].lower() or "blocked" in errors[0].lower()
+    def test_merges_existing_pythonpath(self, tmp_path: Path) -> None:
+        """Test that existing PYTHONPATH is preserved."""
+        skill_dir = tmp_path / "test_skill"
+        scripts_dir = skill_dir / "scripts"
+        scripts_dir.mkdir(parents=True)
+
+        class MockSkill:
+            def __init__(self, path: Path):
+                self.path = path
+
+        skill = MockSkill(skill_dir)
+        base_env = {"PYTHONPATH": "/existing/path"}
+        env = build_python_env(active_skills=[skill], base_env=base_env)  # type: ignore
+
+        assert "/existing/path" in env["PYTHONPATH"]
+        assert str(scripts_dir) in env["PYTHONPATH"]
+
+    def test_skill_without_scripts_dir(self, tmp_path: Path) -> None:
+        """Test skill without scripts directory."""
+        skill_dir = tmp_path / "test_skill"
+        skill_dir.mkdir()
+
+        class MockSkill:
+            def __init__(self, path: Path):
+                self.path = path
+
+        skill = MockSkill(skill_dir)
+        env = build_python_env(active_skills=[skill])  # type: ignore
+
+        # Should not add anything to PYTHONPATH
+        assert "PYTHONPATH" not in env or str(skill_dir) not in env.get("PYTHONPATH", "")
+
+
+class TestSkillPythonImport:
+    """Tests for Skill Python import functionality."""
+
+    def test_import_from_skill(self, tmp_path: Path) -> None:
+        """Test importing Python code from Skill."""
+        # Create mock skill with Python package
+        skill_dir = tmp_path / "test_skill"
+        scripts_dir = skill_dir / "scripts"
+        pkg_dir = scripts_dir / "test_pkg"
+        pkg_dir.mkdir(parents=True)
+
+        # Create __init__.py
+        (pkg_dir / "__init__.py").write_text("VERSION = '1.0'")
+
+        # Create module
+        (pkg_dir / "utils.py").write_text(
+            """
+def greet(name):
+    return f"Hello, {name}!"
+"""
+        )
+
+        # Create mock SkillPackage
+        class MockSkill:
+            def __init__(self, path: Path):
+                self.path = path
+
+        skill = MockSkill(skill_dir)
+
+        # Create tool with skill
+        tool = PythonExecutionTool(
+            workspace=tmp_path,
+            active_skills=[skill],  # type: ignore
+        )
+
+        result = tool.execute(
+            code="""
+from test_pkg.utils import greet
+print(greet("World"))
+"""
+        )
+
+        assert not result.is_error
+        assert "Hello, World!" in result.content
+
+    def test_multiple_skills(self, tmp_path: Path) -> None:
+        """Test multiple skills with different packages."""
+        # Create two skills
+        for skill_name, pkg_name, func_name in [
+            ("skill_a", "pkg_a", "func_a"),
+            ("skill_b", "pkg_b", "func_b"),
+        ]:
+            skill_dir = tmp_path / skill_name
+            scripts_dir = skill_dir / "scripts"
+            pkg_dir = scripts_dir / pkg_name
+            pkg_dir.mkdir(parents=True)
+
+            (pkg_dir / "__init__.py").write_text("")
+            (pkg_dir / "module.py").write_text(
+                f"""
+def {func_name}():
+    return "{func_name} called"
+"""
+            )
+
+        class MockSkill:
+            def __init__(self, path: Path):
+                self.path = path
+
+        skills = [MockSkill(tmp_path / "skill_a"), MockSkill(tmp_path / "skill_b")]
+
+        tool = PythonExecutionTool(
+            workspace=tmp_path,
+            active_skills=skills,  # type: ignore
+        )
+
+        result = tool.execute(
+            code="""
+from pkg_a.module import func_a
+from pkg_b.module import func_b
+print(func_a())
+print(func_b())
+"""
+        )
+
+        assert not result.is_error
+        assert "func_a called" in result.content
+        assert "func_b called" in result.content

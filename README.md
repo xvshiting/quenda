@@ -207,14 +207,11 @@ registry.register(ProviderSpec(
 | `read_file` | View files with line ranges |
 | `write_file` | Create or overwrite files |
 | `apply_patch` | Apply targeted text patches |
+| `run_command` | Execute commands with argv list |
 | `run_shell` | Execute shell commands (filtered) |
-| `execute_python` | Run sandboxed Python |
+| `execute_python` | Run Python code in subprocess |
 | `request_interaction` | Ask the user for structured input |
 | `request_skill_activation` | Ask Host to activate discovered skills |
-| `activate_resource` | Attach historical session resources |
-| `execute_python` | Run Python in a sandbox |
-| `request_interaction` | Ask the user for input |
-| `request_skill_activation` | Request skill activation |
 
 [Full tool reference →](docs/tools.md)
 
