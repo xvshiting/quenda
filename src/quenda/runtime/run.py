@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from quenda.host.compression_policy import CompressionPolicy
     from quenda.host.storage import Storage
     from quenda.runtime.compressor import Compressor
+    from quenda.runtime.termination import TerminationDecision
     from quenda.runtime.termination import TerminationPolicy
     from quenda.runtime.trace import TraceSink
     from quenda.runtime.tool_policy import ToolSelectionPolicy, ToolResultProcessingPolicy
@@ -79,6 +80,24 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+@dataclass
+class RunCounters:
+    """Mutable execution counters for a run."""
+
+    step_count: int = 0
+    tool_round_count: int = 0
+    error_count: int = 0
+    consecutive_error_count: int = 0
+
+
+@dataclass
+class ToolPhaseOutcome:
+    """Result of one runtime-owned tool phase."""
+
+    tool_results: list[ToolResult] = field(default_factory=list)
+    termination_reason: str | None = None
 
 
 @dataclass
@@ -250,10 +269,7 @@ class Run:
             original_count = len(messages)
 
             # Runtime-owned execution loop
-            step_count = 0
-            tool_round_count = 0
-            error_count = 0
-            consecutive_error_count = 0
+            counters = RunCounters()
             final_content: str | None = None
             termination_requested = False
             termination_reason = ""
@@ -288,7 +304,7 @@ class Run:
                     None,  # Use registered tools
                 )
 
-                step_count += 1
+                counters.step_count += 1
 
                 # ADR-015: Accumulate token usage
                 self._accumulate_usage(response)
@@ -312,30 +328,16 @@ class Run:
                     final_content = response.content
 
                 # Check termination policy after model step
-                if self.termination_policy:
-                    elapsed_ms = int((time.perf_counter() - run_start_time) * 1000)
-                    from quenda.runtime.termination import TerminationState
-
-                    state = TerminationState(
-                        step_count=step_count,
-                        tool_round_count=tool_round_count,
-                        elapsed_time_ms=elapsed_ms,
-                        total_input_tokens=self.session.usage.total_input_tokens,
-                        total_output_tokens=self.session.usage.total_output_tokens,
-                        total_tokens=self.session.usage.total_tokens,
-                        error_count=error_count,
-                        consecutive_error_count=consecutive_error_count,
-                        run_id=self.id,
-                        session_id=self.session.id,
-                        agent_name=self.agent.name,
-                        last_step_type="model",
-                        last_stop_reason=response.stop_reason,
-                    )
-                    decision = self.termination_policy.should_terminate(state)
-                    if decision.should_stop:
-                        termination_requested = True
-                        termination_reason = decision.reason
-                        break
+                decision = self._termination_decision(
+                    counters,
+                    run_start_time,
+                    last_step_type="model",
+                    last_stop_reason=response.stop_reason,
+                )
+                if decision is not None and decision.should_stop:
+                    termination_requested = True
+                    termination_reason = decision.reason
+                    break
 
                 # Check if we should stop (natural completion)
                 if response.stop_reason in ("end_turn", "max_tokens", "stop_sequence"):
@@ -346,225 +348,20 @@ class Run:
 
                 # Tool phase: Runtime owns execution (ADR-023)
                 if response.tool_calls:
-                    tool_round_count += 1
+                    tool_phase = ToolPhaseOutcome()
+                    async for event in self._run_tool_phase(
+                        kernel,
+                        response,
+                        counters,
+                        run_start_time,
+                        tool_phase,
+                    ):
+                        yield event
+                    if tool_phase.termination_reason is not None:
+                        termination_requested = True
+                        termination_reason = tool_phase.termination_reason
 
-                    # Phase 3: ToolSelectionPolicy integration
-                    approved_calls: list[ToolCall] = []
-                    rejected_calls: list[tuple[ToolCall, str]] = []  # (call, reason)
-
-                    if self.tool_selection_policy is not None:
-                        from quenda.runtime.tool_policy import (
-                            ToolSelectionRequest,
-                            RejectedToolCall,
-                        )
-
-                        request = ToolSelectionRequest(
-                            tool_calls=response.tool_calls,
-                            available_tools=self.agent.tools,
-                            run_id=self.id,
-                            session_id=self.session.id,
-                            agent_name=self.agent.name,
-                            step_count=step_count,
-                            tool_round_count=tool_round_count,
-                        )
-                        decision = self.tool_selection_policy.select_tools(request)
-                        approved_calls = list(decision.approved)
-                        rejected_calls = [(r.call, r.reason) for r in decision.rejected]
-                    else:
-                        # Default: approve all
-                        approved_calls = list(response.tool_calls)
-
-                    # Emit ToolPhaseStarted event for trace (ADR-023 Phase 5)
-                    from quenda.runtime.events import ToolPhaseStarted
-
-                    policy_name = (
-                        type(self.tool_selection_policy).__name__
-                        if self.tool_selection_policy
-                        else "AllowAllToolSelectionPolicy"
-                    )
-                    tool_phase_event = ToolPhaseStarted(
-                        requested_calls=[
-                            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
-                            for tc in response.tool_calls
-                        ],
-                        approved_calls=[tc.id for tc in approved_calls],
-                        rejected_calls=[
-                            {"id": rc[0].id, "name": rc[0].name, "reason": rc[1]}
-                            for rc in rejected_calls
-                        ],
-                        policy_name=policy_name,
-                    )
-                    self._emit(tool_phase_event)
-                    yield tool_phase_event  # Also yield for observability
-
-                    # Execute tool phase in request order
-                    # Build a map of call_id -> ToolResult for ordering
-                    tool_results_map: dict[str, ToolResult] = {}
-
-                    for call in response.tool_calls:
-                        # Check for interrupt
-                        if is_interrupted():
-                            break
-
-                        # Check if this call was approved or rejected
-                        is_approved = any(c.id == call.id for c in approved_calls)
-                        rejection_reason: str | None = None
-
-                        if not is_approved:
-                            # Find rejection reason
-                            for rejected_call, reason in rejected_calls:
-                                if rejected_call.id == call.id:
-                                    rejection_reason = reason
-                                    break
-
-                        if is_approved:
-                            # Execute approved tool (with permission handling)
-                            raw_result = await self._execute_tool_with_permission(
-                                kernel, call, step_count, error_count, consecutive_error_count
-                            )
-
-                            step_count += 1
-
-                            # Track errors
-                            if raw_result.is_error:
-                                error_count += 1
-                                consecutive_error_count += 1
-                            else:
-                                consecutive_error_count = 0
-
-                            # Phase 4: Apply ToolResultProcessingPolicy
-                            processed_content = raw_result.content
-                            processed_display_hint = raw_result.display_hint
-                            processed_change_preview = raw_result.change_preview
-                            processed_result_summary = raw_result.result_summary
-
-                            if self.tool_result_processing_policy is not None:
-                                from quenda.runtime.tool_policy import (
-                                    ToolResultEnvelope,
-                                )
-
-                                envelope = ToolResultEnvelope(
-                                    call_id=raw_result.call_id,
-                                    tool_name=raw_result.name,
-                                    raw_content=raw_result.content,
-                                    is_error=raw_result.is_error,
-                                    duration_ms=raw_result.duration_ms,
-                                    display_hint=raw_result.display_hint,
-                                    change_preview=raw_result.change_preview,
-                                    result_summary=raw_result.result_summary,
-                                )
-
-                                try:
-                                    processed = self.tool_result_processing_policy.process_result(envelope)
-                                    processed_content = processed.content
-                                    processed_display_hint = processed.display_hint
-                                    processed_change_preview = processed.change_preview
-                                    processed_result_summary = processed.result_summary
-                                except Exception:
-                                    # Fallback to passthrough on processing failure
-                                    pass
-
-                            # Create processed ToolResult for message writeback
-                            result = ToolResult(
-                                call_id=raw_result.call_id,
-                                name=raw_result.name,
-                                content=processed_content,
-                                is_error=raw_result.is_error,
-                                duration_ms=raw_result.duration_ms,
-                                display_hint=processed_display_hint,
-                                change_preview=processed_change_preview,
-                                result_summary=processed_result_summary,
-                                image_content=raw_result.image_content,
-                            )
-
-                            tool_results_map[call.id] = result
-
-                            # Emit tool executed event with both raw and processed result
-                            key_args = self._extract_key_arguments(call.name, call.arguments)
-                            result_lines = processed_content.count('\n') + 1 if processed_content else 0
-
-                            tool_event = ToolExecuted(
-                                tool_name=result.name,
-                                arguments=key_args,
-                                result=processed_content,
-                                raw_result=raw_result.content,
-                                is_error=result.is_error,
-                                is_denied=False,  # This was an approved call
-                                denial_reason="",
-                                duration_ms=result.duration_ms,
-                                call_id=result.call_id,
-                                result_lines=result_lines,
-                                result_truncated=len(processed_content) > 10000 if processed_content else False,
-                                display_hint=result.display_hint,
-                                change_preview=result.change_preview,
-                                result_summary=result.result_summary,
-                            )
-                            self._emit(tool_event)
-                            yield tool_event
-
-                            # Check termination policy after tool step
-                            if self.termination_policy:
-                                elapsed_ms = int((time.perf_counter() - run_start_time) * 1000)
-                                from quenda.runtime.termination import TerminationState
-
-                                state = TerminationState(
-                                    step_count=step_count,
-                                    tool_round_count=tool_round_count,
-                                    elapsed_time_ms=elapsed_ms,
-                                    total_input_tokens=self.session.usage.total_input_tokens,
-                                    total_output_tokens=self.session.usage.total_output_tokens,
-                                    total_tokens=self.session.usage.total_tokens,
-                                    error_count=error_count,
-                                    consecutive_error_count=consecutive_error_count,
-                                    run_id=self.id,
-                                    session_id=self.session.id,
-                                    agent_name=self.agent.name,
-                                    last_step_type="tool",
-                                    last_stop_reason=response.stop_reason,
-                                )
-                                decision = self.termination_policy.should_terminate(state)
-                                if decision.should_stop:
-                                    termination_requested = True
-                                    termination_reason = decision.reason
-                                    break
-                        else:
-                            # Handle rejected call - generate synthetic error result
-                            assert rejection_reason is not None
-                            error_count += 1
-                            consecutive_error_count += 1
-
-                            synthetic_result = ToolResult(
-                                call_id=call.id,
-                                name=call.name,
-                                content=f"Tool execution denied: {rejection_reason}",
-                                is_error=True,
-                            )
-                            tool_results_map[call.id] = synthetic_result
-
-                            # Emit tool executed event for rejected call
-                            step_count += 1
-                            tool_event = ToolExecuted(
-                                tool_name=call.name,
-                                arguments=self._extract_key_arguments(call.name, call.arguments),
-                                result=synthetic_result.content,
-                                raw_result=synthetic_result.content,  # Same as result for rejected calls
-                                is_error=True,
-                                is_denied=True,  # This was a denied call
-                                denial_reason=rejection_reason,
-                                duration_ms=0,
-                                call_id=call.id,
-                                result_lines=1,
-                                result_truncated=False,
-                            )
-                            self._emit(tool_event)
-                            yield tool_event
-
-                    # Build tool_results in original request order
-                    tool_results = [
-                        tool_results_map[call.id]
-                        for call in response.tool_calls
-                        if call.id in tool_results_map
-                    ]
+                    tool_results = tool_phase.tool_results
 
                     # Runtime owns message writeback
                     # Add assistant message with tool calls (preserves original request)
@@ -609,7 +406,7 @@ class Run:
 
                 terminated = RunTerminated(
                     reason=termination_reason,
-                    steps_completed=step_count,
+                    steps_completed=counters.step_count,
                     final_content=final_content,
                     duration_ms=int((time.perf_counter() - run_start_time) * 1000),
                 )
@@ -628,7 +425,7 @@ class Run:
                         status="terminated",
                         user_message=user_message_str,
                         final_content=final_content,
-                        step_count=step_count,
+                        step_count=counters.step_count,
                         created_at=self.created_at,
                         completed_at=datetime.now(),
                     )
@@ -644,7 +441,7 @@ class Run:
 
                 interrupted = RunInterrupted(
                     reason="user_cancel",
-                    steps_completed=step_count,
+                    steps_completed=counters.step_count,
                 )
                 self._emit(interrupted)
                 yield interrupted
@@ -661,7 +458,7 @@ class Run:
                         status="interrupted",
                         user_message=user_message_str,
                         final_content=final_content,
-                        step_count=step_count,
+                        step_count=counters.step_count,
                         created_at=self.created_at,
                         completed_at=datetime.now(),
                     )
@@ -679,7 +476,7 @@ class Run:
             completed = RunCompleted(
                 agent_name=self.agent.name,
                 session_id=self.session.id,
-                total_steps=step_count,
+                total_steps=counters.step_count,
                 final_content=final_content,
                 duration_ms=total_duration_ms,
             )
@@ -698,7 +495,7 @@ class Run:
                     status="completed",
                     user_message=user_message_str,
                     final_content=final_content,
-                    step_count=step_count,
+                    step_count=counters.step_count,
                     created_at=self.created_at,
                     completed_at=completed_at,
                 )
@@ -741,6 +538,268 @@ class Run:
         if summary and isinstance(summary, str):
             return {"_summary": summary}
         return {}
+
+    def _termination_decision(
+        self,
+        counters: RunCounters,
+        run_start_time: float,
+        *,
+        last_step_type: str,
+        last_stop_reason: str | None,
+    ) -> "TerminationDecision | None":
+        """Evaluate the configured termination policy for the current run state."""
+        if self.termination_policy is None:
+            return None
+
+        from quenda.runtime.termination import TerminationState
+
+        elapsed_ms = int((time.perf_counter() - run_start_time) * 1000)
+        state = TerminationState(
+            step_count=counters.step_count,
+            tool_round_count=counters.tool_round_count,
+            elapsed_time_ms=elapsed_ms,
+            total_input_tokens=self.session.usage.total_input_tokens,
+            total_output_tokens=self.session.usage.total_output_tokens,
+            total_tokens=self.session.usage.total_tokens,
+            error_count=counters.error_count,
+            consecutive_error_count=counters.consecutive_error_count,
+            run_id=self.id,
+            session_id=self.session.id,
+            agent_name=self.agent.name,
+            last_step_type=last_step_type,
+            last_stop_reason=last_stop_reason,
+        )
+        return self.termination_policy.should_terminate(state)
+
+    def _select_tool_calls(
+        self,
+        tool_calls: list[ToolCall],
+        counters: RunCounters,
+    ) -> tuple[list[ToolCall], list[tuple[ToolCall, str]]]:
+        """Apply ToolSelectionPolicy and return approved and rejected calls."""
+        if self.tool_selection_policy is None:
+            return list(tool_calls), []
+
+        from quenda.runtime.tool_policy import ToolSelectionRequest
+
+        request = ToolSelectionRequest(
+            tool_calls=tool_calls,
+            available_tools=self.agent.tools,
+            run_id=self.id,
+            session_id=self.session.id,
+            agent_name=self.agent.name,
+            step_count=counters.step_count,
+            tool_round_count=counters.tool_round_count,
+        )
+        decision = self.tool_selection_policy.select_tools(request)
+        return list(decision.approved), [(r.call, r.reason) for r in decision.rejected]
+
+    async def _run_tool_phase(
+        self,
+        kernel: Kernel,
+        response: ModelResponse,
+        counters: RunCounters,
+        run_start_time: float,
+        outcome: ToolPhaseOutcome,
+    ) -> AsyncIterator[AnyEvent]:
+        """Run one Runtime-owned tool phase and yield events as they happen."""
+        from quenda.runtime.events import ToolPhaseStarted
+        from quenda.utils.interrupt import is_interrupted
+
+        counters.tool_round_count += 1
+
+        approved_calls, rejected_calls = self._select_tool_calls(
+            response.tool_calls,
+            counters,
+        )
+
+        policy_name = (
+            type(self.tool_selection_policy).__name__
+            if self.tool_selection_policy
+            else "AllowAllToolSelectionPolicy"
+        )
+        tool_phase_event = ToolPhaseStarted(
+            requested_calls=[
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                for tc in response.tool_calls
+            ],
+            approved_calls=[tc.id for tc in approved_calls],
+            rejected_calls=[
+                {"id": rc[0].id, "name": rc[0].name, "reason": rc[1]}
+                for rc in rejected_calls
+            ],
+            policy_name=policy_name,
+        )
+        self._emit(tool_phase_event)
+        yield tool_phase_event
+
+        approved_by_id = {call.id for call in approved_calls}
+        rejection_by_id = {call.id: reason for call, reason in rejected_calls}
+        tool_results_map: dict[str, ToolResult] = {}
+
+        for call in response.tool_calls:
+            if is_interrupted():
+                break
+
+            if call.id in approved_by_id:
+                raw_result = await self._execute_tool_with_permission(
+                    kernel,
+                    call,
+                    counters.step_count,
+                    counters.error_count,
+                    counters.consecutive_error_count,
+                )
+
+                counters.step_count += 1
+
+                if raw_result.is_error:
+                    counters.error_count += 1
+                    counters.consecutive_error_count += 1
+                else:
+                    counters.consecutive_error_count = 0
+
+                result = self._process_tool_result(raw_result)
+                tool_results_map[call.id] = result
+
+                tool_event = self._tool_executed_event(
+                    call,
+                    raw_result=raw_result,
+                    result=result,
+                )
+                self._emit(tool_event)
+                yield tool_event
+
+                decision = self._termination_decision(
+                    counters,
+                    run_start_time,
+                    last_step_type="tool",
+                    last_stop_reason=response.stop_reason,
+                )
+                if decision is not None and decision.should_stop:
+                    outcome.termination_reason = decision.reason
+                    break
+                continue
+
+            rejection_reason = rejection_by_id.get(call.id)
+            assert rejection_reason is not None
+            counters.error_count += 1
+            counters.consecutive_error_count += 1
+
+            synthetic_result = self._denied_tool_result(call, rejection_reason)
+            tool_results_map[call.id] = synthetic_result
+
+            counters.step_count += 1
+            tool_event = self._tool_denied_event(
+                call,
+                synthetic_result,
+                rejection_reason,
+            )
+            self._emit(tool_event)
+            yield tool_event
+
+        outcome.tool_results = [
+            tool_results_map[call.id]
+            for call in response.tool_calls
+            if call.id in tool_results_map
+        ]
+
+    def _process_tool_result(self, raw_result: ToolResult) -> ToolResult:
+        """Apply ToolResultProcessingPolicy while preserving raw trace data elsewhere."""
+        processed_content = raw_result.content
+        processed_display_hint = raw_result.display_hint
+        processed_change_preview = raw_result.change_preview
+        processed_result_summary = raw_result.result_summary
+
+        if self.tool_result_processing_policy is not None:
+            from quenda.runtime.tool_policy import ToolResultEnvelope
+
+            envelope = ToolResultEnvelope(
+                call_id=raw_result.call_id,
+                tool_name=raw_result.name,
+                raw_content=raw_result.content,
+                is_error=raw_result.is_error,
+                duration_ms=raw_result.duration_ms,
+                display_hint=raw_result.display_hint,
+                change_preview=raw_result.change_preview,
+                result_summary=raw_result.result_summary,
+            )
+
+            try:
+                processed = self.tool_result_processing_policy.process_result(envelope)
+                processed_content = processed.content
+                processed_display_hint = processed.display_hint
+                processed_change_preview = processed.change_preview
+                processed_result_summary = processed.result_summary
+            except Exception:
+                pass
+
+        return ToolResult(
+            call_id=raw_result.call_id,
+            name=raw_result.name,
+            content=processed_content,
+            is_error=raw_result.is_error,
+            duration_ms=raw_result.duration_ms,
+            display_hint=processed_display_hint,
+            change_preview=processed_change_preview,
+            result_summary=processed_result_summary,
+            image_content=raw_result.image_content,
+        )
+
+    def _tool_executed_event(
+        self,
+        call: ToolCall,
+        *,
+        raw_result: ToolResult,
+        result: ToolResult,
+    ) -> ToolExecuted:
+        """Build the event for an approved tool execution."""
+        result_lines = result.content.count("\n") + 1 if result.content else 0
+        return ToolExecuted(
+            tool_name=result.name,
+            arguments=self._extract_key_arguments(call.name, call.arguments),
+            result=result.content,
+            raw_result=raw_result.content,
+            is_error=result.is_error,
+            is_denied=False,
+            denial_reason="",
+            duration_ms=result.duration_ms,
+            call_id=result.call_id,
+            result_lines=result_lines,
+            result_truncated=len(result.content) > 10000 if result.content else False,
+            display_hint=result.display_hint,
+            change_preview=result.change_preview,
+            result_summary=result.result_summary,
+        )
+
+    def _denied_tool_result(self, call: ToolCall, reason: str) -> ToolResult:
+        """Create the loop-visible result for a rejected tool call."""
+        return ToolResult(
+            call_id=call.id,
+            name=call.name,
+            content=f"Tool execution denied: {reason}",
+            is_error=True,
+        )
+
+    def _tool_denied_event(
+        self,
+        call: ToolCall,
+        result: ToolResult,
+        reason: str,
+    ) -> ToolExecuted:
+        """Build the event for a rejected tool call."""
+        return ToolExecuted(
+            tool_name=call.name,
+            arguments=self._extract_key_arguments(call.name, call.arguments),
+            result=result.content,
+            raw_result=result.content,
+            is_error=True,
+            is_denied=True,
+            denial_reason=reason,
+            duration_ms=0,
+            call_id=call.id,
+            result_lines=1,
+            result_truncated=False,
+        )
 
     def _extract_skill_activation_requests(self, tool_results: list[ToolResult]) -> list[str]:
         """

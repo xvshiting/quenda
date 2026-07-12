@@ -17,7 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 from quenda.host.context import ContextRebuilder
 from quenda.host.identity import DefaultUserResolver, User
@@ -51,9 +52,18 @@ if TYPE_CHECKING:
     from quenda.kernel.model import Model
     from quenda.runtime.agent import Agent
     from quenda.runtime.compressor import Compressor
+    from quenda.kernel.types import ImageContent, TextContent
+    from quenda.runtime.events import AnyEvent
+    from quenda.runtime.session import Session
     from quenda.runtime.permission import PermissionPolicy
     from quenda.tools import Tool
     from quenda.tools.execution import SandboxConfig
+
+
+ToolBundleFactory = Callable[
+    [Path, AgentConfigYaml | None, "PermissionPolicy | None"],
+    list["Tool"],
+]
 
 
 # =============================================================================
@@ -142,6 +152,64 @@ class RunContextSnapshot:
     template_context: TemplateContext | None = None
 
 
+def _builtin_tool_bundle_factories() -> dict[str, ToolBundleFactory]:
+    """Return built-in tool bundle factories keyed by bundle name."""
+    return {
+        "core": _core_tool_bundle,
+        "network": _network_tool_bundle,
+    }
+
+
+def _core_tool_bundle(
+    workspace: Path,
+    config: AgentConfigYaml | None,
+    permission_policy: "PermissionPolicy | None",
+) -> list[Tool]:
+    """Build the core local-execution bundle."""
+    from quenda.tools import (
+        ActivateResourceTool,
+        ApplyPatchTool,
+        ListFilesTool,
+        PythonExecutionTool,
+        ReadFileTool,
+        RequestInteractionTool,
+        RequestSkillActivationTool,
+        RunShellTool,
+        SearchTextTool,
+        WriteFileTool,
+    )
+
+    sandbox_config = _resolve_sandbox_config(config)
+    return [
+        ListFilesTool(workspace),
+        SearchTextTool(workspace),
+        ReadFileTool(workspace, permission_policy=permission_policy),
+        WriteFileTool(workspace),
+        ApplyPatchTool(workspace),
+        RunShellTool(workspace),
+        RequestInteractionTool(),
+        RequestSkillActivationTool(),
+        ActivateResourceTool(),
+        PythonExecutionTool(workspace, sandbox_config),
+    ]
+
+
+def _network_tool_bundle(
+    workspace: Path,
+    config: AgentConfigYaml | None,
+    permission_policy: "PermissionPolicy | None",
+) -> list[Tool]:
+    """Build the network access bundle."""
+    del workspace, config, permission_policy
+
+    from quenda.tools.network import HTTPRequestTool, WebFetchTool
+
+    return [
+        HTTPRequestTool(),
+        WebFetchTool(),
+    ]
+
+
 def _resolve_tools(
     workspace: Path,
     config: AgentConfigYaml | None,
@@ -192,20 +260,6 @@ def _resolve_tools(
     Raises:
         ValueError: If a requested tool in tools.include is not found.
     """
-    from quenda.tools import (
-        ApplyPatchTool,
-        ActivateResourceTool,
-        ListFilesTool,
-        PythonExecutionTool,
-        ReadFileTool,
-        RequestInteractionTool,
-        RequestSkillActivationTool,
-        RunShellTool,
-        SearchTextTool,
-        WriteFileTool,
-    )
-    from quenda.tools.execution import SandboxConfig
-
     # Determine requested bundles
     # Compatibility default: missing/empty bundles → ["core"]
     requested_bundles: list[str]
@@ -221,7 +275,8 @@ def _resolve_tools(
     else:
         requested_include = []
 
-    builtin_bundles = {"core", "network"}
+    builtin_bundle_factories = _builtin_tool_bundle_factories()
+    builtin_bundles = set(builtin_bundle_factories)
     unknown_bundles = sorted(set(requested_bundles) - builtin_bundles)
     if unknown_bundles:
         available = ", ".join(sorted(builtin_bundles))
@@ -236,26 +291,10 @@ def _resolve_tools(
     # Build a unified catalog with built-in tools
     builder = ToolRegistryBuilder()
 
-    # Register built-in bundle tools (for reference and deduplication)
-    # Core bundle tools
-    if "core" in requested_bundles:
-        sandbox_config = _resolve_sandbox_config(config)
-        builder.register(ListFilesTool(workspace), source="builtin")
-        builder.register(SearchTextTool(workspace), source="builtin")
-        builder.register(ReadFileTool(workspace, permission_policy=permission_policy), source="builtin")
-        builder.register(WriteFileTool(workspace), source="builtin")
-        builder.register(ApplyPatchTool(workspace), source="builtin")
-        builder.register(RunShellTool(workspace), source="builtin")
-        builder.register(RequestInteractionTool(), source="builtin")
-        builder.register(RequestSkillActivationTool(), source="builtin")
-        builder.register(ActivateResourceTool(), source="builtin")
-        builder.register(PythonExecutionTool(workspace, sandbox_config), source="builtin")
-
-    # Network bundle tools
-    if "network" in requested_bundles:
-        from quenda.tools.network import HTTPRequestTool, WebFetchTool
-        builder.register(HTTPRequestTool(), source="builtin")
-        builder.register(WebFetchTool(), source="builtin")
+    # Register built-in bundle tools (for reference and deduplication).
+    for bundle_name in requested_bundles:
+        for tool in builtin_bundle_factories[bundle_name](workspace, config, permission_policy):
+            builder.register(tool, source="builtin")
 
     # Register agent-local custom tools from loaded catalog
     if loaded_tool_catalog:
@@ -1094,6 +1133,87 @@ def setup_agent(
         return None
 
 
+def create_skill_activation_handler(
+    setup: AgentSetup,
+    session: "Session",
+) -> Callable[[list[str]], str | None]:
+    """Create the in-run skill activation callback for a prepared agent setup."""
+    def skill_activation_handler(skill_names: list[str]) -> str | None:
+        if not skill_names or setup.skill_activator is None:
+            return None
+
+        activated: list[str] = []
+        for name in skill_names:
+            if setup.skill_activator.is_active(name):
+                continue
+            skill = setup.skill_activator.activate_skill(name, transient=True)
+            if skill is not None:
+                activated.append(name)
+
+        if not activated:
+            return None
+
+        setup.binding.active_skill_names = setup.skill_activator.list_persistent()
+        setup.binding.transient_skill_names = setup.skill_activator.list_transient()
+        snapshot = refresh_run_context(setup.binding, session_id=session.id)
+        setup.context_snapshot = snapshot
+        setup.instruction_sources = snapshot.instruction_sources
+        session.set_system_prompt(snapshot.composed_prompt)
+        setup.agent.set_system_prompt(snapshot.composed_prompt)
+
+        return snapshot.composed_prompt
+
+    return skill_activation_handler
+
+
+def run_agent_once(
+    agent_path: Path,
+    workspace: Path,
+    user_message: "str | Sequence[TextContent | ImageContent]",
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    session_id: str | None = None,
+    on_event: "Callable[[AnyEvent], None] | None" = None,
+    on_setup: Callable[[AgentSetup, "Session"], None] | None = None,
+) -> bool:
+    """
+    Run an agent with a single message.
+
+    Host owns setup, session lifecycle, skill activation, and persistence.
+    Callers can provide event/setup callbacks for CLI or UI concerns.
+    """
+    setup = setup_agent(agent_path, workspace, provider=provider, model=model)
+    if setup is None:
+        return False
+
+    agent = setup.agent
+
+    if setup.binding.mcp_manager is not None:
+        mcp_config = None
+        if setup.agent_package.config and setup.agent_package.config.mcp:
+            mcp_config = setup.agent_package.config.mcp
+        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
+
+    if session_id:
+        session = agent.load_session(session_id)
+        if session is None:
+            session = agent.open_session(session_id=session_id)
+    else:
+        session = agent.open_session()
+
+    if on_setup is not None:
+        on_setup(setup, session)
+
+    session.send_sync(
+        user_message,
+        on_event=on_event,
+        skill_activation_handler=create_skill_activation_handler(setup, session),
+    )
+    session.save()
+    return True
+
+
 def _connect_mcp_servers_sync(binding: StableHostBinding) -> list[Tool]:
     """Connect configured MCP servers from the synchronous setup path."""
     import asyncio
@@ -1114,4 +1234,6 @@ __all__ = [
     # Legacy API
     "AgentSetup",
     "setup_agent",
+    "create_skill_activation_handler",
+    "run_agent_once",
 ]

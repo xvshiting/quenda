@@ -105,6 +105,8 @@ from quenda.host.runner import (
     connect_mcp_servers,
     # Legacy API
     AgentSetup,
+    create_skill_activation_handler,
+    run_agent_once,
     setup_agent,
 )
 from quenda.host.skill import (
@@ -208,5 +210,7 @@ __all__ = [
     "connect_mcp_servers",
     # Runner - Legacy API
     "AgentSetup",
+    "create_skill_activation_handler",
+    "run_agent_once",
     "setup_agent",
 ]

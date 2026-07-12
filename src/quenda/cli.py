@@ -12,11 +12,11 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from quenda.host import (
     setup_agent,
-    refresh_run_context,
+    run_agent_once,
     find_builtin_agent,
     load_agent_commands,
     ReplRuntime,
@@ -53,6 +53,19 @@ from quenda.runtime.permission import PermissionRequest
 from quenda.host.permission_manager import PermissionManager, format_permission_prompt
 
 
+def _build_cli_user_message(
+    message: str,
+    image_paths: Sequence[str] | None,
+) -> str | Sequence[TextContent | ImageContent]:
+    """Build a CLI user message and report missing image files."""
+    images = load_images(image_paths) if image_paths else None
+    if image_paths and len(images) != len(image_paths):
+        missing = [path for path in image_paths if not Path(path).expanduser().exists()]
+        for path in missing:
+            print(f"Error: Image file not found: {path}", file=sys.stderr)
+    return build_user_message(message, images)
+
+
 def run_agent(
     agent_path: Path,
     workspace: Path,
@@ -78,90 +91,52 @@ def run_agent(
     Returns:
         Exit code (0 for success, 1 for error).
     """
-    # Setup agent (Host layer)
-    setup = setup_agent(agent_path, workspace, provider=provider, model=model)
-    if setup is None:
-        print(f"Error: Failed to setup agent from {agent_path}", file=sys.stderr)
-        return 1
-
-    agent = setup.agent
-
-    # Pass MCP manager to agent (connection happens lazily in session.send)
-    if setup.binding.mcp_manager is not None:
-        mcp_config = None
-        if setup.agent_package.config and setup.agent_package.config.mcp:
-            mcp_config = setup.agent_package.config.mcp
-        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
-
-    # Resolve theme: CLI arg > agent config > default
-    if theme is None:
-        config = setup.agent_package.config
-        if config and config.theme:
-            theme = config.theme.create_theme()
-        else:
-            theme = InterfaceTheme()
-
-    # Open or resume session
-    if session_id:
-        session = agent.load_session(session_id)
-        if session is None:
-            print(f"Session {session_id} not found, creating new session")
-            session = agent.open_session(session_id=session_id)
-    else:
-        session = agent.open_session()
-
-    print(f"Workspace: {setup.workspace_id}")
-    print(f"Session: {session.id}")
-
-    # Create components with theme
-    renderer = ConsoleRenderer(theme=theme, verbose=True)
-    indicator = SpinnerIndicator(theme=theme, stream=sys.stderr)
-    # Use StreamingEventHandler to show model responses
-    from quenda.interface.events import StreamingEventHandler
+    resolved_theme = theme or InterfaceTheme()
+    renderer = ConsoleRenderer(theme=resolved_theme, verbose=True)
+    indicator = SpinnerIndicator(theme=resolved_theme, stream=sys.stderr)
     streaming_handler = StreamingEventHandler(
         renderer=renderer,
         indicator=indicator,
-        theme=theme,
+        theme=resolved_theme,
     )
 
-    # Create skill activation handler (ADR-027)
-    def skill_activation_handler(skill_names: list[str]) -> str | None:
-        if not skill_names or setup.skill_activator is None:
-            return None
+    def on_setup(setup: Any, session: Any) -> None:
+        nonlocal resolved_theme, renderer, indicator, streaming_handler
 
-        activated: list[str] = []
-        for name in skill_names:
-            if setup.skill_activator.is_active(name):
-                continue
-            skill = setup.skill_activator.activate_skill(name, transient=True)
-            if skill is not None:
-                activated.append(name)
+        if theme is None:
+            config = setup.agent_package.config
+            if config and config.theme:
+                resolved_theme = config.theme.create_theme()
+                renderer = ConsoleRenderer(theme=resolved_theme, verbose=True)
+                indicator = SpinnerIndicator(theme=resolved_theme, stream=sys.stderr)
+                streaming_handler = StreamingEventHandler(
+                    renderer=renderer,
+                    indicator=indicator,
+                    theme=resolved_theme,
+                )
 
-        if not activated:
-            return None
-
-        # Update binding and refresh context
-        setup.binding.active_skill_names = setup.skill_activator.list_persistent()
-        setup.binding.transient_skill_names = setup.skill_activator.list_transient()
-        snapshot = refresh_run_context(setup.binding, session_id=session.id)
-        setup.context_snapshot = snapshot
-        setup.instruction_sources = snapshot.instruction_sources
-        session.set_system_prompt(snapshot.composed_prompt)
-        agent.set_system_prompt(snapshot.composed_prompt)
-
-        return snapshot.composed_prompt
+        if session_id and session.id != session_id:
+            print(f"Session {session_id} not found, creating new session")
+        print(f"Workspace: {setup.workspace_id}")
+        print(f"Session: {session.id}")
 
     try:
-        session.send_sync(
-            user_message,
-            on_event=streaming_handler.on_event,
-            skill_activation_handler=skill_activation_handler,
+        ok = run_agent_once(
+            agent_path=agent_path,
+            workspace=workspace,
+            user_message=user_message,
+            provider=provider,
+            model=model,
+            session_id=session_id,
+            on_event=lambda event: streaming_handler.on_event(event),
+            on_setup=on_setup,
         )
     finally:
         indicator.stop()
 
-    # Save session after execution
-    session.save()
+    if not ok:
+        print(f"Error: Failed to setup agent from {agent_path}", file=sys.stderr)
+        return 1
 
     return 0
 
@@ -741,13 +716,7 @@ def main() -> int:
     if args.command == "run":
         agent_path = args.agent
         if args.message:
-            # Load images if provided
-            images = load_images(args.images) if args.images else None
-            if args.images and len(images) != len(args.images):
-                missing = [path for path in args.images if not Path(path).expanduser().exists()]
-                for path in missing:
-                    print(f"Error: Image file not found: {path}", file=sys.stderr)
-            user_message = build_user_message(args.message, images)
+            user_message = _build_cli_user_message(args.message, args.images)
             return run_agent(
                 agent_path=agent_path,
                 workspace=args.workspace,
@@ -774,13 +743,7 @@ def main() -> int:
             return 1
 
         if args.message:
-            # Load images if provided
-            images = load_images(args.images) if args.images else None
-            if args.images and len(images) != len(args.images):
-                missing = [path for path in args.images if not Path(path).expanduser().exists()]
-                for path in missing:
-                    print(f"Error: Image file not found: {path}", file=sys.stderr)
-            user_message = build_user_message(args.message, images)
+            user_message = _build_cli_user_message(args.message, args.images)
             return run_agent(
                 agent_path=agent_dir,
                 workspace=args.workspace,
