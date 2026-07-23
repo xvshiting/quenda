@@ -629,3 +629,222 @@ from quenda.providers import (
 | `NetworkError` | Connection failure, timeout, DNS error |
 | `ModelNotFoundError` | Model ID not found in provider catalog |
 | `UnsupportedFeatureError` | Feature (e.g. vision) not supported by model |
+
+---
+
+## Skills API
+
+The Skills framework provides composable capability packages.
+
+```python
+from quenda.host.skill import (
+    SkillDiscovery,
+    SkillActivator,
+    ResourceResolver,
+    SkillPackage,
+    SkillFrontmatter,
+)
+```
+
+### SkillDiscovery
+
+Discover available skills from multiple sources.
+
+```python
+discovery = SkillDiscovery(
+    user_workspace_skills_path=Path("~/.quenda/users/<user>/workspaces/<ws_id>/skills"),
+    agent_package_path=Path("/path/to/agent"),
+    workspace_path=Path("/path/to/workspace"),
+)
+skills = discovery.discover_skills()  # Returns list[SkillPackage]
+```
+
+### SkillActivator
+
+Activate and deactivate skills.
+
+```python
+activator = SkillActivator(discovery)
+activator.activate_skill("code-review")
+activator.deactivate_skill("code-review")
+
+# Get active skills for instruction composition
+active_skills = activator.active_skills  # list[SkyllPackage]
+```
+
+### ResourceResolver
+
+Load resources from active skills.
+
+```python
+resolver = ResourceResolver(active_skills)
+guide = resolver.load_resource("code-review", "references/style-guide.md")
+# Returns skill:// URI or file content
+```
+
+### SkillPackage
+
+Data class representing a discovered skill.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `Path` | Skill directory path |
+| `frontmatter` | `SkillFrontmatter` | Metadata (name, description, version) |
+| `source` | `str` | Source type (user_workspace, workspace, agent_package, user) |
+
+### SkillFrontmatter
+
+Metadata extracted from SKILL.md frontmatter.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `str` | Yes | Unique identifier |
+| `description` | `str` | Yes | Human-readable description |
+| `version` | `str` | No | Semantic version (default: "0.1.0") |
+
+---
+
+## Policies API
+
+Runtime policies control agent behavior at decision points.
+
+```python
+from quenda.runtime import (
+    TerminationPolicy,
+    ToolSelectionPolicy,
+    ToolResultProcessingPolicy,
+    TraceSink,
+)
+```
+
+### TerminationPolicy
+
+Control when to stop execution.
+
+```python
+from quenda.runtime.termination import (
+    MaxStepsPolicy,
+    TimeBudgetPolicy,
+    TokenBudgetPolicy,
+    ConsecutiveErrorsPolicy,
+)
+
+# Built-in policies
+policy = MaxStepsPolicy(max_steps=30)
+policy = TimeBudgetPolicy(max_time_ms=60000)
+policy = TokenBudgetPolicy(max_total_tokens=100000)
+policy = ConsecutiveErrorsPolicy(max_consecutive_errors=3)
+```
+
+### ToolSelectionPolicy
+
+Control which tools are allowed to execute.
+
+```python
+from quenda.runtime.tool_policy import (
+    AllowlistToolSelectionPolicy,
+    DenylistToolSelectionPolicy,
+)
+
+# Allow only specific tools
+policy = AllowlistToolSelectionPolicy({"read_file", "write_file"})
+
+# Block specific tools
+policy = DenylistToolSelectionPolicy({"run_shell"})
+```
+
+### ToolResultProcessingPolicy
+
+Control how tool results enter the context.
+
+```python
+from quenda.runtime.tool_policy import (
+    TruncatingToolResultProcessingPolicy,
+    LineLimitToolResultProcessingPolicy,
+)
+
+# Truncate by characters
+policy = TruncatingToolResultProcessingPolicy(max_chars=6000)
+
+# Limit by lines
+policy = LineLimitToolResultProcessingPolicy(max_lines=120)
+```
+
+### TraceSink
+
+Observe runtime events for logging and debugging.
+
+```python
+from quenda.runtime import JsonlTraceSink
+
+# Write events to JSONL file
+sink = JsonlTraceSink("traces/run.jsonl")
+
+agent = Agent(
+    name="traced-agent",
+    tools=tools,
+    model=model,
+    trace_sink=sink,
+)
+```
+
+Custom trace sink:
+
+```python
+class CustomTraceSink(TraceSink):
+    def record(self, event: AnyEvent) -> None:
+        # Process event (should not raise exceptions)
+        print(f"[{event.type}] {event}")
+```
+
+---
+
+## Host Layer API
+
+For agent package loading and workspace management.
+
+```python
+from quenda.host import (
+    load_agent_package,
+    AgentPackage,
+    AgentConfigYaml,
+    WorkspaceResolver,
+    FileStorage,
+    InstructionComposer,
+    InstructionSource,
+)
+```
+
+### load_agent_package
+
+Load an agent package from a directory.
+
+```python
+pkg = load_agent_package("/path/to/agent")
+pkg.name         # Agent name
+pkg.version      # Version
+pkg.description  # Description
+pkg.agent_md     # AGENT.md content
+pkg.config       # AgentConfigYaml or None
+pkg.instructions # List of instruction files
+```
+
+### WorkspaceResolver
+
+Resolve workspace binding and paths.
+
+```python
+resolver = WorkspaceResolver(workspace_path=Path("."))
+ws_id = resolver.workspace_id
+ws_binding_path = resolver.binding_path
+```
+
+### FileStorage
+
+Session persistence.
+
+```python
+storage = FileStorage(base_path=Path("~/.quenda/users/<user>/agents/<agent>/workspaces/<ws_id>"))
+storage.save_session(session.state)
+state = storage.load_session(session_id)
+```

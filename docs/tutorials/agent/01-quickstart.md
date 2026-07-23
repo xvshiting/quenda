@@ -15,7 +15,7 @@ pip install quenda
 ```python
 import quenda
 print(quenda.__version__)
-# 输出: 0.1.0
+# 输出: 0.3.0
 ```
 
 > **依赖**: Python 3.12+
@@ -100,6 +100,51 @@ async def chat():
 
 asyncio.run(chat())
 ```
+
+---
+
+## 新特性亮点
+
+Quenda 0.3.0 包含以下重要特性：
+
+### Skills Framework
+
+可组合的能力包系统，按需激活专业技能：
+
+```python
+# 在 REPL 中激活技能
+> /skill list                # 查看可用技能
+> /skill activate code-review  # 激活代码审查技能
+> /skill resources           # 查看技能资源
+```
+
+### Context Compression
+
+自动上下文压缩，支持长对话：
+
+```python
+# 手动触发压缩
+> /compress        # 自动判断是否需要压缩
+> /compress force  # 强制压缩
+```
+
+### Interaction Requests
+
+结构化交互协议，LLM 可向用户请求选择、确认、输入：
+
+```python
+# Agent 使用 request_interaction 工具向用户请求决策
+request_interaction(
+    kind="choice",
+    title="选择数据库",
+    message="使用哪个数据库？",
+    options=[{"id": "postgres", "label": "PostgreSQL"}, ...]
+)
+```
+
+### Custom Tool Extensions
+
+Agent 通过 `extensions/tools/*.py` 定义自定义工具，在 `config.yaml` 中声明。
 
 ---
 

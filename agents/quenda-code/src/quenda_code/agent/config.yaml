@@ -23,6 +23,17 @@ tools:
 skills:
   include_catalog: true
 
+compression:
+  enabled: true
+  threshold_ratio: 0.7
+  keep_last_n_messages: 10
+  archive_raw_messages: true
+
+policies:
+  tool_result_processing:
+    type: context_safe
+    max_chars: 16000
+
 # Theme configuration (ADR-014)
 # Uncomment to customize the interface appearance.
 # theme:

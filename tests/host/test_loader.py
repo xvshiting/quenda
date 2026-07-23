@@ -7,6 +7,20 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from quenda.host import load_agent_from_markdown
+from quenda.host.loader import CompressionConfig
+
+
+def test_compression_config_coerces_yaml_numeric_strings() -> None:
+    """The bundled simple YAML parser returns scalars as strings."""
+    config = CompressionConfig.from_dict({
+        "threshold_ratio": "0.7",
+        "keep_last_n_messages": "10",
+    })
+
+    assert config.threshold_ratio == 0.7
+    assert isinstance(config.threshold_ratio, float)
+    assert config.keep_last_n_messages == 10
+    assert isinstance(config.keep_last_n_messages, int)
 from quenda.runtime import AgentConfig
 
 

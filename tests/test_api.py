@@ -2,6 +2,7 @@
 Test convenience API.
 """
 
+import asyncio
 import base64
 from pathlib import Path
 from types import SimpleNamespace
@@ -87,6 +88,36 @@ class TestConvenienceAPI:
 
         result = session.send_sync("Hi")
         assert result == "Hello!"
+
+    def test_sync_interrupt_cancels_pending_task_before_next_send(self) -> None:
+        """An interrupted task must not resume when the event loop is reused."""
+        agent = Agent(name="test")
+        session = agent.open_session()
+        cancelled = False
+
+        async def pending() -> None:
+            nonlocal cancelled
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled = True
+
+        loop = session._get_or_create_loop()
+
+        def interrupt_loop() -> None:
+            raise KeyboardInterrupt
+
+        loop.call_later(0.01, interrupt_loop)
+        with pytest.raises(KeyboardInterrupt):
+            session._run_sync(pending())
+
+        assert cancelled is True
+        assert not asyncio.all_tasks(loop)
+
+        async def next_send() -> str:
+            return "next"
+
+        assert session._run_sync(next_send()) == "next"
 
     @pytest.mark.asyncio
     async def test_send_async(self) -> None:

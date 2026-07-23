@@ -33,6 +33,7 @@ from quenda.providers.errors import (
     AuthenticationError,
     NetworkError,
     RateLimitError,
+    ToolCallDecodeError,
 )
 from quenda.providers.retry import retry_with_backoff
 
@@ -325,13 +326,13 @@ class MyKimiCompletionsApi(Api):
         # Standard OpenAI tool calls format
         if choice.message.tool_calls:
             for i, tc in enumerate(choice.message.tool_calls):
-                args = (
-                    json.loads(tc.function.arguments)
-                    if tc.function.arguments
-                    else {}
-                )
                 # Ensure id is not empty - generate one if missing
                 call_id = tc.id if tc.id else f"call_{i}"
+                args = self._decode_tool_arguments(
+                    tc.function.arguments,
+                    tool_call_id=call_id,
+                    tool_name=tc.function.name,
+                )
                 tool_calls.append(
                     ToolCall(
                         id=call_id,
@@ -369,6 +370,38 @@ class MyKimiCompletionsApi(Api):
             stop_reason="tool_use" if tool_calls else "end_turn",
             usage=usage,
         )
+
+    def _decode_tool_arguments(
+        self,
+        raw_arguments: str | None,
+        *,
+        tool_call_id: str | None,
+        tool_name: str | None,
+    ) -> dict:
+        """Decode provider tool-call arguments into a dict."""
+        if not raw_arguments:
+            return {}
+
+        try:
+            args = json.loads(raw_arguments)
+        except json.JSONDecodeError as e:
+            raise ToolCallDecodeError(
+                f"Invalid JSON arguments for tool call `{tool_name or '<unknown>'}`: {e}",
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                raw_arguments=raw_arguments,
+                error_position=e.pos,
+            ) from e
+
+        if not isinstance(args, dict):
+            raise ToolCallDecodeError(
+                f"Tool call `{tool_name or '<unknown>'}` arguments must decode to an object.",
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                raw_arguments=raw_arguments,
+                error_position=None,
+            )
+        return args
 
     def _sanitize_json_string(self, content: str) -> str:
         """

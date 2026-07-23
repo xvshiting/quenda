@@ -47,7 +47,7 @@ context = TemplateContext(
     user_id="user-1",
     model_provider="deepseek",
     model_name="deepseek-v4-flash",
-    date="2025-06-24",
+    date="2026-06-30",
     session_id="session-xxx",
 )
 
@@ -213,6 +213,64 @@ class CodeReviewInteraction(Interaction):
 # 导出
 interactions = [CodeReviewInteraction()]
 ```
+
+---
+
+## Skills Framework
+
+Skills 是可组合的能力包，包含指令、资源和可选工具。它们是 Host 层的机制，用于扩展 Agent 行为。
+
+### 三层优先级
+
+Skills 按以下优先级发现：
+
+| 优先级 | 位置 | 用途 |
+|--------|------|------|
+| 1 (最高) | `~/.quenda/users/<user>/workspaces/<ws_id>/skills/` | 用户-工作空间特定技能 |
+| 2 | `<workspace>/.quenda/skills/` | 项目共享技能 |
+| 3 | `<agent-package>/skills/` | Agent 包捆绑技能 |
+| 4 (最低) | `~/.quenda/skills/` | 用户全局技能 |
+
+### Skill 结构
+
+```
+skill-name/
+├── SKILL.md           # 技能定义（必需）
+├── references/        # 参考文档
+├── templates/         # 模板文件
+├── assets/            # 其他资源
+└── scripts/           # 可执行脚本 (*.py)
+```
+
+### 程序化使用
+
+```python
+from quenda.host.skill import SkillDiscovery, SkillActivator
+
+# 发现技能
+discovery = SkillDiscovery(
+    user_workspace_skills_path=user_workspace_skills_path,
+    agent_package_path=agent_package_path,
+)
+skills = discovery.discover_skills()
+
+# 激活技能
+activator = SkillActivator(discovery)
+activator.activate_skill("code-review")
+
+# 获取激活的技能
+active_skills = activator.active_skills
+```
+
+### 渐进披露
+
+Skills 采用渐进披露以提高效率：
+
+1. **Discovery** - 仅加载 frontmatter 元数据
+2. **Activation** - 激活时才读取 `SKILL.md` 内容
+3. **Usage** - 按需加载资源
+
+详见 [Skills 文档](../../skills.md)。
 
 ---
 

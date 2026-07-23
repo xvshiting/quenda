@@ -1691,6 +1691,32 @@ class StatusCommand:
         if usage.total_reasoning_tokens:
             lines.append(f"  Reasoning: {usage.total_reasoning_tokens}")
 
+        # Current context is distinct from cumulative usage above.
+        from quenda.kernel.types import Message
+        from quenda.runtime.token_estimator import TokenEstimator
+
+        context_messages: list[Message] = []
+        system_prompt = context.get_system_prompt()
+        if system_prompt:
+            context_messages.append(Message(role="system", content=system_prompt))
+        context_messages.extend(
+            Message(role="system", content=f"[历史摘要]\n{block.content}")
+            for block in session_state.summary_blocks
+        )
+        context_messages.extend(session_state.messages)
+        estimator = TokenEstimator()
+        current_estimate = (
+            estimator.estimate_messages(context_messages)
+            + estimator.estimate_tools(context.get_tools())
+        )
+        lines.append("\n**Current Context (estimated):**")
+        lines.append(f"  Input: ~{current_estimate} tokens")
+        model_spec = getattr(context.model, "spec", None)
+        context_window = getattr(model_spec, "context_window", None)
+        if context_window:
+            percentage = current_estimate / context_window * 100
+            lines.append(f"  Window: {context_window} tokens ({percentage:.1f}% used)")
+
         # Compression info
         if usage.compression_count > 0:
             lines.append("\n**Compression:**")

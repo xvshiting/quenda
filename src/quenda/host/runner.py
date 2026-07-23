@@ -46,7 +46,6 @@ from quenda.host.workspace import WorkspaceResolver
 
 if TYPE_CHECKING:
     from quenda.host.commands import CommandRegistry
-    from quenda.host.compression_policy import CompressionPolicy
     from quenda.host.interactions import InteractionRegistry
     from quenda.host.skill import SkillPackage
     from quenda.kernel.model import Model
@@ -54,8 +53,10 @@ if TYPE_CHECKING:
     from quenda.runtime.compressor import Compressor
     from quenda.kernel.types import ImageContent, TextContent
     from quenda.runtime.events import AnyEvent
+    from quenda.runtime.ports.compression import CompressionPolicy
     from quenda.runtime.session import Session
     from quenda.runtime.permission import PermissionPolicy
+    from quenda.providers import ProviderRegistry
     from quenda.tools import Tool
     from quenda.tools.execution import SandboxConfig
 
@@ -477,6 +478,7 @@ def _resolve_tool_result_processing_policy(
 
     from quenda.host.loader import PolicySpecConfig
     from quenda.runtime.tool_policy import (
+        ContextSafeToolResultProcessingPolicy,
         LineLimitedToolResultProcessingPolicy,
         PassthroughToolResultProcessingPolicy,
         TruncatingToolResultProcessingPolicy,
@@ -494,6 +496,10 @@ def _resolve_tool_result_processing_policy(
         return TruncatingToolResultProcessingPolicy(
             max_chars=_coerce_int(data.get("max_chars"), 4000),
             suffix=str(data.get("suffix", "\n... [truncated]")),
+        )
+    if policy_type in ("context_safe", "context_aware"):
+        return ContextSafeToolResultProcessingPolicy(
+            max_chars=_coerce_int(data.get("max_chars"), 16_000),
         )
     if policy_type in ("line_limit", "line_limited"):
         return LineLimitedToolResultProcessingPolicy(
@@ -594,6 +600,7 @@ def setup_host_binding(
     *,
     provider: str | None = None,
     model: str | None = None,
+    provider_registry: "ProviderRegistry | None" = None,
     tools: list[Tool] | None = None,
     permission_policy: "PermissionPolicy" | None = None,
 ) -> StableHostBinding | None:
@@ -614,6 +621,7 @@ def setup_host_binding(
         workspace: Workspace directory for file operations.
         provider: Model provider override.
         model: Model name override.
+        provider_registry: Optional provider registry to use for model lookup.
         tools: Optional custom tools (overrides config-based resolution).
 
     Returns:
@@ -668,10 +676,12 @@ def setup_host_binding(
             ) or "deepseek-v4-flash"
 
         # 8. Get model instances
-        from quenda.providers import get_provider_registry
-        registry = get_provider_registry()
+        if provider_registry is None:
+            from quenda.providers import get_provider_registry
+
+            provider_registry = get_provider_registry()
         try:
-            model_instance = registry.get_model(provider_name, model_name)
+            model_instance = provider_registry.get_model(provider_name, model_name)
         except KeyError:
             return None
 
@@ -681,7 +691,7 @@ def setup_host_binding(
 
         if models_config and models_config.vision:
             try:
-                vision_model_instance = registry.get_model(
+                vision_model_instance = provider_registry.get_model(
                     models_config.vision.provider,
                     models_config.vision.model,
                 )
@@ -780,7 +790,7 @@ def setup_host_binding(
 
             if compression_config.compression_model:
                 try:
-                    summary_model = registry.get_model(provider_name, compression_config.compression_model)
+                    summary_model = provider_registry.get_model(provider_name, compression_config.compression_model)
                 except KeyError:
                     summary_model = model_instance
             else:
@@ -1007,6 +1017,7 @@ def setup_agent(
     *,
     provider: str | None = None,
     model: str | None = None,
+    provider_registry: "ProviderRegistry | None" = None,
     tools: list[Tool] | None = None,
     permission_policy: "PermissionPolicy" | None = None,
 ) -> AgentSetup | None:
@@ -1034,6 +1045,7 @@ def setup_agent(
         workspace: Workspace directory for file operations.
         provider: Model provider override.
         model: Model name override.
+        provider_registry: Optional provider registry to use for model lookup.
         tools: Optional custom tools (default: core tools).
 
     Returns:
@@ -1048,6 +1060,7 @@ def setup_agent(
             workspace=workspace,
             provider=provider,
             model=model,
+            provider_registry=provider_registry,
             tools=tools,
             permission_policy=permission_policy,
         )
@@ -1173,6 +1186,7 @@ def run_agent_once(
     *,
     provider: str | None = None,
     model: str | None = None,
+    provider_registry: "ProviderRegistry | None" = None,
     session_id: str | None = None,
     on_event: "Callable[[AnyEvent], None] | None" = None,
     on_setup: Callable[[AgentSetup, "Session"], None] | None = None,
@@ -1183,17 +1197,17 @@ def run_agent_once(
     Host owns setup, session lifecycle, skill activation, and persistence.
     Callers can provide event/setup callbacks for CLI or UI concerns.
     """
-    setup = setup_agent(agent_path, workspace, provider=provider, model=model)
+    setup = setup_agent(
+        agent_path,
+        workspace,
+        provider=provider,
+        model=model,
+        provider_registry=provider_registry,
+    )
     if setup is None:
         return False
 
     agent = setup.agent
-
-    if setup.binding.mcp_manager is not None:
-        mcp_config = None
-        if setup.agent_package.config and setup.agent_package.config.mcp:
-            mcp_config = setup.agent_package.config.mcp
-        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
 
     if session_id:
         session = agent.load_session(session_id)

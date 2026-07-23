@@ -303,6 +303,67 @@ ToolResult(
 
 ---
 
+## Skills Framework（能力包）
+
+除了自定义工具，Quenda 还提供了 **Skills** 系统——可组合的能力包，包含指令和资源。
+
+### Skills vs Tools
+
+| 概念 | 用途 | 示例 |
+|------|------|------|
+| **Tool** | 可执行函数，模型可调用 | `read_file`, `run_shell` |
+| **Skill** | 指令包，指导模型行为 | 代码审查、测试编写 |
+
+### 使用 Skills
+
+在 Agent 配置中激活：
+
+```yaml
+# config.yaml
+skills:
+  - code-review    # 代码审查技能
+  - testing        # 测试编写技能
+```
+
+或在 REPL 中动态激活：
+
+```text
+> /skill list                  # 查看可用技能
+> /skill activate code-review  # 激活技能
+> /skill resources             # 查看技能资源
+```
+
+### 创建 Skill
+
+```
+.quenda/skills/code-review/
+├── SKILL.md           # 技能定义（必需）
+├── references/        # 参考文档
+│   └── style-guide.md
+├── templates/         # 模板文件
+│   └── review-report.md
+└── scripts/           # 可执行脚本
+    └── analyze.py
+```
+
+`SKILL.md` 格式：
+
+```yaml
+---
+name: code-review
+description: Apply when reviewing code or providing feedback on code changes.
+version: "1.0.0"
+---
+
+# Code Review
+
+When reviewing code, provide thorough, constructive feedback...
+```
+
+详细说明见 [Skills 文档](../../skills.md)。
+
+---
+
 ## 最佳实践
 
 1. **使用 `_summary` 参数**：在工具调用时填写，让用户了解你在做什么

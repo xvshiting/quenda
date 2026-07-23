@@ -94,7 +94,12 @@ registry.register(ProviderSpec(
 from quenda.providers.model import Model, ModelCost, ModelSpec, capabilities_of
 from quenda.providers.provider import Provider, ProviderSpec
 from quenda.providers.auth import AuthResolver, EnvAuthResolver
-from quenda.providers.registry import ProviderRegistry, get_provider_registry
+from quenda.providers.registry import (
+    ProviderRegistry,
+    build_default_provider_registry,
+    get_provider_registry,
+    register_default_providers,
+)
 
 # Errors
 from quenda.providers.errors import (
@@ -112,7 +117,9 @@ from quenda.providers.errors import (
 from quenda.providers.api import (
     Api,
     ApiRegistry,
+    build_default_api_registry,
     get_api_registry,
+    register_default_apis,
     OpenAICompletionsApi,
     AnthropicMessagesApi,
 )
@@ -160,7 +167,9 @@ __all__ = [
     "EnvAuthResolver",
     # Registry
     "ProviderRegistry",
+    "build_default_provider_registry",
     "get_provider_registry",
+    "register_default_providers",
     # Errors
     "QuendaError",
     "ProviderError",
@@ -173,7 +182,9 @@ __all__ = [
     # API
     "Api",
     "ApiRegistry",
+    "build_default_api_registry",
     "get_api_registry",
+    "register_default_apis",
     "OpenAICompletionsApi",
     "AnthropicMessagesApi",
     # Built-in specs

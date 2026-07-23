@@ -10,6 +10,11 @@ import pytest
 
 from quenda.kernel import Message, Model, ModelResponse, Tool, ToolCall, ToolResult
 from quenda.kernel.types import ImageContent, ImageRef, ImageSource, TextContent
+from quenda.providers.errors import APIError, ToolCallDecodeError
+from quenda.runtime.compression import (
+    CompressionDecision,
+    CompressionResult,
+)
 from quenda.runtime import (
     AgentConfig,
     ErrorOccurred,
@@ -55,6 +60,118 @@ class FakeModel:
         if self.responses:
             return self.responses.pop(0)
         return ModelResponse(content="Done", stop_reason="end_turn")
+
+
+class FailingSecondModel:
+    """A fake model that fails after returning a tool request."""
+
+    def __init__(self) -> None:
+        self.invocation_count = 0
+
+    def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        self.invocation_count += 1
+        if self.invocation_count == 1:
+            return ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="echo", arguments={"msg": "hello"})],
+                stop_reason="tool_use",
+            )
+        raise ValueError("invalid tool JSON")
+
+
+class InvalidToolJsonThenToolModel:
+    """A fake model that recovers after invalid tool-call JSON feedback."""
+
+    def __init__(self) -> None:
+        self.invocations: list[list[Message]] = []
+
+    def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        self.invocations.append(list(messages))
+        if len(self.invocations) == 1:
+            raise ToolCallDecodeError(
+                "bad json",
+                tool_call_id="c1",
+                tool_name="echo",
+                raw_arguments='{"msg": "hello"',
+                error_position=15,
+            )
+        if len(self.invocations) == 2:
+            return ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="echo", arguments={"msg": "hello"})],
+                stop_reason="tool_use",
+            )
+        return ModelResponse(content="Done", stop_reason="end_turn")
+
+
+class RecordingStorage:
+    """Minimal storage that records session checkpoints."""
+
+    def __init__(self) -> None:
+        self.saved_sessions: list[list[Message]] = []
+
+    def save_session(self, state: SessionState) -> None:
+        self.saved_sessions.append(list(state.messages))
+
+    def save_run(self, run: object) -> None:
+        pass
+
+
+class CountingCompressionPolicy:
+    """Compress on the second budget check, after one tool round."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def should_compress(self, stats: object) -> CompressionDecision:
+        self.calls += 1
+        return CompressionDecision(
+            compress=self.calls == 2,
+            keep_last_n_messages=2,
+            target_budget_tokens=100,
+            archive_raw_messages=False,
+            summarizer_id="test",
+            reason="test threshold",
+        )
+
+
+class RecordingCompressor:
+    """Small deterministic compressor for runtime integration tests."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def compress(
+        self,
+        session: SessionState,
+        decision: CompressionDecision,
+    ) -> CompressionResult:
+        self.calls += 1
+        archived = max(0, len(session.messages) - decision.keep_last_n_messages)
+        if archived:
+            session.messages = session.messages[archived:]
+        return CompressionResult(
+            summary_messages=[Message(role="system", content="compressed")] if archived else [],
+            archived_message_count=archived,
+            archive_refs=[],
+            summary_token_count=1 if archived else 0,
+        )
+
+
+class OverflowOnceModel:
+    """Provider rejects the first request as oversized, then accepts retry."""
+
+    def __init__(self) -> None:
+        self.invocation_count = 0
+        self.spec = SimpleNamespace(
+            vision=False,
+            context_window=202_752,
+            max_output_tokens=None,
+        )
+
+    def invoke(self, messages: list[Message], *, tools: list[Tool]) -> ModelResponse:
+        self.invocation_count += 1
+        if self.invocation_count == 1:
+            raise APIError("Input too long: token limit is 202752")
+        return ModelResponse(content="Recovered", stop_reason="end_turn")
 
 
 class CapturingModel:
@@ -118,6 +235,55 @@ class TestSessionState:
         session.add_user_message("Hello")
         session.clear()
         assert len(session) == 0
+
+
+class TestSummarizerCompressor:
+    """Tests for token-budgeted history compaction."""
+
+    def test_compression_respects_hot_history_budget_and_merges_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from datetime import datetime
+
+        from quenda.runtime.compressor import SummarizerCompressor
+        from quenda.runtime.session import SummaryBlock
+        from quenda.runtime.token_estimator import TokenEstimator
+
+        session = SessionState.create("test")
+        session.summary_blocks.append(SummaryBlock(
+            content="prior durable fact",
+            message_range=(0, 4),
+            created_at=datetime.now(),
+            token_count=5,
+        ))
+        for index in range(20):
+            session.add_user_message(f"message {index}: " + ("x" * 1_000))
+
+        compressor = SummarizerCompressor(model=FakeModel([]))  # type: ignore[arg-type]
+        summarized: list[Message] = []
+
+        def fake_summarize(messages: list[Message]) -> str:
+            summarized.extend(messages)
+            return "merged summary"
+
+        monkeypatch.setattr(compressor, "_summarize", fake_summarize)
+        result = compressor.compress(session, CompressionDecision(
+            compress=True,
+            keep_last_n_messages=10,
+            target_budget_tokens=1_500,
+            archive_raw_messages=False,
+            summarizer_id="test",
+            reason="budget",
+        ))
+
+        assert result.archived_message_count > 10
+        assert TokenEstimator().estimate_messages(session.messages) <= 1_500
+        assert any(
+            isinstance(message.content, str)
+            and "prior durable fact" in message.content
+            for message in summarized
+        )
 
 
 class TestAgentConfig:
@@ -187,6 +353,68 @@ class TestRun:
         assert "Echo:" in tool_events[0].result
 
     @pytest.mark.asyncio
+    async def test_run_rechecks_compression_after_tool_round(self) -> None:
+        """Context budget is rechecked before the next model invocation."""
+        from datetime import datetime
+
+        from quenda.runtime.session import SummaryBlock
+
+        agent = AgentConfig(name="test", tools=[FakeTool()])
+        session = SessionState.create("test")
+        session.summary_blocks.append(SummaryBlock(
+            content="old summary",
+            message_range=(0, 5),
+            created_at=datetime.now(),
+            token_count=10,
+        ))
+        model = FakeModel([
+            ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="echo", arguments={"msg": "hello"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content="Done!", stop_reason="end_turn"),
+        ])
+        model.spec = SimpleNamespace(  # type: ignore[attr-defined]
+            vision=False,
+            context_window=202_752,
+            max_output_tokens=None,
+        )
+        policy = CountingCompressionPolicy()
+        compressor = RecordingCompressor()
+
+        run = Run.create(agent, session, model)
+        run.compression_policy = policy
+        run.compressor = compressor
+        events = await run.execute_to_completion("Say hello")
+
+        assert any(event.type == "compression_completed" for event in events)
+        assert policy.calls >= 2
+        assert compressor.calls == 1
+        assert len(session.summary_blocks) == 1
+        assert session.summary_blocks[0].content == "compressed"
+        assert any(isinstance(event, RunCompleted) for event in events)
+
+    @pytest.mark.asyncio
+    async def test_run_compresses_and_retries_context_overflow_once(self) -> None:
+        """A provider overflow gets one forced compression retry."""
+        agent = AgentConfig(name="test")
+        session = SessionState.create("test")
+        for index in range(8):
+            session.add_user_message(f"old message {index}")
+        model = OverflowOnceModel()
+        compressor = RecordingCompressor()
+
+        run = Run.create(agent, session, model)
+        run.compressor = compressor
+        events = await run.execute_to_completion("current request")
+
+        assert model.invocation_count == 2
+        assert compressor.calls == 1
+        assert any(event.type == "compression_completed" for event in events)
+        assert any(isinstance(event, RunCompleted) for event in events)
+        assert not any(isinstance(event, ErrorOccurred) for event in events)
+
+    @pytest.mark.asyncio
     async def test_run_with_system_prompt(self) -> None:
         """Test run with system prompt."""
         agent = AgentConfig(
@@ -224,6 +452,57 @@ class TestRun:
         assert any(isinstance(e, ErrorOccurred) for e in events)
         assert run.status == RunStatus.FAILED
         assert not any(isinstance(e, RunCompleted) for e in events)
+
+    @pytest.mark.asyncio
+    async def test_run_checkpoints_tool_results_before_later_model_failure(self) -> None:
+        """Tool side effects/results should survive a later model failure."""
+        tool = FakeTool()
+        agent = AgentConfig(name="test", tools=[tool])
+        session = SessionState.create("test")
+        model = FailingSecondModel()
+        storage = RecordingStorage()
+
+        run = Run.create(agent, session, model, storage=storage)  # type: ignore[arg-type]
+        events = await run.execute_to_completion("Say hello")
+
+        assert any(isinstance(e, ToolExecuted) for e in events)
+        assert any(isinstance(e, ErrorOccurred) for e in events)
+        assert run.status == RunStatus.FAILED
+
+        assert len(session.messages) == 3
+        assert session.messages[0].role == "user"
+        assert session.messages[1].role == "assistant"
+        assert session.messages[1].content[0].name == "echo"  # type: ignore[index,union-attr]
+        assert session.messages[2].role == "user"
+        assert session.messages[2].content[0].content == "Echo: hello"  # type: ignore[index,union-attr]
+
+        checkpoint_lengths = [len(messages) for messages in storage.saved_sessions]
+        assert 1 in checkpoint_lengths
+        assert 3 in checkpoint_lengths
+
+    @pytest.mark.asyncio
+    async def test_run_repairs_invalid_tool_call_json_once(self) -> None:
+        """Invalid tool-call JSON should be repaired within the same run."""
+        tool = FakeTool()
+        agent = AgentConfig(name="test", tools=[tool])
+        session = SessionState.create("test")
+        model = InvalidToolJsonThenToolModel()
+
+        run = Run.create(agent, session, model)
+        events = await run.execute_to_completion("Say hello")
+
+        assert any(isinstance(e, ToolExecuted) for e in events)
+        assert any(isinstance(e, RunCompleted) for e in events)
+        assert not any(isinstance(e, ErrorOccurred) for e in events)
+
+        assert len(model.invocations) == 3
+        repair_messages = [
+            message for message in model.invocations[1]
+            if isinstance(message.content, str) and "[Internal recovery]" in message.content
+        ]
+        assert repair_messages
+        assert "echo" in repair_messages[0].content
+        assert "valid JSON arguments" in repair_messages[0].content
 
     @pytest.mark.asyncio
     async def test_run_updates_session(self) -> None:
@@ -795,6 +1074,35 @@ class TestToolResultProcessingPolicy:
         assert "...[truncated]" in tool_events[0].result
         # Raw result should be unchanged
         assert len(tool_events[0].raw_result) == 10000
+
+    def test_context_safe_policy_preserves_head_errors_and_tail(self) -> None:
+        """Bounded tool views retain the regions most useful for diagnosis."""
+        from quenda.runtime.tool_policy import (
+            ContextSafeToolResultProcessingPolicy,
+            ToolResultEnvelope,
+        )
+
+        raw = (
+            "HEAD: command metadata\n"
+            + ("ordinary output\n" * 1_000)
+            + "ERROR: important failure detail\n"
+            + ("more ordinary output\n" * 1_000)
+            + "TAIL: final exit information"
+        )
+        policy = ContextSafeToolResultProcessingPolicy(max_chars=4_000)
+        processed = policy.process_result(ToolResultEnvelope(
+            call_id="c1",
+            tool_name="shell",
+            raw_content=raw,
+            is_error=True,
+            duration_ms=1,
+        ))
+
+        assert len(processed.content) <= 4_000
+        assert "HEAD: command metadata" in processed.content
+        assert "ERROR: important failure detail" in processed.content
+        assert "TAIL: final exit information" in processed.content
+        assert "raw output is preserved" in processed.content
 
     @pytest.mark.asyncio
     async def test_run_with_line_limited_policy(self) -> None:

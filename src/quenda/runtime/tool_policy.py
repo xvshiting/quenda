@@ -35,7 +35,6 @@ from typing import Protocol
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolCall
 
-
 # ============================================================================
 # ToolSelectionPolicy - Execution Approval
 # ============================================================================
@@ -328,6 +327,83 @@ class TruncatingToolResultProcessingPolicy:
         )
 
 
+class ContextSafeToolResultProcessingPolicy:
+    """
+    Bound verbose tool output while preserving diagnostically useful regions.
+
+    Keeps the beginning, matching error/warning lines, and the end instead of
+    blindly dropping everything after the first N characters. The untouched
+    raw output remains available to tracing and persistence layers.
+    """
+
+    ERROR_MARKERS = (
+        "error",
+        "exception",
+        "failed",
+        "failure",
+        "fatal",
+        "traceback",
+        "warning",
+        "assert",
+    )
+
+    def __init__(self, max_chars: int = 16_000) -> None:
+        if max_chars < 1_000:
+            raise ValueError("max_chars must be at least 1000")
+        self.max_chars = max_chars
+
+    def process_result(self, result: ToolResultEnvelope) -> ProcessedToolResult:
+        """Create a bounded model-facing view of a verbose result."""
+        content = result.raw_content
+        if len(content) <= self.max_chars:
+            return ProcessedToolResult(
+                content=content,
+                is_error=result.is_error,
+                display_hint=result.display_hint,
+                change_preview=result.change_preview,
+                result_summary=result.result_summary,
+            )
+
+        notice = (
+            f"\n\n[Context view shortened from {len(content)} to "
+            f"~{self.max_chars} characters; raw output is preserved in the run trace.]"
+        )
+        diagnostic_header = "\n\n[Relevant diagnostic lines]\n"
+        tail_header = "\n\n[End of tool output]\n"
+        available = max(
+            1,
+            self.max_chars - len(notice) - len(diagnostic_header) - len(tail_header),
+        )
+        head_size = int(available * 0.35)
+        error_size = int(available * 0.20)
+        tail_size = available - head_size - error_size
+
+        diagnostic_lines = [
+            line
+            for line in content.splitlines()
+            if any(marker in line.lower() for marker in self.ERROR_MARKERS)
+        ]
+        diagnostics = "\n".join(diagnostic_lines)
+        if len(diagnostics) > error_size:
+            suffix = "\n... [diagnostics shortened]"
+            diagnostics = diagnostics[:max(0, error_size - len(suffix))] + suffix
+        diagnostics = (diagnostics or "(none detected)")[:error_size]
+
+        sections = [
+            content[:head_size],
+            diagnostic_header + diagnostics,
+            tail_header + content[-tail_size:],
+            notice,
+        ]
+        return ProcessedToolResult(
+            content="".join(sections),
+            is_error=result.is_error,
+            display_hint=result.display_hint,
+            change_preview=result.change_preview,
+            result_summary=f"context view shortened from {len(content)} chars",
+        )
+
+
 class LineLimitedToolResultProcessingPolicy:
     """
     Limit number of lines in result.
@@ -430,6 +506,7 @@ __all__ = [
     "ToolResultProcessingPolicy",
     "PassthroughToolResultProcessingPolicy",
     "TruncatingToolResultProcessingPolicy",
+    "ContextSafeToolResultProcessingPolicy",
     "LineLimitedToolResultProcessingPolicy",
     "CompositeToolResultProcessingPolicy",
 ]

@@ -17,6 +17,7 @@ JDCLOUD_SPEC = ProviderSpec(
             id="GLM-5",
             name="GLM-5",
             tool_calling=True,
+            context_window=202_752,
         ),
         ModelSpec(
             id="Kimi-K2.5",

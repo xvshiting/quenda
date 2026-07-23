@@ -23,6 +23,7 @@ from uuid import uuid4
 
 from quenda.kernel import Kernel, Message, Model, ModelResponse
 from quenda.kernel.types import ImageContent, TextContent, ToolCall, ToolResult
+from quenda.providers.errors import APIError, ToolCallDecodeError, UnsupportedFeatureError
 from quenda.runtime.agent import AgentDefinition
 from quenda.runtime.events import (
     AnyEvent,
@@ -33,17 +34,18 @@ from quenda.runtime.events import (
     RunCompleted,
     RunStarted,
     RunTerminated,
-    ToolExecuted,
     RunInterrupted,
+    ToolExecuted,
 )
 from quenda.runtime.permission import PermissionRequiredError
 from quenda.runtime.session import SessionState
-from quenda.providers.errors import UnsupportedFeatureError
+from quenda.runtime.state import RunState
 
 if TYPE_CHECKING:
-    from quenda.host.compression_policy import CompressionPolicy
-    from quenda.host.storage import Storage
+    from quenda.runtime.compression import CompressionDecision
     from quenda.runtime.compressor import Compressor
+    from quenda.runtime.ports.compression import CompressionPolicy
+    from quenda.runtime.ports.storage import Storage
     from quenda.runtime.termination import TerminationDecision
     from quenda.runtime.termination import TerminationPolicy
     from quenda.runtime.trace import TraceSink
@@ -256,6 +258,7 @@ class Run:
 
             # Add user message to session
             self.session.add_user_message(user_message)
+            self._save_session_checkpoint()
             active_message = self.session.messages[-1]
 
             # ADR-015: Check if compression is needed before execution
@@ -266,7 +269,7 @@ class Run:
             # Build messages with system prompt
             active_resource_start = self._active_resource_start(active_message)
             messages = self._build_messages(active_resource_start=active_resource_start)
-            original_count = len(messages)
+            committed_count = len(messages)
 
             # Runtime-owned execution loop
             counters = RunCounters()
@@ -275,6 +278,8 @@ class Run:
             termination_reason = ""
             iteration = 0
             max_iterations = 100  # Hard guard
+            tool_call_decode_retry_used = False
+            context_overflow_retry_used = False
 
             # Current resolved model (may change due to routing)
             current_model = self.model
@@ -286,6 +291,22 @@ class Run:
                 if is_interrupted():
                     break
 
+                # Tool calls and results can grow context substantially within a
+                # single run, so enforce the budget before every subsequent call.
+                if iteration > 1:
+                    compression_events = list(self._check_and_compress())
+                    for event in compression_events:
+                        yield event
+                    if any(
+                        isinstance(event, CompressionCompleted)
+                        and event.result.archived_message_count > 0
+                        for event in compression_events
+                    ):
+                        messages = self._build_messages(
+                            active_resource_start=active_resource_start
+                        )
+                        committed_count = len(messages)
+
                 # ADR-028: Resolve model based on message capabilities
                 resolved_model, routing_event = self._resolve_model_for_messages(messages)
                 current_model = resolved_model
@@ -296,13 +317,45 @@ class Run:
                 # Create kernel with resolved model
                 kernel = Kernel(current_model, self.agent.tools)
 
-                # Invoke model (async wrapper around sync primitive)
-                response = await asyncio.get_running_loop().run_in_executor(
-                    self._executor,
-                    kernel.invoke_model,
-                    messages,
-                    None,  # Use registered tools
-                )
+                try:
+                    # Invoke model (async wrapper around sync primitive)
+                    response = await asyncio.get_running_loop().run_in_executor(
+                        self._executor,
+                        kernel.invoke_model,
+                        messages,
+                        None,  # Use registered tools
+                    )
+                except ToolCallDecodeError as e:
+                    if tool_call_decode_retry_used:
+                        raise
+                    tool_call_decode_retry_used = True
+                    repair_message = self._tool_call_repair_message(e)
+                    messages.append(repair_message)
+                    self._commit_session_messages([repair_message])
+                    continue
+                except APIError as e:
+                    if (
+                        context_overflow_retry_used
+                        or not self._is_context_overflow_error(e)
+                    ):
+                        raise
+                    context_overflow_retry_used = True
+                    compression_events = list(self._force_context_compression())
+                    for event in compression_events:
+                        yield event
+                    if not any(
+                        isinstance(event, CompressionCompleted)
+                        and event.result.archived_message_count > 0
+                        for event in compression_events
+                    ):
+                        raise
+                    messages = self._build_messages(
+                        active_resource_start=active_resource_start
+                    )
+                    committed_count = len(messages)
+                    continue
+
+                tool_call_decode_retry_used = False
 
                 counters.step_count += 1
 
@@ -365,9 +418,16 @@ class Run:
 
                     # Runtime owns message writeback
                     # Add assistant message with tool calls (preserves original request)
-                    messages.append(Message(role="assistant", content=response.tool_calls))
+                    assistant_tool_message = Message(role="assistant", content=response.tool_calls)
+                    messages.append(assistant_tool_message)
                     # Add user message with tool results (in request order)
-                    messages.append(Message(role="user", content=tool_results))
+                    tool_result_message = Message(role="user", content=tool_results)
+                    messages.append(tool_result_message)
+                    self._commit_session_messages([
+                        assistant_tool_message,
+                        tool_result_message,
+                    ])
+                    committed_count = len(messages)
 
                     # ADR-027: Handle skill activation within the same Run
                     # Detect skill_activation results and update prompt for next step
@@ -382,10 +442,13 @@ class Run:
                                 messages[:] = self._build_messages(
                                     active_resource_start=active_resource_start
                                 )
+                                committed_count = len(messages)
 
                     resource_activation_messages = self._build_resource_activation_messages(tool_results)
                     if resource_activation_messages:
                         messages.extend(resource_activation_messages)
+                        self._commit_session_messages(resource_activation_messages)
+                        committed_count = len(messages)
 
                     # Check if interrupted during tool phase
                     if is_interrupted():
@@ -400,9 +463,7 @@ class Run:
             # Handle termination (policy-triggered stop)
             if termination_requested:
                 # Update session with messages
-                for msg in messages[original_count:]:
-                    if msg.role != "system":
-                        self.session.messages.append(msg)
+                self._commit_session_messages(messages[committed_count:])
 
                 terminated = RunTerminated(
                     reason=termination_reason,
@@ -416,8 +477,6 @@ class Run:
                 self.status = RunStatus.FAILED
 
                 if self.storage:
-                    from quenda.host.storage import RunState
-
                     run_state = RunState(
                         id=self.id,
                         session_id=self.session.id,
@@ -435,9 +494,7 @@ class Run:
 
             # Handle interruption
             if is_interrupted():
-                for msg in messages[original_count:]:
-                    if msg.role != "system":
-                        self.session.messages.append(msg)
+                self._commit_session_messages(messages[committed_count:])
 
                 interrupted = RunInterrupted(
                     reason="user_cancel",
@@ -449,8 +506,6 @@ class Run:
                 self.status = RunStatus.FAILED
 
                 if self.storage:
-                    from quenda.host.storage import RunState
-
                     run_state = RunState(
                         id=self.id,
                         session_id=self.session.id,
@@ -467,9 +522,7 @@ class Run:
                 return
 
             # Normal completion
-            for msg in messages[original_count:]:
-                if msg.role != "system":
-                    self.session.messages.append(msg)
+            self._commit_session_messages(messages[committed_count:])
 
             completed_at = datetime.now()
             total_duration_ms = int((time.perf_counter() - run_start_time) * 1000)
@@ -486,8 +539,6 @@ class Run:
             self.status = RunStatus.COMPLETED
 
             if self.storage:
-                from quenda.host.storage import RunState
-
                 run_state = RunState(
                     id=self.id,
                     session_id=self.session.id,
@@ -504,6 +555,8 @@ class Run:
         except Exception as e:
             self.status = RunStatus.FAILED
 
+            self._save_session_checkpoint()
+
             error = ErrorOccurred(
                 error_message=str(e),
                 error_type=type(e).__name__,
@@ -512,8 +565,6 @@ class Run:
             yield error
 
             if self.storage:
-                from quenda.host.storage import RunState
-
                 run_state = RunState(
                     id=self.id,
                     session_id=self.session.id,
@@ -538,6 +589,43 @@ class Run:
         if summary and isinstance(summary, str):
             return {"_summary": summary}
         return {}
+
+    def _commit_session_messages(self, messages: Sequence[Message]) -> None:
+        """Append committed loop messages to session history and persist a checkpoint."""
+        committed = False
+        for message in messages:
+            if message.role == "system":
+                continue
+            self.session.messages.append(message)
+            committed = True
+
+        if committed:
+            self._save_session_checkpoint()
+
+    def _save_session_checkpoint(self) -> None:
+        """Persist the current session state when storage is configured."""
+        if self.storage is None:
+            return
+        self.storage.save_session(self.session)
+
+    def _tool_call_repair_message(self, error: ToolCallDecodeError) -> Message:
+        """Build a compact model-facing repair prompt for invalid tool arguments."""
+        tool_name = error.tool_name or "the requested tool"
+        location = (
+            f" at character {error.error_position}"
+            if error.error_position is not None
+            else ""
+        )
+        return Message(
+            role="user",
+            content=(
+                "[Internal recovery]\n"
+                f"Your previous response attempted to call `{tool_name}`, but its "
+                f"arguments were not valid JSON{location}. The tool was not executed. "
+                "Regenerate only the intended tool call with valid JSON arguments. "
+                "Do not restart the task or repeat earlier successful tool calls."
+            ),
+        )
 
     def _termination_decision(
         self,
@@ -1113,7 +1201,6 @@ class Run:
         Check if compression is needed and execute if necessary.
         """
         from quenda.runtime.compression import CompressionStats
-        from quenda.runtime.session import SummaryBlock
         from quenda.runtime.token_estimator import TokenEstimator
 
         if not self.compression_policy:
@@ -1121,7 +1208,10 @@ class Run:
 
         messages = self._build_messages()
         estimator = TokenEstimator()
-        estimated_tokens = estimator.estimate_messages(messages)
+        estimated_tokens = (
+            estimator.estimate_messages(messages)
+            + estimator.estimate_tools(self.agent.tools)
+        )
 
         stats = CompressionStats(
             estimated_input_tokens=estimated_tokens,
@@ -1138,34 +1228,95 @@ class Run:
 
         decision = self.compression_policy.should_compress(stats)
 
-        if decision.compress and self.compressor:
-            started = CompressionStarted(
-                decision=decision,
-                session_id=self.session.id,
+        if decision.compress:
+            if decision.target_budget_tokens is not None:
+                fixed_messages = [
+                    message
+                    for message in messages
+                    if message.role == "system"
+                ]
+                fixed_tokens = (
+                    estimator.estimate_messages(fixed_messages)
+                    + estimator.estimate_tools(self.agent.tools)
+                )
+                decision = replace(
+                    decision,
+                    target_budget_tokens=max(
+                        8_000,
+                        decision.target_budget_tokens - fixed_tokens - 4_000,
+                    ),
+                )
+            yield from self._compress(decision)
+
+    def _force_context_compression(self) -> AsyncIterator[AnyEvent]:
+        """Force one conservative compression after a provider overflow response."""
+        from quenda.runtime.compression import CompressionDecision
+
+        if not self.compressor:
+            return
+
+        yield from self._compress(CompressionDecision(
+            compress=True,
+            keep_last_n_messages=4,
+            target_budget_tokens=None,
+            archive_raw_messages=True,
+            summarizer_id="default",
+            reason="provider rejected request as input too long",
+        ))
+
+    def _compress(self, decision: CompressionDecision) -> AsyncIterator[AnyEvent]:
+        """Execute and apply a compression decision."""
+        from quenda.runtime.session import SummaryBlock
+
+        if not self.compressor:
+            return
+
+        started = CompressionStarted(
+            decision=decision,
+            session_id=self.session.id,
+        )
+        self._emit(started)
+        yield started
+
+        result = self.compressor.compress(self.session, decision)
+
+        replacement_blocks = [
+            SummaryBlock(
+                content=msg.content,
+                message_range=(0, result.archived_message_count),
+                created_at=datetime.now(),
+                token_count=result.summary_token_count,
             )
-            self._emit(started)
-            yield started
+            for msg in result.summary_messages
+        ]
+        if replacement_blocks:
+            self.session.summary_blocks = replacement_blocks
 
-            result = self.compressor.compress(self.session, decision)
-
-            for msg in result.summary_messages:
-                self.session.summary_blocks.append(SummaryBlock(
-                    content=msg.content,
-                    message_range=(0, result.archived_message_count),
-                    created_at=datetime.now(),
-                    token_count=result.summary_token_count,
-                ))
-
-            self.session.archive_refs.extend(result.archive_refs)
+        self.session.archive_refs.extend(result.archive_refs)
+        if result.archived_message_count > 0:
             self.session.usage.compression_count += 1
             self.session.usage.last_compressed_at = datetime.now()
+            self._save_session_checkpoint()
 
-            completed = CompressionCompleted(
-                result=result,
-                session_id=self.session.id,
-            )
-            self._emit(completed)
-            yield completed
+        completed = CompressionCompleted(
+            result=result,
+            session_id=self.session.id,
+        )
+        self._emit(completed)
+        yield completed
+
+    @staticmethod
+    def _is_context_overflow_error(error: APIError) -> bool:
+        """Recognize common provider messages for an oversized model request."""
+        message = str(error).lower()
+        return any(marker in message for marker in (
+            "input too long",
+            "context length",
+            "context_length_exceeded",
+            "maximum context",
+            "token limit",
+            "too many tokens",
+        ))
 
     def _accumulate_usage(self, response: ModelResponse) -> None:
         """

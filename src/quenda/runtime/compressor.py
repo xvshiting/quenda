@@ -18,7 +18,7 @@ from quenda.kernel.types import Message, ToolCall, ToolResult
 
 if TYPE_CHECKING:
     from quenda.kernel.model import Model
-    from quenda.host.storage import Storage
+    from quenda.runtime.ports.storage import Storage
     from quenda.runtime.compression import CompressionDecision, CompressionResult
     from quenda.runtime.session import SessionState
 
@@ -120,7 +120,12 @@ class SummarizerCompressor:
         from quenda.runtime.token_estimator import TokenEstimator
 
         # 1. Check if compression is needed
-        if len(session.messages) <= decision.keep_last_n_messages:
+        hot_history_fits = (
+            decision.target_budget_tokens is None
+            or TokenEstimator().estimate_messages(session.messages)
+            <= decision.target_budget_tokens
+        )
+        if len(session.messages) <= decision.keep_last_n_messages and hot_history_fits:
             # Nothing to compress
             return CompressionResult(
                 summary_messages=[],
@@ -133,8 +138,33 @@ class SummarizerCompressor:
         # We need to ensure remaining messages form a valid sequence:
         # - Cannot start with tool results (must follow tool calls)
         # - Cannot have orphaned tool calls (calls without results)
-        initial_split = len(session.messages) - decision.keep_last_n_messages
+        initial_split = max(
+            1 if not hot_history_fits else 0,
+            len(session.messages) - decision.keep_last_n_messages,
+        )
         split_index = self._find_valid_split_point(session.messages, initial_split)
+
+        # A message-count limit alone is unsafe because one tool result can be
+        # enormous. Continue moving the boundary until the retained hot history
+        # fits the runtime-computed token budget.
+        if decision.target_budget_tokens is not None:
+            estimator = TokenEstimator()
+            while (
+                split_index < len(session.messages) - 1
+                and estimator.estimate_messages(session.messages[split_index:])
+                > decision.target_budget_tokens
+            ):
+                next_split = split_index + 1
+                # When shrinking the retained suffix, exclude a tool call and
+                # its result together rather than retaining an orphan result.
+                while (
+                    next_split < len(session.messages) - 1
+                    and self._is_tool_result_message(session.messages[next_split])
+                ):
+                    next_split += 1
+                if next_split <= split_index:
+                    break
+                split_index = next_split
 
         if split_index <= 0:
             # Cannot find a valid split point, don't compress
@@ -157,7 +187,11 @@ class SummarizerCompressor:
             )
 
         # 3. Generate summary using LLM
-        summary_content = self._summarize(to_compress)
+        prior_summaries = [
+            Message(role="system", content=f"[已有历史摘要]\n{block.content}")
+            for block in session.summary_blocks
+        ]
+        summary_content = self._summarize(prior_summaries + to_compress)
 
         # 4. Archive raw messages if requested
         archive_refs = []
@@ -393,19 +427,29 @@ class SummarizerCompressor:
                 # Tool calls or results
                 items = list(msg.content)
                 if items:
-                    if hasattr(items[0], 'name'):
-                        if hasattr(items[0], 'arguments'):
-                            # Tool calls
-                            line = f"[{msg.role}]: 调用工具: {', '.join(getattr(i, 'name', '?') for i in items)}"
-                        else:
-                            # Tool results
-                            line = f"[{msg.role}]: 工具结果: {', '.join(getattr(i, 'name', '?') for i in items)}"
+                    if isinstance(items[0], ToolCall):
+                        calls = [
+                            f"{item.name}({str(item.arguments)[:500]})"
+                            for item in items
+                            if isinstance(item, ToolCall)
+                        ]
+                        line = f"[{msg.role}]: 调用工具: {'; '.join(calls)}"
+                    elif isinstance(items[0], ToolResult):
+                        results = [
+                            f"{item.name}: {item.content[:2_000]}"
+                            for item in items
+                            if isinstance(item, ToolResult)
+                        ]
+                        line = f"[{msg.role}]: 工具结果:\n" + "\n".join(results)
                     else:
                         line = f"[{msg.role}]: [复杂内容]"
                 else:
                     line = f"[{msg.role}]: [空]"
 
             if total_length + len(line) > max_length:
+                remaining = max_length - total_length
+                if remaining > 0:
+                    lines.append(line[:remaining])
                 lines.append("... (内容已截断)")
                 break
 

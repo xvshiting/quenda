@@ -89,6 +89,30 @@ class NetworkError(APIError):
     pass
 
 
+class ToolCallDecodeError(APIError):
+    """
+    Provider returned a tool call whose arguments could not be decoded.
+
+    This is usually recoverable by asking the model to regenerate the same
+    tool call with valid JSON arguments.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        tool_call_id: str | None = None,
+        tool_name: str | None = None,
+        raw_arguments: str = "",
+        error_position: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.tool_call_id = tool_call_id
+        self.tool_name = tool_name
+        self.raw_arguments = raw_arguments
+        self.error_position = error_position
+
+
 class ModelNotFoundError(ProviderError):
     """
     Model not found in provider.
@@ -115,7 +139,7 @@ class UnsupportedFeatureError(ProviderError):
             (used to suggest alternatives to the user).
     """
 
-    def __init(
+    def __init__(
         self,
         message: str,
         feature: str | None = None,
@@ -181,6 +205,7 @@ __all__ = [
     "APIError",
     "RateLimitError",
     "NetworkError",
+    "ToolCallDecodeError",
     "ModelNotFoundError",
     "UnsupportedFeatureError",
 ]

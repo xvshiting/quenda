@@ -140,6 +140,28 @@ def test_run_agent_once_resumes_or_creates_named_session(monkeypatch, tmp_path: 
     assert agent.opened_session.id == "session-42"
 
 
+def test_run_agent_once_forwards_provider_registry(monkeypatch, tmp_path: Path) -> None:
+    setup, _agent = make_setup()
+    provider_registry = object()
+    seen: dict[str, object] = {}
+
+    def fake_setup_agent(*args, **kwargs):
+        seen.update(kwargs)
+        return setup
+
+    monkeypatch.setattr(runner, "setup_agent", fake_setup_agent)
+
+    ok = runner.run_agent_once(
+        agent_path=tmp_path / "agent",
+        workspace=tmp_path,
+        user_message="hello",
+        provider_registry=provider_registry,
+    )
+
+    assert ok is True
+    assert seen["provider_registry"] is provider_registry
+
+
 def test_skill_activation_handler_refreshes_prompt(monkeypatch) -> None:
     setup, agent = make_setup()
     session = FakeSession()

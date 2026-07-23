@@ -16,6 +16,7 @@ Quenda Code REPL 内置了丰富的斜杠命令，用于管理会话、切换模
 | `/exit` | 退出 |
 | `/mode` | 切换交互模式 |
 | `/model` | 查看/切换模型 |
+| `/skill` | 管理技能（激活/停用/查看） |
 | `/session` | 会话管理 |
 | `/context` | 查看上下文信息 |
 | `/status` | 查看会话状态（含 token 用量） |
@@ -133,8 +134,8 @@ Quenda Code REPL 内置了丰富的斜杠命令，用于管理会话、切换模
 
 > /session list
 **Saved sessions:**
-  1. `abc123ef...` (15 msgs, 2025-06-24 10:30)
-  2. `def456gh...` (8 msgs, 2025-06-23 14:20)
+  1. `abc123ef...` (15 msgs, 2026-06-30 10:30)
+  2. `def456gh...` (8 msgs, 2026-06-29 14:20)
 ```
 
 恢复会话需要在启动时指定：
@@ -196,6 +197,44 @@ quenda code --session <session-id>
 ```
 
 手动触发上下文压缩。通常当会话消息较多、接近上下文窗口上限时使用。
+
+---
+
+## Skills 命令
+
+Quenda Code 支持 Skills（能力包）系统，可以按需激活专业技能：
+
+```text
+/skill list                    # 查看可用和已激活的技能
+/skill activate <name>         # 激活一个技能
+/skill deactivate <name>       # 停用一个技能
+/skill resources               # 查看当前激活技能的资源列表
+```
+
+示例：
+
+```
+> /skill list
+**Available Skills:**
+
+  • code-review (available) — Apply when reviewing code
+  • testing (available) — Testing patterns and best practices
+  • webapp-testing (available) — Browser automation and testing
+
+> /skill activate code-review
+✅ Activated skill `code-review`.
+
+> /skill resources
+**Skill Resources (code-review):**
+
+  references:
+    - style-guide.md
+    - security-checklist.md
+  templates:
+    - review-report.md
+```
+
+Skills 会改变 Agent 的行为，注入专业技能指令。
 
 ---
 

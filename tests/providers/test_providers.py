@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from quenda.providers import (
+    build_default_provider_registry,
     Model,
     ModelCost,
     ModelSpec,
@@ -14,7 +15,13 @@ from quenda.providers import (
     ProviderRegistry,
     get_provider_registry,
 )
-from quenda.providers.api import ApiRegistry, OpenAICompletionsApi, AnthropicMessagesApi
+from quenda.providers.api import (
+    ApiRegistry,
+    AnthropicMessagesApi,
+    OpenAICompletionsApi,
+    build_default_api_registry,
+    get_api_registry,
+)
 from quenda.kernel.types import Message
 
 
@@ -301,7 +308,7 @@ class TestBuiltinProviders:
         from quenda.providers.builtins import JDCLOUD_SPEC
 
         assert JDCLOUD_SPEC.id == "jdcloud"
-        assert any(m.id == "glm-5" for m in JDCLOUD_SPEC.models)
+        assert any(m.id == "GLM-5" for m in JDCLOUD_SPEC.models)
 
     def test_ollama_spec(self) -> None:
         """Test Ollama spec."""
@@ -318,6 +325,32 @@ class TestBuiltinProviders:
 
 class TestGlobalRegistry:
     """Tests for the global provider registry."""
+
+    def test_build_default_api_registry_returns_fresh_instances(self) -> None:
+        """Test fresh API registries do not share registrations."""
+        first = build_default_api_registry()
+        second = build_default_api_registry()
+
+        assert first is not second
+        assert first.has("openai-completions")
+
+        first.unregister("openai-completions")
+        assert not first.has("openai-completions")
+        assert second.has("openai-completions")
+        assert get_api_registry().has("openai-completions")
+
+    def test_build_default_provider_registry_returns_fresh_instances(self) -> None:
+        """Test fresh provider registries do not share registrations."""
+        first = build_default_provider_registry()
+        second = build_default_provider_registry()
+
+        assert first is not second
+        assert first.has_provider("openai")
+
+        first.unregister("openai")
+        assert not first.has_provider("openai")
+        assert second.has_provider("openai")
+        assert get_provider_registry().has_provider("openai")
 
     def test_get_global_registry(self) -> None:
         """Test getting the global registry."""

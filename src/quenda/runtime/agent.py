@@ -26,8 +26,8 @@ if TYPE_CHECKING:
     from quenda.kernel.tool import Tool
     from quenda.runtime.compressor import Compressor
     from quenda.runtime.events import AnyEvent
-    from quenda.host.compression_policy import CompressionPolicy
-    from quenda.host.storage import Storage
+    from quenda.runtime.ports.compression import CompressionPolicy
+    from quenda.runtime.ports.storage import Storage
     from quenda.runtime.tool_policy import ToolSelectionPolicy, ToolResultProcessingPolicy
     from quenda.runtime.termination import TerminationPolicy
     from quenda.runtime.trace import TraceSink
@@ -151,26 +151,6 @@ class Agent:
         self._trace_sink = trace_sink
         self._vision_model = vision_model
         self._capability_routing = capability_routing
-        # MCP support (set by Host layer)
-        self._mcp_manager: Any = None
-        self._mcp_config: Any = None
-        self._mcp_connected = False
-
-    def set_mcp(self, manager: Any, config: Any) -> None:
-        """Set MCP manager and config (called by Host layer)."""
-        self._mcp_manager = manager
-        self._mcp_config = config
-
-    @property
-    def mcp_manager(self) -> Any:
-        """The MCP client manager."""
-        return self._mcp_manager
-
-    @property
-    def mcp_connected(self) -> bool:
-        """Whether MCP servers are connected."""
-        return self._mcp_connected
-
     @property
     def name(self) -> str:
         """The agent name."""

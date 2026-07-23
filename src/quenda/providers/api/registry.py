@@ -63,13 +63,18 @@ def get_api_registry() -> ApiRegistry:
     """Get the global API registry."""
     global _global_registry
     if _global_registry is None:
-        _global_registry = ApiRegistry()
-        # Register default APIs
-        _register_default_apis(_global_registry)
+        _global_registry = build_default_api_registry()
     return _global_registry
 
 
-def _register_default_apis(registry: ApiRegistry) -> None:
+def build_default_api_registry() -> ApiRegistry:
+    """Build a fresh API registry with built-in implementations."""
+    registry = ApiRegistry()
+    register_default_apis(registry)
+    return registry
+
+
+def register_default_apis(registry: ApiRegistry) -> None:
     """Register built-in API implementations."""
     from quenda.providers.api.openai_completions import OpenAICompletionsApi
     from quenda.providers.api.anthropic_messages import AnthropicMessagesApi
@@ -78,3 +83,14 @@ def _register_default_apis(registry: ApiRegistry) -> None:
     registry.register("openai-completions", OpenAICompletionsApi())
     registry.register("anthropic-messages", AnthropicMessagesApi())
     registry.register("my-kimi-completions", MyKimiCompletionsApi())
+
+
+_register_default_apis = register_default_apis
+
+
+__all__ = [
+    "ApiRegistry",
+    "build_default_api_registry",
+    "get_api_registry",
+    "register_default_apis",
+]

@@ -28,6 +28,7 @@ from quenda.providers.errors import (
     AuthenticationError,
     NetworkError,
     RateLimitError,
+    ToolCallDecodeError,
 )
 from quenda.providers.retry import retry_with_backoff
 
@@ -214,10 +215,11 @@ class OpenAICompletionsApi(Api):
                         final_tool_calls = []
                         for idx in sorted(tool_calls_buffer.keys()):
                             tc_data = tool_calls_buffer[idx]
-                            try:
-                                args = json.loads(tc_data["arguments"])
-                            except json.JSONDecodeError:
-                                args = {}
+                            args = self._decode_tool_arguments(
+                                tc_data["arguments"],
+                                tool_call_id=tc_data["id"],
+                                tool_name=tc_data["name"],
+                            )
                             final_tool_calls.append(
                                 ToolCall(
                                     id=tc_data["id"],
@@ -264,10 +266,10 @@ class OpenAICompletionsApi(Api):
 
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
-                args = (
-                    json.loads(tc.function.arguments)
-                    if tc.function.arguments
-                    else {}
+                args = self._decode_tool_arguments(
+                    tc.function.arguments,
+                    tool_call_id=tc.id,
+                    tool_name=tc.function.name,
                 )
                 tool_calls.append(
                     ToolCall(
@@ -300,3 +302,35 @@ class OpenAICompletionsApi(Api):
             stop_reason="tool_use" if tool_calls else "end_turn",
             usage=usage,
         )
+
+    def _decode_tool_arguments(
+        self,
+        raw_arguments: str | None,
+        *,
+        tool_call_id: str | None,
+        tool_name: str | None,
+    ) -> dict:
+        """Decode provider tool-call arguments into a dict."""
+        if not raw_arguments:
+            return {}
+
+        try:
+            args = json.loads(raw_arguments)
+        except json.JSONDecodeError as e:
+            raise ToolCallDecodeError(
+                f"Invalid JSON arguments for tool call `{tool_name or '<unknown>'}`: {e}",
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                raw_arguments=raw_arguments,
+                error_position=e.pos,
+            ) from e
+
+        if not isinstance(args, dict):
+            raise ToolCallDecodeError(
+                f"Tool call `{tool_name or '<unknown>'}` arguments must decode to an object.",
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                raw_arguments=raw_arguments,
+                error_position=None,
+            )
+        return args

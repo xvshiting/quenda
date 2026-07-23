@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from quenda.kernel.tool import Tool
     from quenda.kernel.types import Message
 
 
@@ -80,6 +81,16 @@ class TokenEstimator:
         total += 3
 
         return max(total, 0)
+
+    def estimate_tools(self, tools: list[Tool]) -> int:
+        """Estimate tool-definition tokens included with every model request."""
+        total = 0
+        for tool in tools:
+            total += self.estimate_text(tool.name)
+            total += self.estimate_text(tool.description)
+            total += self.estimate_text(str(tool.parameters))
+            total += 16
+        return total
 
 
 __all__ = ["TokenEstimator"]

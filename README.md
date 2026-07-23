@@ -14,13 +14,14 @@
 
 ## What's New
 
-### 2026-06
+### 2026-06 (v0.3.0)
 
 - **Skills Framework** — Composable capability packages with instructions, resources, and tools. Discover, activate, and use skills on demand. [Learn more →](docs/skills.md)
 - **Context Compression** — Automatic summarization when context grows large, with configurable policies and manual `/compress` command.
 - **Interaction Requests** — LLM can ask users for choices, confirmations, and input via structured interaction protocol.
-- **Agent Commands Extension** — Define custom slash commands in `extensions/commands/*.py`.
 - **Custom Tool Extensions** — Agent-local tools via `extensions/tools/*.py` with `config.yaml` declaration.
+- **Policy System** — Runtime policies for termination, tool selection, and result processing.
+- **Multimodal Support** — Image input support with resource activation.
 - **26 Model Providers** — OpenAI, Anthropic, DeepSeek, DashScope, Moonshot, Ollama, and 20 more.
 
 ---

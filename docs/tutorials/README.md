@@ -1,7 +1,7 @@
 # Quenda 框架文档
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version 0.3.0">
   <img src="https://img.shields.io/badge/python-3.12+-green" alt="Python 3.12+">
 </p>
 
@@ -58,4 +58,4 @@
   <a href="../../README.md">🏠 返回项目首页</a>
 </div>
 
-*文档版本: v0.1.0 · 最后更新: 2025-06-24*
+*文档版本: v0.3.0 · 最后更新: 2026-06-30*

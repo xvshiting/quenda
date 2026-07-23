@@ -9,11 +9,10 @@ Provides:
 from __future__ import annotations
 
 import asyncio
-import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import uuid4
 
 from quenda.kernel.types import ImageContent, ImageRef, Message, TextContent
@@ -24,11 +23,14 @@ if TYPE_CHECKING:
     from quenda.runtime.agent import AgentConfig
     from quenda.runtime.compressor import Compressor
     from quenda.runtime.events import AnyEvent
-    from quenda.host.compression_policy import CompressionPolicy
-    from quenda.host.storage import Storage
+    from quenda.runtime.ports.compression import CompressionPolicy
+    from quenda.runtime.ports.storage import Storage
     from quenda.runtime.tool_policy import ToolSelectionPolicy, ToolResultProcessingPolicy
     from quenda.runtime.termination import TerminationPolicy
     from quenda.runtime.trace import TraceSink
+
+
+_T = TypeVar("_T")
 
 
 @dataclass
@@ -249,43 +251,6 @@ class Session:
         from dataclasses import replace
         self._agent = replace(self._agent, system_prompt=system_prompt)
 
-    async def _connect_mcp_if_needed(self) -> None:
-        """
-        Connect to MCP servers if configured and not yet connected.
-
-        This is called lazily on the first send() to ensure the connection
-        happens within the correct async context.
-        """
-        # Check if agent has MCP configured
-        if not hasattr(self._agent, '_mcp_manager') or self._agent._mcp_manager is None:
-            return
-
-        if self._agent._mcp_connected:
-            return
-
-        if self._agent._mcp_config is None or not self._agent._mcp_config.has_servers():
-            return
-
-        import logging
-        logger = logging.getLogger(__name__)
-
-        try:
-            from quenda.host.mcp import MCPToolRegistry
-
-            server_names = self._agent._mcp_config.get_server_ids()
-            print(f"   Connecting to MCP servers: {', '.join(server_names)}")
-
-            connected = await self._agent._mcp_manager.connect_from_config(self._agent._mcp_config)
-            if connected:
-                registry = MCPToolRegistry(self._agent._mcp_manager)
-                mcp_tools = await registry.build_tools()
-                self._agent.add_tools(mcp_tools)
-                self._agent._mcp_connected = True
-                print(f"   Connected {len(mcp_tools)} MCP tool(s)")
-        except Exception as e:
-            print(f"   Warning: MCP connection failed: {e}", file=sys.stderr)
-            logger.warning(f"MCP connection failed: {e}")
-
     def save(self) -> None:
         """
         Persist session state to storage.
@@ -369,9 +334,6 @@ class Session:
         """
         from quenda.runtime import Run, RunCompleted
 
-        # Connect MCP servers if configured and not yet connected
-        await self._connect_mcp_if_needed()
-
         active_model = model or self._model
         if active_model is None:
             raise ValueError("No model configured. Pass model to Agent, Session, or send().")
@@ -440,6 +402,22 @@ class Session:
             self._loop = asyncio.new_event_loop()
         return self._loop
 
+    def _run_sync(self, awaitable: Coroutine[Any, Any, _T]) -> _T:
+        """Run an awaitable and ensure Ctrl+C cannot leave a task pending."""
+        loop = self._get_or_create_loop()
+        task = loop.create_task(awaitable)
+        try:
+            return loop.run_until_complete(task)
+        except KeyboardInterrupt:
+            # run_until_complete stops the loop but does not cancel its task.
+            # Drain the cancellation so a later send cannot resume the old run.
+            task.cancel()
+            try:
+                loop.run_until_complete(task)
+            except asyncio.CancelledError:
+                pass
+            raise
+
     def send_sync(
         self,
         message: str | Sequence[TextContent | ImageContent],
@@ -449,8 +427,7 @@ class Session:
         skill_activation_handler: Callable[[list[str]], str | None] | None = None,
     ) -> str:
         """Synchronous send using persistent event loop."""
-        loop = self._get_or_create_loop()
-        return loop.run_until_complete(
+        return self._run_sync(
             self.send(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,
@@ -466,8 +443,7 @@ class Session:
         skill_activation_handler: Callable[[list[str]], str | None] | None = None,
     ) -> tuple[str, list[AnyEvent]]:
         """Synchronous variant of send_collecting() using persistent event loop."""
-        loop = self._get_or_create_loop()
-        return loop.run_until_complete(
+        return self._run_sync(
             self.send_collecting(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,

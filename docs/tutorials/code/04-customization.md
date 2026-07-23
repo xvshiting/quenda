@@ -260,7 +260,7 @@ schema_version: 1
 id: "ws_xxx"
 name: "MyProject"
 binding:
-  created_at: "2025-06-24T10:00:00"
+  created_at: "2026-06-30T10:00:00"
   path_hint: "/path/to/project"
 ```
 

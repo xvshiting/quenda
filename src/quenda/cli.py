@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -51,6 +52,24 @@ from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.events import ModelResponded, AnyEvent
 from quenda.runtime.permission import PermissionRequest
 from quenda.host.permission_manager import PermissionManager, format_permission_prompt
+
+
+_DOUBLE_CTRL_C_WINDOW_SECONDS = 1.5
+
+
+def _register_exit_interrupt(
+    previous_interrupt_at: float | None,
+    *,
+    now: float | None = None,
+) -> tuple[bool, float | None]:
+    """Record an idle Ctrl+C and report whether it confirms REPL exit."""
+    current = time.monotonic() if now is None else now
+    if (
+        previous_interrupt_at is not None
+        and 0 <= current - previous_interrupt_at <= _DOUBLE_CTRL_C_WINDOW_SECONDS
+    ):
+        return True, None
+    return False, current
 
 
 def _build_cli_user_message(
@@ -278,13 +297,6 @@ def run_repl(
     model_name = setup.model_name
     workspace_id = setup.workspace_id
 
-    # Pass MCP manager to agent (connection happens lazily in session.send)
-    if setup.binding.mcp_manager is not None:
-        mcp_config = None
-        if setup.agent_package.config and setup.agent_package.config.mcp:
-            mcp_config = setup.agent_package.config.mcp
-        agent.set_mcp(setup.binding.mcp_manager, mcp_config)
-
     # Resolve theme: CLI arg > agent config > default
     if theme is None:
         config = setup.agent_package.config
@@ -431,6 +443,7 @@ def _run_repl(
 
     # Track whether we're in a run (for interrupt handling)
     in_run = False
+    last_exit_interrupt_at: float | None = None
 
     try:
         while True:
@@ -441,6 +454,7 @@ def _run_repl(
 
                 # Get user input (status bar is shown via bottom_toolbar)
                 user_input = repl_input.get_input("> ").strip()
+                last_exit_interrupt_at = None
 
                 if not user_input:
                     continue
@@ -590,7 +604,8 @@ def _run_repl(
                     session.state.metadata["permission_cache"] = permission_manager.to_state()
                     session.save()
                     indicator.stop()
-                    in_run = False
+
+                in_run = False
 
                 # Note: Per Agent Skills specification, skill instructions are
                 # "durable behavioral guidance" and should persist throughout the
@@ -604,10 +619,6 @@ def _run_repl(
                 # If we're in a run, interrupt it and continue
                 # Otherwise, exit the REPL
                 if in_run:
-                    # Signal interrupt to kernel thread
-                    from quenda.utils.interrupt import interrupt
-                    interrupt()
-
                     # Make sure indicator is stopped
                     indicator.stop()
 
@@ -615,13 +626,18 @@ def _run_repl(
                     status_bar.set_mode(session.mode)
 
                     print(f"\n{theme.interrupt_icon} Interrupted")
-                    clear_interrupt()
                     in_run = False  # Reset the flag
                     continue
                 else:
-                    # Not in a run - Ctrl+C at input stage, exit REPL
-                    print(f"\n\n👋 Session saved. Bye!")
-                    break
+                    # At the input prompt, require a quick second Ctrl+C to exit.
+                    should_exit, last_exit_interrupt_at = _register_exit_interrupt(
+                        last_exit_interrupt_at
+                    )
+                    if should_exit:
+                        print(f"\n\n👋 Session saved. Bye!")
+                        break
+                    print("\nPress Ctrl+C again within 1.5s to exit.")
+                    continue
             except EOFError:
                 print(f"\n\n👋 Session saved. Bye!")
                 break

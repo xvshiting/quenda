@@ -247,8 +247,8 @@ class CompressionConfig:
 
         return cls(
             enabled=_coerce_bool(data.get("enabled", True), True),
-            threshold_ratio=data.get("threshold_ratio", 0.8),
-            keep_last_n_messages=data.get("keep_last_n_messages", 10),
+            threshold_ratio=float(data.get("threshold_ratio", 0.8)),
+            keep_last_n_messages=int(data.get("keep_last_n_messages", 10)),
             archive_raw_messages=_coerce_bool(data.get("archive_raw_messages", True), True),
             compression_model=data.get("compression_model"),
         )

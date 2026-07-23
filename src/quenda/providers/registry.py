@@ -131,12 +131,28 @@ def get_provider_registry() -> ProviderRegistry:
     global _global_registry
     if _global_registry is None:
         from quenda.providers.api import get_api_registry
-        _global_registry = ProviderRegistry(api_registry=get_api_registry())
-        _register_default_providers(_global_registry)
+
+        _global_registry = build_default_provider_registry(
+            api_registry=get_api_registry()
+        )
     return _global_registry
 
 
-def _register_default_providers(registry: ProviderRegistry) -> None:
+def build_default_provider_registry(
+    auth: AuthResolver | None = None,
+    api_registry: ApiRegistry | None = None,
+) -> ProviderRegistry:
+    """Build a fresh provider registry with built-in providers."""
+    if api_registry is None:
+        from quenda.providers.api import build_default_api_registry
+
+        api_registry = build_default_api_registry()
+    registry = ProviderRegistry(auth=auth, api_registry=api_registry)
+    register_default_providers(registry)
+    return registry
+
+
+def register_default_providers(registry: ProviderRegistry) -> None:
     """Register built-in providers."""
     from quenda.providers.builtins import (
         AGNES_SPEC,
@@ -195,3 +211,14 @@ def _register_default_providers(registry: ProviderRegistry) -> None:
     registry.register(XAI_SPEC)
     registry.register(XIAOMI_SPEC)
     registry.register(ZHIPU_SPEC)
+
+
+_register_default_providers = register_default_providers
+
+
+__all__ = [
+    "ProviderRegistry",
+    "build_default_provider_registry",
+    "get_provider_registry",
+    "register_default_providers",
+]

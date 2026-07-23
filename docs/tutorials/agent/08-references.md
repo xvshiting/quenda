@@ -611,13 +611,13 @@ policy = LineLimitedToolResultProcessingPolicy(max_lines=100)
 ## 版本兼容性
 
 - Python: 3.12+
-- 当前版本: 0.1.0
+- 当前版本: 0.3.0
 - 包名: `quenda`
 - 许可证: 待定
 
 ---
 
-*此 API 参考对应 Quenda v0.1.0，会随框架更新而同步更新。*
+*此 API 参考对应 Quenda v0.3.0，会随框架更新而同步更新。*
 
 ---
 
