@@ -33,7 +33,7 @@ class RunState:
     id: str
     session_id: str
     agent_name: str
-    status: str  # "completed", "failed", "interrupted", "terminated"
+    status: str  # "completed", "paused", "failed", "interrupted", "terminated"
     user_message: str
     final_content: str | None
     step_count: int

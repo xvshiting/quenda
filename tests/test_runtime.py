@@ -18,12 +18,14 @@ from quenda.runtime.compression import (
 from quenda.runtime import (
     AgentConfig,
     ErrorOccurred,
+    InteractionRequested,
     JsonlTraceSink,
     NullTraceSink,
     Run,
     RunCompleted,
     RunStarted,
     RunStatus,
+    RunPaused,
     RunTerminated,
     SessionState,
     ToolExecuted,
@@ -351,6 +353,48 @@ class TestRun:
         assert len(tool_events) == 1
         assert tool_events[0].tool_name == "echo"
         assert "Echo:" in tool_events[0].result
+
+    @pytest.mark.asyncio
+    async def test_interaction_request_pauses_before_followup_model_call(self) -> None:
+        """A human decision must be handled by Host before the model continues."""
+        from quenda.tools import RequestInteractionTool
+
+        agent = AgentConfig(name="test", tools=[RequestInteractionTool(), FakeTool()])
+        session = SessionState.create("test")
+        model = CapturingModel([
+            ModelResponse(
+                content="Please choose.",
+                tool_calls=[
+                    ToolCall(
+                        id="interaction-1",
+                        name="request_interaction",
+                        arguments={
+                            "kind": "choice",
+                            "title": "Next step",
+                            "options": [
+                                {"id": "a", "label": "Option A"},
+                                {"id": "b", "label": "Option B"},
+                            ],
+                        },
+                    ),
+                    ToolCall(id="echo-1", name="echo", arguments={"msg": "must not run"}),
+                ],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content="This must wait for the user.", stop_reason="end_turn"),
+        ])
+
+        run = Run.create(agent, session, model)
+        events = await run.execute_to_completion("What should we do?")
+
+        requests = [event for event in events if isinstance(event, InteractionRequested)]
+        assert len(requests) == 1
+        assert requests[0].request["title"] == "Next step"
+        assert any(isinstance(event, RunPaused) for event in events)
+        assert not any(isinstance(event, RunCompleted) for event in events)
+        assert not any(isinstance(event, ToolExecuted) for event in events)
+        assert len(model.invocations) == 1
+        assert run.status is RunStatus.PAUSED
 
     @pytest.mark.asyncio
     async def test_run_rechecks_compression_after_tool_round(self) -> None:

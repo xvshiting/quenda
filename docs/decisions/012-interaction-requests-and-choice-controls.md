@@ -66,6 +66,18 @@ The control flow should be:
 
 The LLM may propose the request, but Host decides whether it is valid and whether to display it.
 
+### Runtime pause semantics
+
+`request_interaction` is transported as a framework-reserved tool call, but it
+must not execute like an ordinary world-changing tool. Runtime emits an
+`InteractionRequested` event and ends the current run with `RunPaused`.
+It does not make another model call and does not emit `RunCompleted`.
+
+Host renders and validates the request, collects the response, and starts the
+continuation run with that response. If an interaction request is mixed with
+other tool calls in one model response, those other calls are not executed
+before the human decision.
+
 ### Extensibility model
 
 Interaction kinds should be extensible in the same spirit as commands.

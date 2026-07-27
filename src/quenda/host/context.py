@@ -11,7 +11,6 @@ When the model changes, template variables like {{model.provider}} and
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +21,7 @@ from quenda.host.instructions import (
     TemplateContext,
     resolve_instruction_sources,
 )
+from quenda.runtime.temporal import Clock, SystemClock, TemporalContext
 
 if TYPE_CHECKING:
     from quenda.host.identity import User
@@ -67,6 +67,7 @@ class ContextRebuilder:
         workspace_path: Path,
         workspace_id: str,
         user: User,
+        clock: Clock | None = None,
     ) -> None:
         """
         Initialize the ContextRebuilder with static context.
@@ -89,6 +90,7 @@ class ContextRebuilder:
         self._workspace_path = workspace_path
         self._workspace_id = workspace_id
         self._user = user
+        self._clock = clock or SystemClock()
 
     def rebuild(
         self,
@@ -115,6 +117,7 @@ class ContextRebuilder:
             The newly composed system prompt text.
         """
         # 1. Re-resolve instruction sources (picks up file changes)
+        temporal_context = TemporalContext.capture(self._clock)
         sources = resolve_instruction_sources(
             agent_package_path=self._agent_package_path,
             agent_name=self._agent_name,
@@ -122,6 +125,7 @@ class ContextRebuilder:
             agent_instructions=self._agent_instructions,
             workspace_path=self._workspace_path,
             user=self._user,
+            temporal_context=temporal_context,
         )
 
         # 2. Resolve mode-specific instructions from agent package
@@ -137,7 +141,7 @@ class ContextRebuilder:
             user_id=self._user.id,
             model_provider=provider,
             model_name=model,
-            date=datetime.now().strftime("%Y-%m-%d"),
+            date=temporal_context.local_date,
             session_id=session_id,
             mode=mode,
         )

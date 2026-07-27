@@ -4,16 +4,55 @@ Tests for ContextRebuilder.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from quenda.host import ContextRebuilder, User
 
 
+class MutableClock:
+    def __init__(self, current: datetime) -> None:
+        self.current = current
+
+    def now(self) -> datetime:
+        return self.current
+
+
 class TestContextRebuilder:
     """Tests for ContextRebuilder."""
+
+    def test_rebuild_refreshes_date_across_midnight(self) -> None:
+        clock = MutableClock(
+            datetime(2026, 7, 25, 23, 59, tzinfo=ZoneInfo("Asia/Shanghai"))
+        )
+        rebuilder = ContextRebuilder(
+            agent_name="test-agent",
+            agent_version="0.1.0",
+            agent_md_content="Base prompt.",
+            agent_instructions=[],
+            agent_package_path=Path("/tmp/test-agent"),
+            workspace_path=Path("/tmp/workspace"),
+            workspace_id="ws_test123",
+            user=User(id="test-user"),
+            clock=clock,
+        )
+
+        before_midnight = rebuilder.rebuild(
+            provider="test", model="model", session_id="session"
+        )
+        clock.current = datetime(
+            2026, 7, 26, 0, 1, tzinfo=ZoneInfo("Asia/Shanghai")
+        )
+        after_midnight = rebuilder.rebuild(
+            provider="test", model="model", session_id="session"
+        )
+
+        assert "Current local date: 2026-07-25" in before_midnight
+        assert "Current local date: 2026-07-26" in after_midnight
 
     def test_rebuild_basic(self) -> None:
         """Test basic rebuild with model switch."""

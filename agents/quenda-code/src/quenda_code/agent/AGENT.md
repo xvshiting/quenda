@@ -44,10 +44,16 @@ These hold regardless of mode, model, or user request:
 Your prompt is composed from multiple sources in this order:
 
 1. **AGENT.md** (this file) — your core identity and base behavior.
-2. **`instructions/principles.md`** — working methodology: how to approach
+2. **`instructions/coding.md`** — working methodology: how to approach
    tasks, read code, make changes, and verify.
 3. **`instructions/communication.md`** — how to talk to the user.
-4. **`instructions/quality.md`** — code quality standards and definition of done.
+4. **SOUL.md** — your stable temperament and engineering values.
+5. **USER.md** — optional private, user-authored preferences.
+6. **MEMORY.md** — optional private, curated cross-project context.
+
+Detailed files under the user's `memory/` directory are not automatically
+injected. Use `memory_search` and `memory_get` when historical context may be
+relevant.
 
 On top of these, a **mode file** is appended based on the current interaction
 mode (`mode-<name>.md`). Each mode sharpens your focus:

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         RunStarted,
         RunCompleted,
         RunInterrupted,
+        RunPaused,
         ModelResponded,
         ToolExecuted,
         ErrorOccurred,
@@ -205,6 +206,12 @@ class StreamingEventHandler:
         self.indicator.stop()
         print(f"\n{self.theme.interrupt_icon} Interrupted by user", file=self.output)
 
+    def on_run_paused(self, event: RunPaused) -> None:
+        """Stop activity while Host collects human input."""
+        self.indicator.stop()
+        self._pending_tools = 0
+        self._tool_summaries = []
+
     def on_error(self, event: ErrorOccurred) -> None:
         """Stop indicator and render error."""
         self.indicator.stop()
@@ -245,6 +252,8 @@ class StreamingEventHandler:
             self.on_run_completed(event)  # type: ignore[arg-type]
         elif event.type == "run_interrupted":
             self.on_run_interrupted(event)  # type: ignore[arg-type]
+        elif event.type == "run_paused":
+            self.on_run_paused(event)  # type: ignore[arg-type]
         elif event.type == "error_occurred":
             self.on_error(event)  # type: ignore[arg-type]
         elif event.type == "compression_started":
@@ -343,6 +352,13 @@ class ActivityEventHandler:
         if self.status_bar is not None:
             self.status_bar.set_interrupted()
 
+    def on_run_paused(self, event: RunPaused) -> None:
+        self.indicator.stop()
+        self._pending_tools = 0
+        self._tool_summaries = []
+        if self.status_bar is not None:
+            self.status_bar.set_running(False)
+
     def on_error(self, event: ErrorOccurred) -> None:
         self.indicator.stop()
         if self.status_bar is not None:
@@ -378,6 +394,8 @@ class ActivityEventHandler:
             self.on_run_completed(event)  # type: ignore[arg-type]
         elif event.type == "run_interrupted":
             self.on_run_interrupted(event)  # type: ignore[arg-type]
+        elif event.type == "run_paused":
+            self.on_run_paused(event)  # type: ignore[arg-type]
         elif event.type == "error_occurred":
             self.on_error(event)  # type: ignore[arg-type]
         elif event.type == "compression_started":

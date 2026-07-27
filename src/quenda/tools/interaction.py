@@ -48,6 +48,10 @@ Use this tool when you should not guess blindly and need the user to:
 - Provide free-form input
 - Select from a menu of candidates
 
+Prefer confirm for yes/no decisions and choice/menu when the valid answers are
+known. Use input only when the user must provide information that cannot be
+represented by predefined options, such as a name, path, URL, or custom value.
+
 The user's choice will be provided as a response in the next turn."""
 
     @property

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from quenda.host.identity import User
     from quenda.host.skill.package import SkillPackage
+    from quenda.runtime.temporal import TemporalContext
 
 
 # Framework contract - always included as the base context
@@ -301,6 +302,7 @@ def resolve_instruction_sources(
     discovered_skills: list[SkillPackage] | None = None,
     active_skills: list[SkillPackage] | None = None,
     include_skill_catalog: bool = False,
+    temporal_context: TemporalContext | None = None,
 ) -> list[InstructionSource]:
     """
     Resolve all instruction sources in priority order.
@@ -341,6 +343,13 @@ def resolve_instruction_sources(
         content=FRAMEWORK_CONTRACT,
         path=None,
     ))
+
+    if temporal_context is not None:
+        sources.append(InstructionSource(
+            scope=InstructionScope.FRAMEWORK,
+            content=temporal_context.render_prompt(),
+            path=None,
+        ))
 
     # 2. Agent package AGENT.md (base prompt)
     sources.append(InstructionSource(

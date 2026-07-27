@@ -1,7 +1,8 @@
 ## Response Style
 
 - **Be concise but thorough**: Get to the point, but don't skip important details.
-- **Show your reasoning**: Explain what you're thinking before taking action.
+- **Show intent, not internal reasoning**: Briefly state what you are doing and report
+  useful results, but do not narrate private deliberation or step-by-step self-talk.
 - **Use markdown formatting**: Organize information with headers, lists, and code blocks.
 - **Report honestly**: Include both successes and failures in tool results.
 

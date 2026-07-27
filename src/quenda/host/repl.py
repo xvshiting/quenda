@@ -16,9 +16,10 @@ from __future__ import annotations
 import base64
 import os
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 from quenda.host.commands import (
     CommandCandidate,
@@ -70,6 +71,49 @@ class ReplState:
     provider_name: str
     model_name: str
     mode: str
+
+
+class _SkillSlashCommand:
+    """Command adapter that routes a slash invocation back through ReplRuntime."""
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        description: str,
+        invoke: Callable[[str, str], CommandResult],
+    ) -> None:
+        self._name = name
+        self._description = description
+        self._invoke = invoke
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return self._description
+
+    @property
+    def usage(self) -> str:
+        return f"/{self._name} [arguments]"
+
+    def resolve(self, args: str, context: CommandContext) -> CommandResolution:
+        return CommandResolution(status="ready", normalized_args=args)
+
+    def get_candidates(
+        self,
+        args: str,
+        context: CommandContext,
+    ) -> list[CommandCandidate]:
+        return []
+
+    def get_completions(self, args: str) -> list[str]:
+        return []
+
+    def execute(self, args: str, context: CommandContext) -> CommandResult:
+        return self._invoke(self._name, args)
 
 
 class ReplRuntime:
@@ -128,6 +172,49 @@ class ReplRuntime:
         self._skill_activator = skill_activator
         self._workspace_path = workspace_path
         self._host_binding = None  # For /rebind command (ADR-026)
+        self._register_skill_commands()
+
+    def _register_skill_commands(self) -> None:
+        """Expose discovered skills as slash commands without replacing real commands."""
+        if self._skill_discovery is None:
+            return
+
+        for skill in self._skill_discovery.discover_skills():
+            if self._registry.has(skill.name):
+                continue
+            self._registry.register(
+                _SkillSlashCommand(
+                    name=skill.name,
+                    description=skill.description,
+                    invoke=self._invoke_skill,
+                )
+            )
+
+    def _invoke_skill(self, skill_name: str, args: str) -> CommandResult:
+        """Activate a skill and forward its invocation to the normal model loop."""
+        if self._skill_activator is None:
+            return CommandResult(
+                status="error",
+                message=f"Skill `{skill_name}` is not available.",
+            )
+
+        if not self._skill_activator.is_active(skill_name):
+            activated = self.activate_skills([skill_name], transient=True)
+            if not activated:
+                return CommandResult(
+                    status="error",
+                    message=f"Skill `{skill_name}` could not be activated.",
+                )
+
+        model_input = f"[Skill invocation: {skill_name}]"
+        if args.strip():
+            model_input += f"\n\nARGUMENTS: {args.strip()}"
+
+        return CommandResult(
+            status="ok",
+            message=f"Using skill `{skill_name}`.",
+            model_input=model_input,
+        )
 
     def set_host_binding(self, binding: Any) -> None:
         """Set the StableHostBinding for capability rebind (ADR-026)."""
@@ -338,6 +425,10 @@ class ReplRuntime:
 
         # Also apply to agent for consistency
         self._agent.set_system_prompt(new_prompt)
+
+    def refresh_context(self) -> None:
+        """Refresh dynamic system context before a model run."""
+        self._rebuild_context()
 
     def activate_skills(self, skill_names: list[str], *, transient: bool = True) -> list[str]:
         """

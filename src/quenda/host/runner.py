@@ -15,12 +15,17 @@ Implements:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 from quenda.host.context import ContextRebuilder
+from quenda.host.extensions import (
+    AgentExtensionContext,
+    AgentInitializerRegistry,
+    ContextProviderRegistry,
+    ContextProviderRequest,
+)
 from quenda.host.identity import DefaultUserResolver, User
 from quenda.host.instructions import (
     InstructionComposer,
@@ -33,6 +38,8 @@ from quenda.host.loader import (
     AgentPackage,
     ExecutionConfig,
     load_agent_package,
+    load_agent_context_providers,
+    load_agent_initializers,
     load_agent_policies,
     load_agent_tools,
     load_agent_providers,
@@ -55,6 +62,7 @@ if TYPE_CHECKING:
     from quenda.runtime.events import AnyEvent
     from quenda.runtime.ports.compression import CompressionPolicy
     from quenda.runtime.session import Session
+    from quenda.runtime.temporal import Clock
     from quenda.runtime.permission import PermissionPolicy
     from quenda.providers import ProviderRegistry
     from quenda.tools import Tool
@@ -126,6 +134,10 @@ class StableHostBinding:
     tool_selection_policy: Any | None = None
     tool_result_processing_policy: Any | None = None
     termination_policy: Any | None = None
+    extension_context: AgentExtensionContext | None = None
+    context_providers: ContextProviderRegistry = field(
+        default_factory=ContextProviderRegistry
+    )
 
 
 @dataclass
@@ -170,6 +182,7 @@ def _core_tool_bundle(
     from quenda.tools import (
         ActivateResourceTool,
         ApplyPatchTool,
+        GetCurrentDatetimeTool,
         ListFilesTool,
         PythonExecutionTool,
         ReadFileTool,
@@ -192,6 +205,7 @@ def _core_tool_bundle(
         RequestSkillActivationTool(),
         ActivateResourceTool(),
         PythonExecutionTool(workspace, sandbox_config),
+        GetCurrentDatetimeTool(),
     ]
 
 
@@ -228,9 +242,9 @@ def _resolve_tools(
 
     **Available Bundles:**
 
-    - `core` (10 tools): list_files, search_text, read_file, write_file, apply_patch,
-      execute_python, run_shell, request_interaction, request_skill_activation,
-      activate_resource
+    - `core` (11 tools): list_files, search_text, read_file, write_file, apply_patch,
+      execute_python, run_shell, get_current_datetime, request_interaction,
+      request_skill_activation, activate_resource
     - `network` (2 tools): http_request, web_fetch
     Note:
     - Skill activation is handled by `request_skill_activation` in the core bundle,
@@ -651,9 +665,23 @@ def setup_host_binding(
 
         # 5. Resolve user
         user = DefaultUserResolver().resolve()
+        user_agent_path = resolver.get_user_agent_path(user, agent_package.name)
+        extension_context = AgentExtensionContext(
+            agent_name=agent_package.name,
+            agent_package_path=agent_dir,
+            user=user,
+            user_agent_path=user_agent_path,
+            workspace_path=workspace,
+            workspace_id=workspace_id,
+        )
+        initializers = AgentInitializerRegistry()
+        load_agent_initializers(agent_dir, initializers)
+        initializers.initialize(extension_context)
 
         # 6. Load agent-local custom providers (before resolving provider/model)
         load_agent_providers(agent_dir)
+        context_providers = ContextProviderRegistry()
+        load_agent_context_providers(agent_dir, context_providers)
 
         # 7. Resolve provider/model (with ADR-028 model roles support)
         models_config = (
@@ -720,7 +748,7 @@ def setup_host_binding(
 
         # 12. Load agent-local custom tools
         tool_builder = ToolRegistryBuilder()
-        load_agent_tools(agent_dir, tool_builder)
+        load_agent_tools(agent_dir, tool_builder, extension_context)
         loaded_tool_catalog = tool_builder.build()
 
         # 13. Load and resolve agent-local policies
@@ -827,6 +855,8 @@ def setup_host_binding(
             tool_selection_policy=tool_selection_policy,
             tool_result_processing_policy=tool_result_processing_policy,
             termination_policy=termination_policy,
+            extension_context=extension_context,
+            context_providers=context_providers,
         )
 
     except Exception:
@@ -882,6 +912,8 @@ async def connect_mcp_servers(binding: StableHostBinding) -> list[Tool]:
 def refresh_run_context(
     binding: StableHostBinding,
     session_id: str = "",
+    *,
+    clock: "Clock | None" = None,
 ) -> RunContextSnapshot:
     """
     Text refresh path - runs before each new run.
@@ -925,6 +957,10 @@ def refresh_run_context(
         if skill:
             resolved_active_skills.append(skill)
 
+    from quenda.runtime.temporal import SystemClock, TemporalContext
+
+    temporal_context = TemporalContext.capture(clock or SystemClock())
+
     # 4. Build template context
     template_context = TemplateContext(
         agent_name=agent_package.name,
@@ -934,7 +970,7 @@ def refresh_run_context(
         user_id=binding.user.id,
         model_provider=binding.provider_name,
         model_name=binding.model_name,
-        date=datetime.now().strftime("%Y-%m-%d"),
+        date=temporal_context.local_date,
         session_id=session_id,
     )
 
@@ -951,7 +987,16 @@ def refresh_run_context(
         include_skill_catalog=bool(
             agent_package.config and agent_package.config.include_skill_catalog
         ),
+        temporal_context=temporal_context,
     )
+    if binding.extension_context is not None:
+        instruction_sources.extend(binding.context_providers.provide(
+            ContextProviderRequest(
+                extension=binding.extension_context,
+                session_id=session_id,
+            )
+        ))
+        instruction_sources.sort(key=lambda source: source.scope)
 
     # 6. Compose prompt
     composer = InstructionComposer(template_context)

@@ -159,7 +159,7 @@ from quenda import Agent, get_provider_registry
 registry = get_provider_registry()
 model = registry.get_model("deepseek", "deepseek-v4-flash")
 
-# 10 个核心工具
+# 11 个核心工具
 tools = get_core_tools("/path/to/workspace")
 
 agent = Agent(

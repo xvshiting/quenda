@@ -30,6 +30,86 @@ class EditingConfig:
     max_content_chars: int = 1000000  # 1MB max content
 
 
+def _leading_whitespace(line: str) -> str:
+    """Return the leading spaces and tabs from a line."""
+    return line[: len(line) - len(line.lstrip(" \t"))]
+
+
+def _indentation_signature(lines: list[str]) -> tuple[str, list[tuple[str, str]]] | None:
+    """Represent a block independently of its common leading indentation."""
+    non_empty = [line for line in lines if line.strip(" \t")]
+    if not non_empty:
+        return None
+
+    base_indent = _leading_whitespace(non_empty[0])
+    signature: list[tuple[str, str]] = []
+    for line in lines:
+        if not line.strip(" \t"):
+            signature.append(("", ""))
+            continue
+
+        indent = _leading_whitespace(line)
+        if not indent.startswith(base_indent):
+            return None
+        signature.append((indent[len(base_indent):], line[len(indent):].rstrip(" \t")))
+
+    return base_indent, signature
+
+
+def _find_indentation_equivalent_spans(
+    content: str,
+    old_text: str,
+) -> list[tuple[int, int, str, str]]:
+    """Find unique-location candidates that differ only by common indentation."""
+    old_lines = old_text.splitlines()
+    old_signature = _indentation_signature(old_lines)
+    if not old_lines or old_signature is None:
+        return []
+
+    supplied_indent, expected = old_signature
+    content_lines_with_endings = content.splitlines(keepends=True)
+    content_lines = [line.rstrip("\r\n") for line in content_lines_with_endings]
+    window_size = len(old_lines)
+    offsets = [0]
+    for line in content_lines_with_endings:
+        offsets.append(offsets[-1] + len(line))
+
+    matches: list[tuple[int, int, str, str]] = []
+    for index in range(len(content_lines) - window_size + 1):
+        candidate_lines = content_lines[index:index + window_size]
+        candidate_signature = _indentation_signature(candidate_lines)
+        if candidate_signature is None:
+            continue
+
+        actual_indent, candidate = candidate_signature
+        if candidate != expected:
+            continue
+
+        start = offsets[index]
+        end = offsets[index + window_size]
+        if not old_text.endswith(("\n", "\r")):
+            end -= len(content_lines_with_endings[index + window_size - 1])
+            end += len(content_lines[index + window_size - 1])
+        matches.append((start, end, supplied_indent, actual_indent))
+
+    return matches
+
+
+def _rebase_indentation(text: str, supplied_indent: str, actual_indent: str) -> str:
+    """Move replacement text from the supplied block indent to the matched indent."""
+    if supplied_indent == actual_indent:
+        return text
+
+    rebased: list[str] = []
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body):]
+        if body.strip(" \t") and body.startswith(supplied_indent):
+            body = actual_indent + body[len(supplied_indent):]
+        rebased.append(body + ending)
+    return "".join(rebased)
+
+
 def _validate_path(workspace: Path, path: str) -> tuple[Path, str | None]:
     """Validate path is within workspace. Returns (resolved_path, error_message)."""
     try:
@@ -334,24 +414,48 @@ class ApplyPatchTool(Tool):
             content = file_path.read_text(encoding="utf-8")
 
             if old_text not in content:
-                return ToolResult(
-                    "",
-                    self.name,
-                    f"Error: old_text not found in file. Make sure it matches exactly (including whitespace).",
-                    is_error=True,
-                )
+                equivalent_matches = _find_indentation_equivalent_spans(content, old_text)
+                if len(equivalent_matches) > 1:
+                    return ToolResult(
+                        "",
+                        self.name,
+                        (
+                            "Error: old_text matches multiple blocks after normalizing "
+                            "indentation. Please provide more context to make it unique."
+                        ),
+                        is_error=True,
+                    )
+                if not equivalent_matches:
+                    return ToolResult(
+                        "",
+                        self.name,
+                        (
+                            "Error: old_text not found in the current file, even after "
+                            "normalizing indentation. Re-read the target section and retry "
+                            "with a unique, up-to-date block."
+                        ),
+                        is_error=True,
+                    )
 
-            # Count occurrences
-            count = content.count(old_text)
-            if count > 1:
-                return ToolResult(
-                    "",
-                    self.name,
-                    f"Error: old_text appears {count} times. Please provide more context to make it unique.",
-                    is_error=True,
+                start, end, supplied_indent, actual_indent = equivalent_matches[0]
+                replacement = _rebase_indentation(
+                    new_text,
+                    supplied_indent,
+                    actual_indent,
                 )
+                new_content = content[:start] + replacement + content[end:]
+            else:
+                # Count occurrences
+                count = content.count(old_text)
+                if count > 1:
+                    return ToolResult(
+                        "",
+                        self.name,
+                        f"Error: old_text appears {count} times. Please provide more context to make it unique.",
+                        is_error=True,
+                    )
 
-            new_content = content.replace(old_text, new_text, 1)
+                new_content = content.replace(old_text, new_text, 1)
 
             if dry_run:
                 # Show diff

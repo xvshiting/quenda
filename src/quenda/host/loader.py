@@ -10,7 +10,9 @@ Implements ADR-014: Interface layer extensibility (theme config).
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import inspect
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +24,11 @@ from quenda.runtime.agent import AgentConfig
 
 if TYPE_CHECKING:
     from quenda.host.commands import CommandRegistry
+    from quenda.host.extensions import (
+        AgentExtensionContext,
+        AgentInitializerRegistry,
+        ContextProviderRegistry,
+    )
     from quenda.host.interactions import InteractionRegistry
     from quenda.host.registry import ToolRegistryBuilder
     from quenda.interface.theme import InterfaceTheme
@@ -919,6 +926,7 @@ def load_agent_interactions(
 def load_agent_tools(
     agent_path: Path,
     builder: ToolRegistryBuilder,
+    extension_context: AgentExtensionContext | None = None,
 ) -> int:
     """
     Load tool extensions from an agent package.
@@ -931,10 +939,12 @@ def load_agent_tools(
     Loading contract (one of):
     1. `tools` list - list of Tool objects
     2. `register(builder)` function - called to register tools
+    3. `register(builder, extension_context)` - receives Host-resolved paths
 
     Args:
         agent_path: Path to the agent package directory.
         builder: ToolRegistryBuilder to register tools into.
+        extension_context: Optional stable Host context for context-aware tools.
 
     Returns:
         Number of tool files loaded (not individual tools).
@@ -965,7 +975,26 @@ def load_agent_tools(
 
             # Priority 2: register function
             elif hasattr(module, "register"):
-                module.register(builder)
+                register = module.register
+                parameters = inspect.signature(register).parameters.values()
+                accepts_context = any(
+                    parameter.kind is inspect.Parameter.VAR_POSITIONAL
+                    for parameter in parameters
+                ) or len([
+                    parameter for parameter in parameters
+                    if parameter.kind in (
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    )
+                ]) >= 2
+                if accepts_context:
+                    if extension_context is None:
+                        raise ValueError(
+                            f"Tool extension {py_file} requires AgentExtensionContext"
+                        )
+                    register(builder, extension_context)
+                else:
+                    register(builder)
                 loaded += 1
 
         except ValueError:
@@ -976,6 +1005,86 @@ def load_agent_tools(
             import warnings
             warnings.warn(
                 f"Failed to load tool extension {py_file}: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    return loaded
+
+
+def load_agent_context_providers(
+    agent_path: Path,
+    registry: ContextProviderRegistry,
+) -> int:
+    """Load context providers from ``extensions/context/*.py``."""
+    context_dir = agent_path / "extensions" / "context"
+    if not context_dir.exists():
+        return 0
+
+    loaded = 0
+    for py_file in context_dir.glob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+
+        try:
+            module = _load_extension_module(py_file, namespace="context")
+            if module is None:
+                continue
+
+            if hasattr(module, "providers"):
+                for provider in module.providers:
+                    registry.register(provider)
+                loaded += 1
+            elif hasattr(module, "register"):
+                module.register(registry)
+                loaded += 1
+        except (TypeError, ValueError):
+            raise
+        except Exception as e:
+            import warnings
+
+            warnings.warn(
+                f"Failed to load context extension {py_file}: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    return loaded
+
+
+def load_agent_initializers(
+    agent_path: Path,
+    registry: AgentInitializerRegistry,
+) -> int:
+    """Load idempotent setup extensions from ``extensions/setup/*.py``."""
+    setup_dir = agent_path / "extensions" / "setup"
+    if not setup_dir.exists():
+        return 0
+
+    loaded = 0
+    for py_file in setup_dir.glob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+
+        try:
+            module = _load_extension_module(py_file, namespace="setup")
+            if module is None:
+                continue
+
+            if hasattr(module, "initializers"):
+                for initializer in module.initializers:
+                    registry.register(initializer)
+                loaded += 1
+            elif hasattr(module, "register"):
+                module.register(registry)
+                loaded += 1
+        except (TypeError, ValueError):
+            raise
+        except Exception as e:
+            import warnings
+
+            warnings.warn(
+                f"Failed to load setup extension {py_file}: {e}",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -1118,7 +1227,10 @@ def _load_extension_module(py_file: Path, *, namespace: str):
     Returns:
         The loaded module, or None on failure.
     """
-    module_name = f"kora_ext_{namespace}_{py_file.stem}"
+    path_identity = hashlib.sha256(
+        str(py_file.resolve()).encode("utf-8")
+    ).hexdigest()[:12]
+    module_name = f"quenda_ext_{namespace}_{py_file.stem}_{path_identity}"
 
     # Skip if already loaded
     if module_name in sys.modules:
@@ -1204,6 +1316,8 @@ __all__ = [
     "load_agent_commands",
     "load_agent_interactions",
     "load_agent_tools",
+    "load_agent_context_providers",
+    "load_agent_initializers",
     "load_agent_policies",
     "load_agent_providers",
     "find_builtin_agent",

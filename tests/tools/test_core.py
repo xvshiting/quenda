@@ -251,6 +251,54 @@ class TestApplyPatchTool:
         assert result.is_error
         assert "not found" in result.content.lower()
 
+    def test_apply_patch_accepts_unique_indentation_equivalent_match(
+        self, temp_dir: Path
+    ) -> None:
+        """A uniquely matching block should tolerate indentation drift."""
+        (temp_dir / "test.py").write_text(
+            "def greet():\n"
+            "    message = \"hello\"\n"
+            "    return message\n"
+        )
+
+        tool = ApplyPatchTool(temp_dir)
+        result = tool.execute(
+            path="test.py",
+            old_text='  message = "hello"\n  return message',
+            new_text='  message = "hello, world"\n  return message',
+        )
+
+        assert not result.is_error
+        assert (temp_dir / "test.py").read_text() == (
+            "def greet():\n"
+            "    message = \"hello, world\"\n"
+            "    return message\n"
+        )
+
+    def test_apply_patch_rejects_ambiguous_indentation_equivalent_matches(
+        self, temp_dir: Path
+    ) -> None:
+        """Whitespace tolerance must not choose between multiple blocks."""
+        original = (
+            "def first():\n"
+            "\treturn True\n"
+            "\n"
+            "def second():\n"
+            "\treturn True\n"
+        )
+        (temp_dir / "test.py").write_text(original)
+
+        tool = ApplyPatchTool(temp_dir)
+        result = tool.execute(
+            path="test.py",
+            old_text="  return True",
+            new_text="  return False",
+        )
+
+        assert result.is_error
+        assert "multiple blocks" in result.content
+        assert (temp_dir / "test.py").read_text() == original
+
 
 class TestRunShellTool:
     """Tests for RunShellTool."""
@@ -299,11 +347,11 @@ class TestRunShellTool:
 class TestGetCoreTools:
     """Tests for get_core_tools helper."""
 
-    def test_returns_ten_tools(self) -> None:
-        """Test that exactly 10 tools are returned."""
+    def test_returns_eleven_tools(self) -> None:
+        """Test that exactly 11 tools are returned."""
         tools = get_core_tools("/tmp")
 
-        assert len(tools) == 10
+        assert len(tools) == 11
         names = [t.name for t in tools]
         assert "list_files" in names
         assert "search_text" in names
@@ -315,3 +363,4 @@ class TestGetCoreTools:
         assert "request_interaction" in names
         assert "request_skill_activation" in names
         assert "activate_resource" in names
+        assert "get_current_datetime" in names

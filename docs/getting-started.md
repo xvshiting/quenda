@@ -264,8 +264,8 @@ Individual tools are also available: `ListFilesTool`, `SearchTextTool`,
 
 ## Using the Core Tools Bundle
 
-`get_core_tools(workspace)` returns the 10 essential framework tools:
-filesystem, execution, interaction, skill activation, and resource activation.
+`get_core_tools(workspace)` returns the 11 essential framework tools:
+filesystem, execution, current time, interaction, skill activation, and resource activation.
 
 ```python
 from quenda.tools import get_core_tools

@@ -243,6 +243,17 @@ Use the `/skill` command to manage skills:
 /skill resources               # List resources from active skills
 ```
 
+Discovered skills are also available as direct slash commands:
+
+```
+/code-review inspect the current diff
+```
+
+Direct invocation activates the named skill for the session and sends the
+remaining text through the normal model/tool loop as that invocation's
+arguments. Registered built-in or agent commands take precedence when a
+command and skill have the same name.
+
 ### Programmatic API
 
 ```python

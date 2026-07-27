@@ -22,17 +22,17 @@ tools/
 
 ## Tool Bundles
 
-### Core Tools (10)
+### Core Tools (11)
 Basic file, execution, and interaction tools:
 - list_files, search_text, read_file, write_file, apply_patch
-- execute_python, run_shell
+- execute_python, run_shell, get_current_datetime
 - request_interaction, request_skill_activation, activate_resource
 
 Use `get_core_tools()` for the minimal essential toolset.
 
-### Extended Tools (12)
+### Extended Tools (13)
 Framework-level tools combined:
-- Core (10) + Network (2)
+- Core (11) + Network (2)
 
 Use `get_extended_tools()` when an agent explicitly needs both local
 execution and network access.
@@ -72,6 +72,7 @@ from quenda.tools.network import (
 
 # Decorator
 from quenda.tools.decorator import FunctionTool, tool
+from quenda.tools.datetime import GetCurrentDatetimeTool
 
 # Interaction tool (framework-reserved)
 from quenda.tools.interaction import RequestInteractionTool
@@ -104,6 +105,7 @@ __all__ = [
     "RequestInteractionTool",
     "RequestSkillActivationTool",
     "ActivateResourceTool",
+    "GetCurrentDatetimeTool",
     # Tool aggregation
     "get_core_tools",
     "get_extended_tools",
@@ -115,7 +117,7 @@ def get_core_tools(
     permission_policy: PermissionPolicy | None = None,
 ) -> list:
     """
-    Get the 10 core tools for Quenda Coding Agent.
+    Get the 11 core tools for Quenda Coding Agent.
 
     The minimal tool set following capability semantics:
     - list_files: See what exists
@@ -125,6 +127,7 @@ def get_core_tools(
     - apply_patch: Modify existing files
     - execute_python: Run Python code safely
     - run_shell: Execute shell commands
+    - get_current_datetime: Get exact current time or convert timezones
     - request_interaction: Ask human for a decision
     - request_skill_activation: Ask Host to activate a discovered skill
     - activate_resource: Ask Runtime to attach a historical session resource
@@ -133,7 +136,7 @@ def get_core_tools(
         workspace_root: The workspace directory for file operations.
 
     Returns:
-        List of 10 core Tool instances.
+        List of 11 core Tool instances.
     """
     from pathlib import Path
 
@@ -149,6 +152,7 @@ def get_core_tools(
         RequestInteractionTool(),
         RequestSkillActivationTool(),
         ActivateResourceTool(),
+        GetCurrentDatetimeTool(),
     ]
 
 
@@ -160,10 +164,10 @@ def get_extended_tools(
     Get framework-level tools for an agent that needs network access.
 
     Tool categories:
-    - Core tools (10): Basic file, execution, and interaction
+    - Core tools (11): Basic file, execution, time, and interaction
     - Network tools (2): HTTP request and web fetch
 
-    Total: 12 tools
+    Total: 13 tools
 
     Args:
         workspace_root: The workspace directory for file operations.

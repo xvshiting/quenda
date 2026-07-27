@@ -17,6 +17,7 @@ from quenda.host.instructions import (
 )
 from quenda.host.loader import AgentPackage, AgentConfigYaml, load_agent_package
 from quenda.host.identity import User
+from quenda.runtime.temporal import TemporalContext
 
 
 class TestInstructionScope:
@@ -217,6 +218,29 @@ Session: {{session.id}}"""
 
 class TestResolveInstructionSources:
     """Tests for resolve_instruction_sources."""
+
+    def test_temporal_context_is_injected_at_framework_scope(self, tmp_path: Path) -> None:
+        temporal = TemporalContext(
+            local_datetime="2026-07-26T00:05:00+08:00",
+            local_date="2026-07-26",
+            timezone_name="Asia/Shanghai",
+            utc_offset="+08:00",
+            utc_datetime="2026-07-25T16:05:00+00:00",
+        )
+
+        sources = resolve_instruction_sources(
+            agent_package_path=tmp_path / "agent",
+            agent_name="test-agent",
+            agent_md_content="Base prompt.",
+            agent_instructions=[],
+            workspace_path=tmp_path,
+            user=User(id="user_123"),
+            temporal_context=temporal,
+        )
+
+        assert sources[1].scope is InstructionScope.FRAMEWORK
+        assert "Current local date: 2026-07-26" in sources[1].content
+        assert "Timezone: Asia/Shanghai" in sources[1].content
 
     def test_resolve_with_workspace_instructions(self, tmp_path: Path) -> None:
         """Resolve workspace-level INSTRUCTIONS.md."""

@@ -226,7 +226,7 @@ class TestFilesystemTools:
         """Test getting core tools."""
         tools = get_core_tools(temp_dir)
 
-        assert len(tools) == 10
+        assert len(tools) == 11
         names = [t.name for t in tools]
         assert "read_file" in names
         assert "write_file" in names
@@ -236,5 +236,6 @@ class TestFilesystemTools:
         assert "run_shell" in names
         assert "execute_python" in names
         assert "request_interaction" in names
+        assert "get_current_datetime" in names
         assert "request_skill_activation" in names
         assert "activate_resource" in names

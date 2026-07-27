@@ -217,6 +217,7 @@ class TestResolveTools:
         assert "run_shell" in tool_names
         assert "request_interaction" in tool_names
         assert "request_skill_activation" in tool_names
+        assert "get_current_datetime" in tool_names
 
         # Network tools NOT included (not requested)
         assert "http_request" not in tool_names

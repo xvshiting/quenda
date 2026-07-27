@@ -30,8 +30,10 @@ from quenda.runtime.events import (
     CompressionCompleted,
     CompressionStarted,
     ErrorOccurred,
+    InteractionRequested,
     ModelResponded,
     RunCompleted,
+    RunPaused,
     RunStarted,
     RunTerminated,
     RunInterrupted,
@@ -80,6 +82,7 @@ class RunStatus(StrEnum):
 
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -276,6 +279,7 @@ class Run:
             final_content: str | None = None
             termination_requested = False
             termination_reason = ""
+            interaction_requested = False
             iteration = 0
             max_iterations = 100  # Hard guard
             tool_call_decode_retry_used = False
@@ -379,6 +383,45 @@ class Run:
 
                 if response.content:
                     final_content = response.content
+
+                interaction_calls = [
+                    call for call in response.tool_calls
+                    if call.name == "request_interaction"
+                ]
+                if interaction_calls:
+                    interaction_call = interaction_calls[0]
+                    assistant_tool_message = Message(
+                        role="assistant",
+                        content=response.tool_calls,
+                    )
+                    paused_results = [
+                        ToolResult(
+                            call_id=call.id,
+                            name=call.name,
+                            content=(
+                                "[Interaction requested; waiting for user response.]"
+                                if call.name == "request_interaction"
+                                else "[Not executed: waiting for user interaction.]"
+                            ),
+                        )
+                        for call in response.tool_calls
+                    ]
+                    tool_result_message = Message(role="user", content=paused_results)
+                    messages.extend([assistant_tool_message, tool_result_message])
+                    self._commit_session_messages([
+                        assistant_tool_message,
+                        tool_result_message,
+                    ])
+                    committed_count = len(messages)
+
+                    requested = InteractionRequested(
+                        call_id=interaction_call.id,
+                        request=dict(interaction_call.arguments),
+                    )
+                    self._emit(requested)
+                    yield requested
+                    interaction_requested = True
+                    break
 
                 # Check termination policy after model step
                 decision = self._termination_decision(
@@ -490,6 +533,30 @@ class Run:
                     )
                     self.storage.save_run(run_state)
 
+                return
+
+            if interaction_requested:
+                paused = RunPaused(
+                    reason="interaction_requested",
+                    steps_completed=counters.step_count,
+                )
+                self._emit(paused)
+                yield paused
+                self.status = RunStatus.PAUSED
+
+                if self.storage:
+                    run_state = RunState(
+                        id=self.id,
+                        session_id=self.session.id,
+                        agent_name=self.agent.name,
+                        status="paused",
+                        user_message=user_message_str,
+                        final_content=final_content,
+                        step_count=counters.step_count,
+                        created_at=self.created_at,
+                        completed_at=datetime.now(),
+                    )
+                    self.storage.save_run(run_state)
                 return
 
             # Handle interruption

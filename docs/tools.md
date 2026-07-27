@@ -75,7 +75,7 @@ class MyComplexTool(Tool):
 
 ## Core Tools Bundle
 
-The 10 essential framework tools, available via
+The 11 essential framework tools, available via
 `get_core_tools(workspace)`:
 
 | Tool | Capability | Covers |
@@ -87,6 +87,7 @@ The 10 essential framework tools, available via
 | `apply_patch` | Modify existing files | `sed`, `patch` |
 | `run_shell` | Execute and verify | `pytest`, `git`, `npm`, … |
 | `execute_python` | Run sandboxed Python | quick scripts, data transforms |
+| `get_current_datetime` | Get exact current time | timestamps, timezone conversion |
 | `request_interaction` | Ask a human for a decision | choices, confirmations, input |
 | `request_skill_activation` | Ask Host to activate skills | skill package activation |
 | `activate_resource` | Attach session resources | historical multimodal resources |
@@ -410,7 +411,7 @@ from quenda.tools import (
 workspace = Path(".")
 
 all_tools = []
-all_tools.extend(get_core_tools(workspace))   # 10 framework tools
+all_tools.extend(get_core_tools(workspace))   # 11 framework tools
 all_tools.extend(get_network_tools())         # 2 network tools
 
 from quenda import Agent
@@ -423,4 +424,4 @@ agent = Agent(
 
 Individual bundles: `get_filesystem_tools(workspace)` (5 tools),
 `get_execution_tools(workspace)` (2 tools), `get_network_tools()`
-(2 tools), `get_core_tools(workspace)` (10 tools).
+(2 tools), `get_core_tools(workspace)` (11 tools).

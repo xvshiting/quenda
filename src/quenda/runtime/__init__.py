@@ -12,10 +12,12 @@ from quenda.runtime.events import (
     AnyEvent,
     ErrorOccurred,
     Event,
+    InteractionRequested,
     ModelCalled,
     ModelResponded,
     ModelRouted,
     RunCompleted,
+    RunPaused,
     RunStarted,
     RunTerminated,
     ToolExecuted,
@@ -33,6 +35,7 @@ from quenda.runtime.routing import (
     route_model,
 )
 from quenda.runtime.session import Session, SessionState
+from quenda.runtime.temporal import Clock, SystemClock, TemporalContext
 from quenda.runtime.termination import (
     CompositeTerminationPolicy,
     ConsecutiveErrorPolicy,
@@ -69,6 +72,9 @@ __all__ = [
     # Session
     "Session",
     "SessionState",
+    "Clock",
+    "SystemClock",
+    "TemporalContext",
     "Storage",
     # Run
     "Run",
@@ -79,10 +85,12 @@ __all__ = [
     "AnyEvent",
     "ErrorOccurred",
     "Event",
+    "InteractionRequested",
     "ModelCalled",
     "ModelResponded",
     "ModelRouted",
     "RunCompleted",
+    "RunPaused",
     "RunStarted",
     "RunTerminated",
     "ToolExecuted",

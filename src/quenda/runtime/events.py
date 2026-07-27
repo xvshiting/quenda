@@ -205,6 +205,24 @@ class RunInterrupted(Event):
 
 
 @dataclass(frozen=True)
+class InteractionRequested(Event):
+    """Emitted when Runtime yields control to Host for human input."""
+
+    type: Literal["interaction_requested"] = "interaction_requested"
+    call_id: str = ""
+    request: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RunPaused(Event):
+    """Emitted when a run pauses without completing or failing."""
+
+    type: Literal["run_paused"] = "run_paused"
+    reason: str = "interaction_requested"
+    steps_completed: int = 0
+
+
+@dataclass(frozen=True)
 class RunTerminated(Event):
     """
     Emitted when a run is terminated by policy.
@@ -270,6 +288,6 @@ class ModelRouted(Event):
 AnyEvent = (
     RunStarted | RunCompleted | ModelCalled | ModelResponded |
     ToolPhaseStarted | ToolExecuted | PermissionRequested | PermissionDecided |
-    ErrorOccurred | RunInterrupted | RunTerminated |
+    ErrorOccurred | RunInterrupted | InteractionRequested | RunPaused | RunTerminated |
     CompressionStarted | CompressionCompleted | ModelRouted
 )

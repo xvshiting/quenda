@@ -278,7 +278,7 @@ from quenda.tools import (
 )
 
 # 快捷方式
-tools = get_core_tools(workspace_root)       # 10 个核心工具
+tools = get_core_tools(workspace_root)       # 11 个核心工具
 tools = get_filesystem_tools(workspace_root) # 5 个文件工具
 tools = get_execution_tools(workspace_root)  # 2 个执行工具
 tools = get_network_tools()                  # 2 个网络工具
@@ -389,6 +389,8 @@ from quenda.host import (
     load_agent_package,        # 加载 Agent 包
     load_agent_commands,       # 加载自定义命令
     load_agent_interactions,   # 加载自定义交互
+    load_agent_context_providers,  # 加载 Agent-local Context Provider
+    load_agent_initializers,   # 加载 Agent 初始化扩展
     find_builtin_agent,        # 查找内置 Agent
     setup_agent,               # 完整设置 Agent
 )
@@ -478,6 +480,22 @@ from quenda.host.instructions import (
     resolve_instruction_sources,
 )
 ```
+
+### Context 扩展
+
+```python
+from quenda.host.extensions import (
+    AgentExtensionContext,    # Host 解析的稳定扩展上下文
+    AgentInitializer,         # 幂等初始化协议
+    AgentInitializerRegistry, # 有序初始化器注册表
+    ContextProvider,          # Context Provider 协议
+    ContextProviderRequest,   # 每个 Run 的 Provider 输入
+    ContextProviderRegistry,  # 有序 Provider 注册表
+)
+```
+
+完整示例参见
+[Context Provider：定制每个 Run 的上下文](./10-context-providers.md)。
 
 ---
 

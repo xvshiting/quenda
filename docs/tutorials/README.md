@@ -25,6 +25,7 @@
 | [事件系统](./agent/06-events.md) | 运行时事件、实时监控、事件驱动开发 |
 | [进阶用法](./agent/07-advanced.md) | 指令系统、压缩策略、扩展机制 |
 | [Policy 系统](./agent/09-policies.md) | 策略钩子、TraceSink、TerminationPolicy |
+| [Context 定制](./agent/10-context-providers.md) | Context Provider、用户私有上下文、Markdown Memory |
 | [API 参考](./agent/08-references.md) | 完整 API 速查表 |
 
 ### [Quenda Code 教程](./code/01-quickstart.md) 🐼

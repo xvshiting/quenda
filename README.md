@@ -199,7 +199,7 @@ registry.register(ProviderSpec(
 
 ## Built-in Tools
 
-`get_core_tools(workspace)` returns **10 essential framework tools**:
+`get_core_tools(workspace)` returns **11 essential framework tools**:
 
 | Tool | Capability |
 |------|-----------|
@@ -208,11 +208,12 @@ registry.register(ProviderSpec(
 | `read_file` | View files with line ranges |
 | `write_file` | Create or overwrite files |
 | `apply_patch` | Apply targeted text patches |
-| `run_command` | Execute commands with argv list |
 | `run_shell` | Execute shell commands (filtered) |
 | `execute_python` | Run Python code in subprocess |
+| `get_current_datetime` | Get exact current time or convert timezones |
 | `request_interaction` | Ask the user for structured input |
 | `request_skill_activation` | Ask Host to activate discovered skills |
+| `activate_resource` | Attach a historical session resource |
 
 [Full tool reference →](docs/tools.md)
 

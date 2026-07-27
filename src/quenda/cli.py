@@ -49,7 +49,7 @@ from quenda.interface import (
 )
 from quenda.kernel.types import ImageContent, TextContent
 from quenda.runtime.multimodal import build_user_message, load_images
-from quenda.runtime.events import ModelResponded, AnyEvent
+from quenda.runtime.events import InteractionRequested
 from quenda.runtime.permission import PermissionRequest
 from quenda.host.permission_manager import PermissionManager, format_permission_prompt
 
@@ -248,10 +248,67 @@ def _handle_interaction_request(
 
     elif request.kind == "input":
         # Free-form input
-        user_input = repl_input.get_input("\nInput: ").strip()
+        print(f"\n{request.title}")
+        if request.message:
+            print(request.message)
+        user_input = repl_input.get_input("\n› ").strip()
         return f"[User input: {user_input}]"
 
     return None
+
+
+def _run_interactive_turn(
+    *,
+    session,
+    message,
+    streamer: StreamingEventHandler,
+    indicator: SpinnerIndicator,
+    interaction_registry: InteractionRegistry,
+    interaction_context: InteractionContext,
+    repl_input,
+    skill_activation_handler,
+    before_send=None,
+    max_interactions: int = 10,
+) -> None:
+    """Run a REPL turn, yielding to Host whenever human input is requested."""
+    pending_message = message
+    interactions_handled = 0
+
+    for _ in range(max_interactions + 1):
+        if before_send is not None:
+            before_send()
+        collector = CollectingEventHandler()
+        event_handler = CompositeEventHandler([streamer, collector])
+        try:
+            session.send_sync(
+                pending_message,
+                on_event=event_handler.on_event,
+                skill_activation_handler=skill_activation_handler,
+            )
+        finally:
+            indicator.stop()
+
+        requests = [
+            event for event in collector.get_events()
+            if isinstance(event, InteractionRequested)
+        ]
+        if not requests:
+            return
+        if interactions_handled >= max_interactions:
+            raise RuntimeError(
+                f"Interaction limit exceeded ({max_interactions}) in a single user turn."
+            )
+
+        response = _handle_interaction_request(
+            requests[0].request,
+            interaction_registry,
+            interaction_context,
+            repl_input,
+        )
+        if response is None:
+            return
+        pending_message = response
+        interactions_handled += 1
 
 
 def run_repl(
@@ -548,9 +605,12 @@ def _run_repl(
                     if runtime.is_exit_requested(result):
                         print(f"\n{render_markdown_lite(result.message)}")
                         break
-                    print(f"\n{render_markdown_lite(result.message)}")
+                    if result.message:
+                        print(f"\n{render_markdown_lite(result.message)}")
                     status_bar.set_mode(session.mode)
-                    continue
+                    if result.model_input is None:
+                        continue
+                    user_input = result.model_input
 
                 # ADR-027: Detect and process image paths in user input
                 # Only handle local file paths that user explicitly provides
@@ -580,13 +640,11 @@ def _run_repl(
                 # Skill activation is handled within the Run, not as a separate phase.
                 # The tool returns a result, and the model continues with the updated context.
                 in_run = True
-                collector = CollectingEventHandler()
                 streamer = StreamingEventHandler(
                     renderer=renderer,
                     indicator=indicator,
                     theme=theme,
                 )
-                event_handler = CompositeEventHandler([streamer, collector])
 
                 # ADR-027: Create skill activation handler for in-run skill activation
                 skill_handler = runtime.create_skill_activation_handler()
@@ -595,10 +653,16 @@ def _run_repl(
                 message = runtime.build_multimodal_message(processed_input)
 
                 try:
-                    session.send_sync(
-                        message,
-                        on_event=event_handler.on_event,
+                    _run_interactive_turn(
+                        session=session,
+                        message=message,
+                        streamer=streamer,
+                        indicator=indicator,
+                        interaction_registry=interaction_registry,
+                        interaction_context=interaction_context,
+                        repl_input=repl_input,
                         skill_activation_handler=skill_handler,
+                        before_send=runtime.refresh_context,
                     )
                 finally:
                     session.state.metadata["permission_cache"] = permission_manager.to_state()

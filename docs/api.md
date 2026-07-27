@@ -592,8 +592,8 @@ from quenda.tools import (
 ```python
 from quenda.tools import get_core_tools
 
-# The 10 essential framework tools:
-# filesystem, execution, interaction, skill activation, and resource activation
+# The 11 essential framework tools:
+# filesystem, execution, current time, interaction, skill activation, and resource activation
 tools = get_core_tools(".")
 ```
 

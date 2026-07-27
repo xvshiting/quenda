@@ -145,6 +145,10 @@ compression:
 
 ## 扩展机制 (Extensions)
 
+Quenda 还支持通过 `extensions/context/*.py` 在每个 Run 开始前增加自定义
+上下文来源。完整教程参见
+[Context Provider：定制每个 Run 的上下文](./10-context-providers.md)。
+
 ### 自定义命令 (ADR-010)
 
 在 `extensions/commands/` 中添加 `.py` 文件：

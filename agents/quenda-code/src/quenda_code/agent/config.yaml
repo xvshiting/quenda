@@ -19,6 +19,9 @@ tools:
   bundles:
     - core
     - network
+  include:
+    - memory_search
+    - memory_get
 
 skills:
   include_catalog: true

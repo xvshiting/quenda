@@ -12,6 +12,8 @@ from quenda.host.loader import (
     load_agent_package,
     load_agent_commands,
     load_agent_interactions,
+    load_agent_context_providers,
+    load_agent_initializers,
     find_builtin_agent,
 )
 from quenda.host.storage import (
@@ -87,6 +89,14 @@ from quenda.host.interactions import (
 from quenda.host.context import (
     ContextRebuilder,
 )
+from quenda.host.extensions import (
+    AgentExtensionContext,
+    AgentInitializer,
+    AgentInitializerRegistry,
+    ContextProvider,
+    ContextProviderRegistry,
+    ContextProviderRequest,
+)
 from quenda.host.repl import (
     ReplState,
     ReplRuntime,
@@ -122,6 +132,8 @@ __all__ = [
     "load_agent_package",
     "load_agent_commands",
     "load_agent_interactions",
+    "load_agent_context_providers",
+    "load_agent_initializers",
     "find_builtin_agent",
     "ThemeConfig",
     "AgentConfigYaml",
@@ -190,6 +202,12 @@ __all__ = [
     "create_default_interaction_registry",
     # Context
     "ContextRebuilder",
+    "AgentExtensionContext",
+    "AgentInitializer",
+    "AgentInitializerRegistry",
+    "ContextProvider",
+    "ContextProviderRegistry",
+    "ContextProviderRequest",
     # REPL
     "ReplState",
     "ReplRuntime",

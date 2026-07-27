@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import patch, MagicMock
 
-from quenda.cli import _handle_interaction_request
+from quenda.cli import _handle_interaction_request, _run_interactive_turn
 from quenda.host import (
     InteractionContext,
     InteractionOption,
@@ -22,7 +22,7 @@ from quenda.host import (
     resolve_skill_activation_requests,
     create_default_interaction_registry,
 )
-from quenda.runtime.events import ModelResponded
+from quenda.runtime.events import InteractionRequested, ModelResponded, RunCompleted, RunPaused
 
 
 @dataclass
@@ -209,7 +209,7 @@ class TestHandleInteractionRequest:
         assert response is not None
         assert "Yes" in response
 
-    def test_input_interaction(self) -> None:
+    def test_input_interaction(self, capsys) -> None:
         """Test handling an input interaction."""
         registry = create_default_interaction_registry()
         context = InteractionContext(session=FakeSession(), agent=FakeAgent())
@@ -218,8 +218,10 @@ class TestHandleInteractionRequest:
         class MockReplInput:
             responses: list[str]
             index: int = 0
+            prompts: list[str] = field(default_factory=list)
 
             def get_input(self, prompt: str) -> str:
+                self.prompts.append(prompt)
                 resp = self.responses[self.index]
                 self.index += 1
                 return resp
@@ -238,6 +240,10 @@ class TestHandleInteractionRequest:
 
         assert response is not None
         assert "my custom input" in response
+        output = capsys.readouterr().out
+        assert "Enter value" in output
+        assert "What's your name?" in output
+        assert repl_input.prompts == ["\n› "]
 
     def test_choice_with_custom_input(self) -> None:
         """Test handling a choice where user selects 'Other...' and enters custom input."""
@@ -309,3 +315,57 @@ class TestHandleInteractionRequest:
             )
 
         assert response is None
+
+
+class TestInteractiveTurn:
+    """Tests the Host seam between Runtime pause events and the selector."""
+
+    def test_paused_run_prompts_and_resumes_with_user_response(self) -> None:
+        class PausingSession:
+            def __init__(self) -> None:
+                self.messages: list[str] = []
+
+            def send_sync(self, message, **kwargs) -> str:
+                self.messages.append(message)
+                on_event = kwargs["on_event"]
+                if len(self.messages) == 1:
+                    on_event(InteractionRequested(
+                        call_id="interaction-1",
+                        request={
+                            "kind": "choice",
+                            "title": "Next step",
+                            "options": [{"id": "a", "label": "Option A"}],
+                        },
+                    ))
+                    on_event(RunPaused())
+                else:
+                    on_event(RunCompleted(final_content="Continued"))
+                return ""
+
+        session = PausingSession()
+        streamer = MagicMock()
+        indicator = MagicMock()
+        before_send = MagicMock()
+        registry = create_default_interaction_registry()
+        context = InteractionContext(session=FakeSession(), agent=FakeAgent())
+
+        with patch(
+            "quenda.cli._handle_interaction_request",
+            return_value="[User selected: Option A]",
+        ) as handle:
+            _run_interactive_turn(
+                session=session,
+                message="Start",
+                streamer=streamer,
+                indicator=indicator,
+                interaction_registry=registry,
+                interaction_context=context,
+                repl_input=MagicMock(),
+                skill_activation_handler=None,
+                before_send=before_send,
+            )
+
+        assert session.messages == ["Start", "[User selected: Option A]"]
+        handle.assert_called_once()
+        assert indicator.stop.call_count == 2
+        assert before_send.call_count == 2

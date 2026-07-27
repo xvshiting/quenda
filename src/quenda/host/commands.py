@@ -118,6 +118,7 @@ class CommandResult:
         message: Short user-facing feedback message.
         state_patch: Explicit state diff to apply.
         rebuild_context: Whether Host should rebuild context for next turn.
+        model_input: Optional input to continue through the normal model/tool loop.
         action: What action the REPL should take (default: CONTINUE).
     """
 
@@ -125,6 +126,7 @@ class CommandResult:
     message: str
     state_patch: dict[str, Any] = field(default_factory=dict)
     rebuild_context: bool = False
+    model_input: str | None = None
     action: ReplAction = ReplAction.CONTINUE
 
 
@@ -2104,8 +2106,6 @@ class SkillCommand:
             lines.append(f"  • `{skill.name}`{status}")
             if skill.description:
                 lines.append(f"      {skill.description}")
-            if skill.commands:
-                lines.append(f"      Triggers: {', '.join(skill.commands)}")
 
         lines.append("")
         active_count = len(active_names)
