@@ -11,7 +11,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime
 
-from quenda.host.service import HostService, ActiveRun
+from quenda.host.service import HostService, ActiveRun, ActiveSession
 from quenda.host.service_types import (
     CreateSessionRequest,
     RequestContext,
@@ -454,6 +454,47 @@ class TestHostServiceInterrupt:
         with pytest.raises(ValueError, match="Run .* is not running"):
             await service.interrupt_run(interrupt_request)
 
+    @pytest.mark.asyncio
+    async def test_interrupt_run_with_wrong_session(self, tmp_path: Path) -> None:
+        """Test interrupting a run with wrong session_id."""
+        # Setup
+        service = HostService()
+        agent_path = tmp_path / "AGENT.md"
+        agent_path.write_text("# Test Agent\n\nTest agent description.")
+        
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        # Create two sessions
+        create_request1 = CreateSessionRequest(
+            agent_path=agent_path,
+            workspace_path=workspace,
+        )
+        session1 = service.create_session(create_request1)
+
+        create_request2 = CreateSessionRequest(
+            agent_path=agent_path,
+            workspace_path=workspace,
+        )
+        session2 = service.create_session(create_request2)
+
+        # Start run in session1
+        start_request = StartRunRequest(
+            session_id=session1.id,
+            message="Hello",
+        )
+        handle = await service.start_run(start_request)
+
+        # Try to interrupt with session2's id
+        interrupt_request = InterruptRequest(
+            run_id=handle.id,
+            session_id=session2.id,
+        )
+
+        # Should fail because session mismatch
+        with pytest.raises(ValueError, match="does not belong to session"):
+            await service.interrupt_run(interrupt_request)
+
 
 class TestHostServiceSessionPersistence:
     """Test session persistence behavior."""
@@ -477,10 +518,11 @@ class TestHostServiceSessionPersistence:
         # Verify it's in active sessions
         assert session_info.id in service._active_sessions
         
-        # Verify the triple is saved correctly
-        agent, setup, session = service._active_sessions[session_info.id]
-        assert session is not None
-        assert session.id == session_info.id
+        # Verify the ActiveSession is saved correctly
+        active_session = service._active_sessions[session_info.id]
+        assert isinstance(active_session, ActiveSession)
+        assert active_session.session is not None
+        assert active_session.session.id == session_info.id
 
 
 class TestHostServiceEventStream:

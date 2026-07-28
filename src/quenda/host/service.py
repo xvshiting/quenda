@@ -11,23 +11,24 @@ ADR-032: Host Service as Interface-neutral Control Interface
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from quenda.host.runner import (
+    AgentSetup,
+    create_skill_activation_handler,
+    setup_agent,
+)
 from quenda.host.service_types import (
     ContextInfo,
     ContextSource,
     CreateSessionRequest,
     EventEnvelope,
-    InterruptRequest,
     InteractionResponseRequest,
-    MemoryFile,
-    MemorySearchRequest,
-    MemorySearchResult,
+    InterruptRequest,
     PermissionDecisionRequest,
     RequestContext,
     RunHandle,
@@ -35,16 +36,10 @@ from quenda.host.service_types import (
     SessionInfo,
     StartRunRequest,
 )
-from quenda.host.runner import (
-    AgentSetup,
-    create_skill_activation_handler,
-    setup_agent,
-)
-from quenda.runtime.events import AnyEvent, InteractionRequested, PermissionRequested
 from quenda.kernel.types import ImageContent, TextContent
+from quenda.runtime.events import AnyEvent
 
 if TYPE_CHECKING:
-    from quenda.host.identity import User
     from quenda.runtime.agent import Agent
     from quenda.runtime.session import Session
 
@@ -57,11 +52,20 @@ class ActiveRun:
     session: Session
     agent: Agent
     setup: AgentSetup
-    task: asyncio.Task | None = None
+    task: asyncio.Task[None] | None = None
     event_queue: asyncio.Queue[AnyEvent | None] = field(default_factory=asyncio.Queue)
     interaction_futures: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     permission_futures: dict[str, asyncio.Future[str]] = field(default_factory=dict)
     interrupt_requested: bool = False
+
+
+@dataclass
+class ActiveSession:
+    """Internal state for an active session."""
+
+    agent: Agent
+    setup: AgentSetup
+    session: Session
 
 
 class HostService:
@@ -88,8 +92,8 @@ class HostService:
 
     def __init__(self) -> None:
         """Initialize the HostService."""
-        # session_id -> (Agent, AgentSetup, Session)
-        self._active_sessions: dict[str, tuple[Agent, AgentSetup, Session]] = {}
+        # session_id -> ActiveSession
+        self._active_sessions: dict[str, ActiveSession] = {}
         # run_id -> ActiveRun
         self._active_runs: dict[str, ActiveRun] = {}
 
@@ -114,6 +118,12 @@ class HostService:
 
         Raises:
             ValueError: If agent setup fails.
+
+        Note:
+            Sessions are currently tracked in-memory only.
+            TODO: Implement storage persistence for session recovery after service restart.
+            The context parameter will be used for user identity and resource isolation
+            in multi-tenant deployments (ADR-XXX: Multi-tenancy Support).
         """
         # Setup agent
         setup = setup_agent(
@@ -137,7 +147,11 @@ class HostService:
             session = agent.open_session()
 
         # Track the session (save the triple: agent, setup, session)
-        self._active_sessions[session.id] = (agent, setup, session)
+        self._active_sessions[session.id] = ActiveSession(
+            agent=agent,
+            setup=setup,
+            session=session,
+        )
 
         return SessionInfo(
             id=session.id,
@@ -165,19 +179,19 @@ class HostService:
         if session_id not in self._active_sessions:
             return None
 
-        agent, setup, session = self._active_sessions[session_id]
+        active_session = self._active_sessions[session_id]
 
         return SessionInfo(
-            id=session.id,
-            agent_name=setup.agent_package.name if setup.agent_package else "agent",
-            workspace_id=setup.workspace_id,
-            workspace_path=setup.workspace_path,
-            provider=setup.provider_name,
-            model=setup.model_name,
+            id=active_session.session.id,
+            agent_name=active_session.setup.agent_package.name if active_session.setup.agent_package else "agent",
+            workspace_id=active_session.setup.workspace_id,
+            workspace_path=active_session.setup.workspace_path,
+            provider=active_session.setup.provider_name,
+            model=active_session.setup.model_name,
             created_at=datetime.now(),
-            message_count=len(session.messages),
-            mode=session.mode,
-            user=setup.user if hasattr(setup, 'user') else None,
+            message_count=len(active_session.session.messages),
+            mode=active_session.session.mode,
+            user=active_session.setup.user if hasattr(active_session.setup, 'user') else None,
         )
 
     def list_sessions(self, workspace_id: str) -> list[SessionInfo]:
@@ -193,19 +207,19 @@ class HostService:
         # TODO: Implement session listing from storage
         # For now, return only active sessions
         result = []
-        for session_id, (agent, setup, session) in self._active_sessions.items():
-            if setup.workspace_id == workspace_id:
+        for _session_id, active_session in self._active_sessions.items():
+            if active_session.setup.workspace_id == workspace_id:
                 result.append(SessionInfo(
-                    id=session.id,
-                    agent_name=setup.agent_package.name if setup.agent_package else "agent",
-                    workspace_id=setup.workspace_id,
-                    workspace_path=setup.workspace_path,
-                    provider=setup.provider_name,
-                    model=setup.model_name,
+                    id=active_session.session.id,
+                    agent_name=active_session.setup.agent_package.name if active_session.setup.agent_package else "agent",
+                    workspace_id=active_session.setup.workspace_id,
+                    workspace_path=active_session.setup.workspace_path,
+                    provider=active_session.setup.provider_name,
+                    model=active_session.setup.model_name,
                     created_at=datetime.now(),
-                    message_count=len(session.messages),
-                    mode=session.mode,
-                    user=setup.user if hasattr(setup, 'user') else None,
+                    message_count=len(active_session.session.messages),
+                    mode=active_session.session.mode,
+                    user=active_session.setup.user if hasattr(active_session.setup, 'user') else None,
                 ))
         return result
 
@@ -234,7 +248,7 @@ class HostService:
         if request.session_id not in self._active_sessions:
             raise ValueError(f"Session {request.session_id} not found")
 
-        agent, setup, session = self._active_sessions[request.session_id]
+        active_session = self._active_sessions[request.session_id]
 
         # Create run handle
         run_id = f"run_{uuid4().hex[:8]}"
@@ -248,9 +262,9 @@ class HostService:
         # Create active run tracking
         active_run = ActiveRun(
             handle=handle,
-            session=session,
-            agent=agent,
-            setup=setup,
+            session=active_session.session,
+            agent=active_session.agent,
+            setup=active_session.setup,
         )
 
         self._active_runs[run_id] = active_run
@@ -419,12 +433,18 @@ class HostService:
             context: Optional request context.
 
         Raises:
-            ValueError: If run not found or not running.
+            ValueError: If run not found, not running, or session mismatch.
         """
         if request.run_id not in self._active_runs:
             raise ValueError(f"Run {request.run_id} not found")
 
         active_run = self._active_runs[request.run_id]
+
+        # Verify session ownership
+        if active_run.handle.session_id != request.session_id:
+            raise ValueError(
+                f"Run {request.run_id} does not belong to session {request.session_id}"
+            )
 
         if active_run.handle.status != RunStatus.RUNNING:
             raise ValueError(f"Run {request.run_id} is not running")
@@ -456,46 +476,46 @@ class HostService:
         if session_id not in self._active_sessions:
             raise ValueError(f"Session {session_id} not found")
 
-        agent, setup, session = self._active_sessions[session_id]
+        active_session = self._active_sessions[session_id]
 
         # Build context sources
         sources: list[ContextSource] = []
 
         # Agent MD
-        if setup.agent_package:
+        if active_session.setup.agent_package:
             sources.append(ContextSource(
                 name="AGENT.md",
                 type="agent_md",
-                path=setup.agent_package.path / "AGENT.md",
+                path=active_session.setup.agent_package.path / "AGENT.md",
                 description="Agent definition and instructions",
             ))
 
-        # User MD
-        user_md = setup.workspace_path / "USER.md"
-        if user_md.exists():
-            sources.append(ContextSource(
-                name="USER.md",
-                type="user_md",
-                path=user_md,
-                description="User preferences",
-            ))
+        # User MD and Memory MD (if workspace_path exists)
+        if active_session.setup.workspace_path:
+            user_md = active_session.setup.workspace_path / "USER.md"
+            if user_md.exists():
+                sources.append(ContextSource(
+                    name="USER.md",
+                    type="user_md",
+                    path=user_md,
+                    description="User preferences",
+                ))
 
-        # Memory MD
-        memory_md = setup.workspace_path / "MEMORY.md"
-        if memory_md.exists():
-            sources.append(ContextSource(
-                name="MEMORY.md",
-                type="memory_md",
-                path=memory_md,
-                description="Cross-project context",
-            ))
+            memory_md = active_session.setup.workspace_path / "MEMORY.md"
+            if memory_md.exists():
+                sources.append(ContextSource(
+                    name="MEMORY.md",
+                    type="memory_md",
+                    path=memory_md,
+                    description="Cross-project context",
+                ))
 
         # Active skills
         active_skills = []
         transient_skills = []
-        if setup.skill_activator:
-            active_skills = setup.skill_activator.list_persistent()
-            transient_skills = setup.skill_activator.list_transient()
+        if active_session.setup.skill_activator:
+            active_skills = active_session.setup.skill_activator.list_persistent()
+            transient_skills = active_session.setup.skill_activator.list_transient()
 
             for skill_name in active_skills:
                 sources.append(ContextSource(
@@ -508,52 +528,19 @@ class HostService:
             sources=sources,
             active_skills=active_skills,
             transient_skills=transient_skills,
-            mode=setup.agent.mode if hasattr(setup.agent, 'mode') else "chat",
+            mode=active_session.setup.agent.mode if hasattr(active_session.setup.agent, 'mode') else "chat",
         )
 
     # =========================================================================
-    # Memory Management
+    # Memory Operations (ADR-XXX: Future Work)
     # =========================================================================
 
-    async def search_memory(
-        self,
-        request: MemorySearchRequest,
-        context: RequestContext | None = None,
-    ) -> MemorySearchResult:
-        """
-        Search the memory library.
-
-        Args:
-            request: The memory search request.
-            context: Optional request context.
-
-        Returns:
-            MemorySearchResult with matching files.
-        """
-        # TODO: Implement memory search using memory_search tool
-        # For now, return empty result
-        return MemorySearchResult(
-            query=request.query,
-            results=[],
-        )
-
-    async def get_memory_file(
-        self,
-        path: str,
-        context: RequestContext | None = None,
-    ) -> MemoryFile | None:
-        """
-        Get a memory file.
-
-        Args:
-            path: The memory file path.
-            context: Optional request context.
-
-        Returns:
-            MemoryFile if found, None otherwise.
-        """
-        # TODO: Implement memory file reading using memory_get tool
-        return None
+    # Note: Memory operations are deferred to a future iteration.
+    # These methods are removed from the MVP public API to avoid
+    # exposing unimplemented functionality.
+    #
+    # Future implementation will integrate with the memory tool system
+    # and provide proper user/workspace isolation.
 
     # =========================================================================
     # Internal Helpers

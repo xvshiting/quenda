@@ -16,16 +16,18 @@ ADR-032: Host Service as Interface-neutral Control Interface
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from quenda.host.identity import User
     from quenda.kernel.types import ImageContent, TextContent
     from quenda.runtime.events import AnyEvent
-    from quenda.host.identity import User
 
 
 # =============================================================================
@@ -51,7 +53,7 @@ class SessionInfo:
     id: str
     agent_name: str
     workspace_id: str
-    workspace_path: Path
+    workspace_path: Path | None
     provider: str
     model: str
     created_at: datetime
