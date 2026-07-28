@@ -31,4 +31,6 @@ converters.convert_messages_to_openai = logged_convert
 # 启动 REPL
 from quenda.cli import main
 import sys
-sys.exit(main())
+
+if __name__ == "__main__":
+    sys.exit(main())

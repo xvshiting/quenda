@@ -125,6 +125,28 @@ from quenda.host.skill import (
     build_skill_activation_followup,
     resolve_skill_activation_requests,
 )
+from quenda.host.service_types import (
+    CreateSessionRequest,
+    SessionInfo,
+    SessionList,
+    RunStatus,
+    StartRunRequest,
+    RunHandle,
+    EventEnvelope,
+    InteractionResponseRequest,
+    PermissionDecisionRequest,
+    InterruptRequest,
+    ContextSource,
+    ContextInfo,
+    MemorySearchRequest,
+    MemorySearchResult,
+    MemoryFile,
+    RequestContext,
+)
+from quenda.host.service import (
+    HostService,
+    ActiveRun,
+)
 
 __all__ = [
     # Agent loading
@@ -231,4 +253,24 @@ __all__ = [
     "create_skill_activation_handler",
     "run_agent_once",
     "setup_agent",
+    # HostService (ADR-032)
+    "HostService",
+    "ActiveRun",
+    # Service types (ADR-032)
+    "CreateSessionRequest",
+    "SessionInfo",
+    "SessionList",
+    "RunStatus",
+    "StartRunRequest",
+    "RunHandle",
+    "EventEnvelope",
+    "InteractionResponseRequest",
+    "PermissionDecisionRequest",
+    "InterruptRequest",
+    "ContextSource",
+    "ContextInfo",
+    "MemorySearchRequest",
+    "MemorySearchResult",
+    "MemoryFile",
+    "RequestContext",
 ]

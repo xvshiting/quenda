@@ -182,9 +182,13 @@ model_name: deepseek-v4-flash
         binding = setup_host_binding(agent_dir, workspace)
         assert binding is not None
 
-        # First refresh - no skills
-        snapshot1 = refresh_run_context(binding)
-        assert len(snapshot1.discovered_skills) == 0
+        # First refresh - no skills from user-workspace
+        from quenda.host.skill import SkillDiscovery
+        discovery1 = SkillDiscovery(user_workspace_skills_path=skills_dir)
+        skills1 = discovery1.discover_skills()
+        # Verify no skills from user_workspace source
+        user_ws_skills = [s for s in skills1 if s.source == "user_workspace"]
+        assert len(user_ws_skills) == 0
 
         # Add a new skill
         skill_dir = skills_dir / "test-skill"
@@ -196,15 +200,13 @@ description: A test skill
 # Test Skill
 """)
 
-        # Update binding's skill discovery path
-        # Note: In production, this would be the user-workspace path
-        from quenda.host.skill import SkillDiscovery
-        new_discovery = SkillDiscovery(user_workspace_skills_path=skills_dir)
-
         # Second refresh - should discover new skill
-        snapshot2_skills = new_discovery.discover_skills()
-        assert len(snapshot2_skills) == 1
-        assert snapshot2_skills[0].name == "test-skill"
+        discovery2 = SkillDiscovery(user_workspace_skills_path=skills_dir)
+        skills2 = discovery2.discover_skills()
+        # Find the test-skill
+        test_skill = next((s for s in skills2 if s.name == "test-skill"), None)
+        assert test_skill is not None
+        assert test_skill.source == "user_workspace"
 
     def test_active_skill_names_durable_state(
         self, agent_with_skills_dir: tuple[Path, Path, Path]

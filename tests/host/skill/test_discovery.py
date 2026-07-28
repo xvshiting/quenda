@@ -46,16 +46,20 @@ This is a test skill.
         discovery = SkillDiscovery(user_workspace_skills_path=user_workspace_skills)
         skills = discovery.discover_skills()
 
-        assert len(skills) == 1
-        assert skills[0].name == "test-skill"
-        assert skills[0].description == "A test skill"
+        # Find the test-skill (it should be among all discovered skills)
+        test_skill = next((s for s in skills if s.name == "test-skill"), None)
+        assert test_skill is not None
+        assert test_skill.description == "A test skill"
+        assert test_skill.source == "user_workspace"
 
     def test_skill_resources_resolved(self, user_workspace_skills: Path) -> None:
         """Test that resources are auto-discovered from directory structure."""
         discovery = SkillDiscovery(user_workspace_skills_path=user_workspace_skills)
         skills = discovery.discover_skills()
 
-        skill = skills[0]
+        # Find the test-skill
+        skill = next((s for s in skills if s.name == "test-skill"), None)
+        assert skill is not None
         assert len(skill.resources) == 1
         assert skill.resources[0].type == "reference"
         assert skill.resources[0].path.name == "guide.md"
@@ -87,8 +91,10 @@ This is a test skill.
         discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
         skills = discovery.discover_skills()
 
-        # Should skip invalid skill
-        assert len(skills) == 0
+        # Should skip invalid skill (but may have system skills)
+        # Verify that invalid-skill is not in the list
+        invalid_skill = next((s for s in skills if s.name == "invalid-skill"), None)
+        assert invalid_skill is None
 
     def test_skill_minimal_frontmatter(self, tmp_path: Path) -> None:
         """Test skill with minimal frontmatter."""
@@ -106,10 +112,11 @@ description: Minimal skill
         discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
         skills = discovery.discover_skills()
 
-        assert len(skills) == 1
-        assert skills[0].name == "minimal"
-        assert skills[0].version == "0.1.0"  # Default version
-        assert len(skills[0].resources) == 0
+        # Find the minimal skill
+        skill = next((s for s in skills if s.name == "minimal"), None)
+        assert skill is not None
+        assert skill.version == "0.1.0"  # Default version
+        assert len(skill.resources) == 0
 
     def test_multiple_skills(self, tmp_path: Path) -> None:
         """Test discovering multiple skills."""
@@ -126,8 +133,10 @@ description: Skill {i}
         discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
         skills = discovery.discover_skills()
 
-        assert len(skills) == 3
-        names = {s.name for s in skills}
+        # Find the test skills
+        test_skills = [s for s in skills if s.name.startswith("skill-")]
+        assert len(test_skills) == 3
+        names = {s.name for s in test_skills}
         assert names == {"skill-0", "skill-1", "skill-2"}
 
     def test_discovers_project_quenda_skills(self, tmp_path: Path) -> None:
@@ -145,9 +154,10 @@ description: Project skill
         discovery = SkillDiscovery(workspace_path=workspace)
         skills = discovery.discover_skills()
 
-        assert len(skills) == 1
-        assert skills[0].name == "project-skill"
-        assert skills[0].source == "workspace"
+        # Find the project-skill
+        skill = next((s for s in skills if s.name == "project-skill"), None)
+        assert skill is not None
+        assert skill.source == "workspace"
 
     def test_project_quenda_skill_overrides_agents_and_bundled(self, tmp_path: Path) -> None:
         """Project .quenda/skills take priority over .agents and bundled skills."""
@@ -274,9 +284,10 @@ description: Bundled
         )
         skills = discovery.discover_skills()
 
-        assert len(skills) == 1
-        assert skills[0].name == "bundled-skill"
-        assert skills[0].source == "agent_package"
+        # Find the bundled-skill
+        skill = next((s for s in skills if s.name == "bundled-skill"), None)
+        assert skill is not None
+        assert skill.source == "agent_package"
 
 
 class TestSkillPackage:

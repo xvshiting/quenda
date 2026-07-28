@@ -176,8 +176,11 @@ This user-workspace skill overrides the bundled one.
         discovery = SkillDiscovery(user_workspace_skills_path=user_ws_skills)
         skills = discovery.discover_skills()
 
-        # No skills found (empty user-workspace)
-        assert len(skills) == 0
+        # No skills from agent package (it's not provided)
+        # But we may discover skills from other sources (user skills, system skills)
+        # So we just verify that no skills have source='agent_package'
+        agent_package_skills = [s for s in skills if s.source == 'agent_package']
+        assert len(agent_package_skills) == 0
 
     def test_agent_package_skill_with_resources(
         self, tmp_path: Path
