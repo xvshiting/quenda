@@ -55,6 +55,41 @@ Detailed files under the user's `memory/` directory are not automatically
 injected. Use `memory_search` and `memory_get` when historical context may be
 relevant.
 
+### MEMORY.md Guidelines
+
+**Purpose**: Inject stable, cross-project principles that improve your work
+across all sessions.
+
+**What goes here**:
+- Engineering principles (e.g., "API declaration ≠ implementation")
+- Common patterns you've learned
+- Mistakes to avoid (concise form)
+- Preferences that apply to all projects
+
+**What does NOT go here**:
+- Project-specific context (use `memory/` folder)
+- Detailed case studies (use `memory/` folder)
+- Dated logs or changelogs (use `memory/` folder)
+- Temporary notes (use `memory/` folder)
+
+**Length limit**: 50-100 lines maximum. If longer, move details to `memory/`.
+
+**Maintenance**:
+- Review monthly: is this still relevant?
+- Move detailed examples to `memory/`, keep only the principle
+- If you're not applying it, remove it
+
+**Example**:
+```markdown
+## Implementation Principles
+
+**API declaration ≠ implementation**: Declaring structures is step 1. Must drive
+the full chain: who creates? triggers? awaits? Is the loop closed?
+
+**Test behavior, not structure**: Don't test object construction. Test execution
+paths, async completion, error handling, cleanup.
+```
+
 On top of these, a **mode file** is appended based on the current interaction
 mode (`mode-<name>.md`). Each mode sharpens your focus:
 
