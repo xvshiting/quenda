@@ -43,6 +43,18 @@
   - 用户显式锁定非 vision 模型 + 发图 → `UnsupportedFeatureError`
 - [ ] 详见 [docs/decisions/028-capability-based-model-routing.md](docs/decisions/028-capability-based-model-routing.md)
 
+### P1.6: Model Consultation (ADR-033)
+
+> 保持单 Agent 执行权，由 Primary Model 通过普通 Tool 反复咨询其他能力模型。
+
+- [ ] 用 fake models 原型验证 `consult_model` 的一次调用和重复咨询语义
+- [ ] 确定 `task/context/resources/capabilities` 的第一版 schema
+- [ ] 确定 capability 到 consulted model 的 Host 配置和解析规则
+- [ ] 确定咨询预算、失败结果和事件可观察性
+- [ ] 验证 Quenda Code 的 vision consultation，确保 Kimi 不获得写工具且不结束主 Run
+- [ ] 明确 ADR-028 takeover routing 与 ADR-033 consultation 的适用边界和迁移方式
+- [ ] 详见 [docs/decisions/033-model-consultation-as-a-tool.md](docs/decisions/033-model-consultation-as-a-tool.md)
+
 ### P2: Host 最小骨架
 
 - [x] 定义 Session/Run 持久化边界

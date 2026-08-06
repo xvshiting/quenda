@@ -178,6 +178,8 @@ def register_default_providers(registry: ProviderRegistry) -> None:
         STEPFUN_SPEC,
         TENCENT_SPEC,
         TOGETHER_SPEC,
+        VOLCENGINE_CODING_ANTHROPIC_SPEC,
+        VOLCENGINE_CODING_SPEC,
         VOLCENGINE_SPEC,
         XAI_SPEC,
         XIAOMI_SPEC,
@@ -208,6 +210,8 @@ def register_default_providers(registry: ProviderRegistry) -> None:
     registry.register(TENCENT_SPEC)
     registry.register(TOGETHER_SPEC)
     registry.register(VOLCENGINE_SPEC)
+    registry.register(VOLCENGINE_CODING_SPEC)
+    registry.register(VOLCENGINE_CODING_ANTHROPIC_SPEC)
     registry.register(XAI_SPEC)
     registry.register(XIAOMI_SPEC)
     registry.register(ZHIPU_SPEC)

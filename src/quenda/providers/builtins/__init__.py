@@ -30,6 +30,10 @@ from quenda.providers.builtins.stepfun import STEPFUN_SPEC
 from quenda.providers.builtins.tencent import TENCENT_SPEC
 from quenda.providers.builtins.together import TOGETHER_SPEC
 from quenda.providers.builtins.volcengine import VOLCENGINE_SPEC
+from quenda.providers.builtins.volcengine_coding import (
+    VOLCENGINE_CODING_ANTHROPIC_SPEC,
+    VOLCENGINE_CODING_SPEC,
+)
 from quenda.providers.builtins.xai import XAI_SPEC
 from quenda.providers.builtins.xiaomi import XIAOMI_SPEC
 from quenda.providers.builtins.zhipu import ZHIPU_SPEC
@@ -59,6 +63,8 @@ __all__ = [
     "TENCENT_SPEC",
     "TOGETHER_SPEC",
     "VOLCENGINE_SPEC",
+    "VOLCENGINE_CODING_SPEC",
+    "VOLCENGINE_CODING_ANTHROPIC_SPEC",
     "XAI_SPEC",
     "XIAOMI_SPEC",
     "ZHIPU_SPEC",

@@ -12,6 +12,7 @@ Quenda 是一个轻量级 Python Agent 框架，采用三层架构设计。
 技术雷达与架构决策框架见 [TECH-RADAR.md](TECH-RADAR.md)。
 Skills 能力包机制见 [decisions/002-skills-capability-packages.md](decisions/002-skills-capability-packages.md)。
 Host 命名与边界说明见 [decisions/003-host-name-and-boundary.md](decisions/003-host-name-and-boundary.md)。
+单 Agent 模型咨询机制见 [decisions/033-model-consultation-as-a-tool.md](decisions/033-model-consultation-as-a-tool.md)。
 Workspace 身份与用户 Agent 状态模型见 [decisions/004-workspace-identity-and-user-agent-state.md](decisions/004-workspace-identity-and-user-agent-state.md)。
 Code Agent MVP 设计见 [decisions/005-quenda-code-agent-mvp.md](decisions/005-quenda-code-agent-mvp.md)。
 Interface 事件渲染策略见 [decisions/006-interface-event-rendering.md](decisions/006-interface-event-rendering.md)。
@@ -133,6 +134,13 @@ Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions
   - Runtime: `ModelRequirementResolver` + `ModelRouter` + `CapabilityGuard` + `ModelRouted` Event
   - Host: `models.default` + `models.vision` 配置
   - 详见 [decisions/028-capability-based-model-routing.md](decisions/028-capability-based-model-routing.md)
+
+- **P1.6: Model Consultation (ADR-033, Proposed)**
+  - Primary Model 始终持有单 Agent model-tool loop
+  - `consult_model` 通过标准 ToolResult 返回一次能力模型咨询结果
+  - 支持显式 task/context/resources 和同一 Run 内反复咨询
+  - 第一阶段不引入 subagent、独立 Session 或 consulted-model 工具循环
+  - 详见 [decisions/033-model-consultation-as-a-tool.md](decisions/033-model-consultation-as-a-tool.md)
 
 ### 📋 待做
 

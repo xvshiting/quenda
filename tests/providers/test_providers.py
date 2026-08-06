@@ -317,6 +317,32 @@ class TestBuiltinProviders:
         assert OLLAMA_SPEC.id == "ollama"
         assert "localhost" in OLLAMA_SPEC.base_url
 
+    def test_volcengine_coding_plan_specs(self) -> None:
+        """Coding Plan is exposed through both supported API protocols."""
+        from quenda.providers.builtins import (
+            VOLCENGINE_CODING_ANTHROPIC_SPEC,
+            VOLCENGINE_CODING_SPEC,
+        )
+
+        assert VOLCENGINE_CODING_SPEC.api == "openai-completions"
+        assert VOLCENGINE_CODING_SPEC.base_url.endswith("/api/coding/v3")
+        assert VOLCENGINE_CODING_ANTHROPIC_SPEC.api == "anthropic-messages"
+        assert VOLCENGINE_CODING_ANTHROPIC_SPEC.base_url.endswith("/api/coding")
+        expected_models = {
+            "ark-code-latest",
+            "auto",
+            "doubao-seed-2.1-turbo",
+            "deepseek-v4-flash",
+            "glm-5.2",
+            "kimi-k2.7-code",
+            "minimax-m3",
+            "deepseek-v4-pro",
+        }
+        assert expected_models <= {model.id for model in VOLCENGINE_CODING_SPEC.models}
+        assert {model.id for model in VOLCENGINE_CODING_SPEC.models} == {
+            model.id for model in VOLCENGINE_CODING_ANTHROPIC_SPEC.models
+        }
+
 
 # =============================================================================
 # Global Registry Tests
@@ -369,3 +395,5 @@ class TestGlobalRegistry:
         assert "deepseek-anthropic" in providers
         assert "moonshot" in providers
         assert "ollama" in providers
+        assert "volcengine-coding" in providers
+        assert "volcengine-coding-anthropic" in providers
