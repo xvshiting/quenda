@@ -245,6 +245,8 @@ class CompressionConfig:
     keep_last_n_messages: int = 10
     archive_raw_messages: bool = True
     compression_model: str | None = None  # Use different model for summarization
+    microcompact_trigger_tokens: int = 50_000
+    microcompact_keep_last_tool_results: int = 8
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CompressionConfig:
@@ -258,6 +260,12 @@ class CompressionConfig:
             keep_last_n_messages=int(data.get("keep_last_n_messages", 10)),
             archive_raw_messages=_coerce_bool(data.get("archive_raw_messages", True), True),
             compression_model=data.get("compression_model"),
+            microcompact_trigger_tokens=int(
+                data.get("microcompact_trigger_tokens", 50_000)
+            ),
+            microcompact_keep_last_tool_results=int(
+                data.get("microcompact_keep_last_tool_results", 8)
+            ),
         )
 
 

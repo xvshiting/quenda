@@ -1158,6 +1158,14 @@ def setup_agent(
             termination_policy=binding.termination_policy,
             vision_model=binding.vision_model_instance,
             capability_routing=binding.capability_routing,
+            microcompact_trigger_tokens=(
+                binding.agent_package.config.compression.microcompact_trigger_tokens
+                if binding.agent_package.config else 50_000
+            ),
+            microcompact_keep_last_tool_results=(
+                binding.agent_package.config.compression.microcompact_keep_last_tool_results
+                if binding.agent_package.config else 8
+            ),
         )
 
         # Create ContextRebuilder for runtime context rebuilding

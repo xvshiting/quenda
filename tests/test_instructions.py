@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from quenda.host.instructions import (
+    FRAMEWORK_CONTRACT,
     InstructionScope,
     InstructionSource,
     TemplateContext,
@@ -51,6 +52,13 @@ class TestInstructionSource:
         )
         with pytest.raises(Exception):
             source.content = "changed"  # type: ignore
+
+
+def test_framework_contract_is_runtime_guidance_not_embedded_documentation() -> None:
+    assert "user-workspace skills" in FRAMEWORK_CONTRACT
+    assert "loaded on demand" in FRAMEWORK_CONTRACT
+    assert "SKILL.md Schema" not in FRAMEWORK_CONTRACT
+    assert len(FRAMEWORK_CONTRACT) < 1_800
 
 
 class TestTemplateContext:
@@ -401,6 +409,35 @@ class TestResolveInstructionSources:
         catalog_source = next(s for s in sources if "Available Skills" in s.content)
         assert "request_skill_activation" in catalog_source.content
         assert "code-review" in catalog_source.content
+
+    def test_skill_catalog_is_compact_but_keeps_routing_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        """Long frontmatter descriptions do not become permanent prompt payload."""
+        user = User(id="user_123")
+        skill = MagicMock()
+        skill.name = "develop-presentation"
+        skill.description = (
+            "Create and revise complete presentation workflows. "
+            + "Detailed trigger guidance that belongs in the skill itself. " * 20
+        )
+
+        sources = resolve_instruction_sources(
+            agent_package_path=tmp_path / "agent",
+            agent_name="test-agent",
+            agent_md_content="Base prompt.",
+            agent_instructions=[],
+            workspace_path=tmp_path,
+            user=user,
+            discovered_skills=[skill],
+            active_skills=[],
+            include_skill_catalog=True,
+        )
+
+        catalog = next(s.content for s in sources if "Available Skills" in s.content)
+        assert "develop-presentation" in catalog
+        assert "Create and revise complete presentation workflows." in catalog
+        assert len(catalog) < 700
 
 
 class TestLoadAgentPackage:

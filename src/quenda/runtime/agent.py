@@ -117,6 +117,8 @@ class Agent:
         trace_sink: TraceSink | None = None,
         vision_model: Model | None = None,
         capability_routing: bool = True,
+        microcompact_trigger_tokens: int = 50_000,
+        microcompact_keep_last_tool_results: int = 8,
     ) -> None:
         """
         Create an agent.
@@ -151,6 +153,8 @@ class Agent:
         self._trace_sink = trace_sink
         self._vision_model = vision_model
         self._capability_routing = capability_routing
+        self._microcompact_trigger_tokens = microcompact_trigger_tokens
+        self._microcompact_keep_last_tool_results = microcompact_keep_last_tool_results
     @property
     def name(self) -> str:
         """The agent name."""
@@ -259,6 +263,8 @@ class Agent:
             trace_sink=self._trace_sink,
             vision_model=self._vision_model,
             capability_routing=self._capability_routing,
+            microcompact_trigger_tokens=self._microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
         )
 
     def load_session(self, session_id: str) -> Session | None:
@@ -287,6 +293,8 @@ class Agent:
             tool_result_processing_policy=self._tool_result_processing_policy,
             termination_policy=self._termination_policy,
             trace_sink=self._trace_sink,
+            microcompact_trigger_tokens=self._microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
         )
 
     def list_sessions(self) -> list[SessionState]:
@@ -328,7 +336,13 @@ class Agent:
         """
         # Create temporary session
         state = SessionState.create(self._config.name)
-        session = Session(state=state, agent=self._config, model=model or self._model)
+        session = Session(
+            state=state,
+            agent=self._config,
+            model=model or self._model,
+            microcompact_trigger_tokens=self._microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
+        )
 
         if image_paths:
             if not isinstance(message, str):

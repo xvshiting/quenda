@@ -33,126 +33,43 @@ if TYPE_CHECKING:
 FRAMEWORK_CONTRACT = """
 ## Quenda Framework Conventions
 
-### Workspace Structure
+Treat the project directory as the shared physical workspace. Quenda's
+`.quenda/workspace.yaml` binds it to per-user session state under
+`~/.quenda/users/<user>/`; do not confuse that private state with project files.
 
-Quenda distinguishes between **physical workspace** (the project folder) and **logical workspace** (user-specific state).
+Skills are progressively disclosed instruction packages. Resolution priority is:
 
-Physical workspace (shared):
-```
-<project-folder>/           # Shared project files
-├── .quenda/
-│   └── workspace.yaml      # Workspace binding (id, metadata)
-└── ...                     # Project code
-```
+1. user-workspace skills (highest priority, isolated to this user and workspace)
+2. agent-bundled skills
+3. user skills (lowest priority)
 
-Logical workspace (per-user):
-```
-~/.quenda/users/<user>/
-├── agents/
-│   └── <agent>/
-│       ├── INSTRUCTIONS.md      # User preferences for agent
-│       └── workspaces/<ws_id>/  # Session state
-└── workspaces/
-    └── <ws_id>/
-        └── skills/              # User-workspace skills
-            └── <skill-name>/
-                └── SKILL.md
-```
+Each skill is rooted at a `skills/<skill-name>/SKILL.md` package.
 
-### Skills System
+The available-skill catalog contains routing metadata only. When a task matches a
+skill, request its activation by exact name. Do not assume it is active until the
+Host confirms activation. Activated instructions are added to context; references,
+templates, scripts, and other resources are loaded on demand with the skill resource
+tools. Do not invent resource contents or paths.
 
-Skills are composable capability packages that extend your behavior with specialized instructions and resources.
-
-**Skill Locations (Priority Order):**
-
-1. **User-workspace skills** - `~/.quenda/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md`
-   - User-specific skills for this workspace, highest priority
-   - Isolated per user and per workspace
-   - Different users can have different skills in the same project
-
-2. **Agent bundled skills** - `<agent-package>/skills/<skill-name>/SKILL.md`
-   - Skills bundled with the agent definition
-   - Installed together with the agent via PyPI or local path
-   - Removed when agent is uninstalled
-
-3. **User skills** - `~/.quenda/skills/<skill-name>/SKILL.md`
-   - Shared across all workspaces for this user
-   - Lowest priority
-
-**Creating a New Skill:**
-
-To create a skill, create a directory with a SKILL.md file:
-
-```
-~/.quenda/users/<user>/workspaces/<ws_id>/skills/<skill-name>/SKILL.md
-```
-
-Example `SKILL.md`:
-```yaml
----
-name: code-review
-description: Use when reviewing code, checking code quality, or providing feedback on code changes.
-version: "1.0.0"
-resources:
-  references:
-    - path: "guides/style-guide.md"
-      description: "Style guidelines"
-  assets:
-    - path: "templates/report.md"
-      type: template
----
-
-# Code Review
-
-When reviewing code, provide thorough, constructive feedback...
-```
-
-**SKILL.md Schema:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Unique identifier (lowercase, alphanumeric, dashes, underscores) |
-| `description` | Yes | Human-readable description - primary triggering mechanism |
-| `version` | No | Semantic version (default: "0.1.0") |
-| `resources` | No | References and assets |
-
-**Resources:**
-
-- `references`: Documents for context (guides, checklists, references)
-- `assets`: Templates, scripts, and other files used in output
-
-**Bundling Skills with Agent Package:**
-
-```
-<agent-package>/
-├── AGENT.md
-├── config.yaml
-├── skills/                    # Bundled skills
-│   └── <skill-name>/
-│       └── SKILL.md
-└── ...
-```
-
-In `config.yaml`:
-```yaml
-skills:
-  - <skill-name>              # Auto-activate bundled skill
-```
-
-**Using Skills:**
-- `/skill list` - See available skills (from all sources)
-- `/skill activate <name>` - Activate a skill
-- `/skill deactivate <name>` - Deactivate a skill
-- `/skill resources` - View resources from active skills
-
-### Important Notes
-
-- Skills are re-discovered when context is rebuilt, so edits are picked up on later runs
-- User-workspace skills are isolated per user and per workspace
-- Bundle skills in `<agent-package>/skills/` for agent-specific capabilities
-- Skill instructions are added to your context when activated
-- Resources (references, templates) are loaded on demand
+Skill discovery is refreshed at turn boundaries. Use `/skill` commands only when
+the user explicitly asks to inspect or control activation state.
 """
+
+
+SKILL_CATALOG_DESCRIPTION_LIMIT = 180
+
+
+def _compact_skill_description(description: str) -> str:
+    """Return a one-line routing hint rather than full trigger documentation."""
+    normalized = " ".join(description.split())
+    if len(normalized) <= SKILL_CATALOG_DESCRIPTION_LIMIT:
+        return normalized
+
+    sentence_end = normalized.find(". ")
+    if 0 < sentence_end < SKILL_CATALOG_DESCRIPTION_LIMIT:
+        return normalized[: sentence_end + 1]
+
+    return normalized[: SKILL_CATALOG_DESCRIPTION_LIMIT - 1].rstrip() + "…"
 
 
 class InstructionScope(IntEnum):
@@ -440,7 +357,8 @@ def resolve_instruction_sources(
         for skill in discovered_skills:
             is_active = active_skills and any(s.name == skill.name for s in active_skills)
             status = "✓ active" if is_active else "available"
-            skill_catalog_lines.append(f"- **{skill.name}** ({status}): {skill.description}")
+            description = _compact_skill_description(skill.description)
+            skill_catalog_lines.append(f"- **{skill.name}** ({status}): {description}")
         sources.append(InstructionSource(
             scope=InstructionScope.SKILL,
             content="\n".join(skill_catalog_lines),

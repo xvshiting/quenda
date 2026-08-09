@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import uuid4
 
-from quenda.kernel import Kernel, Message, Model, ModelResponse
+from quenda.kernel import Kernel, Message, Model, ModelResponse, Tool
 from quenda.kernel.types import (
     ImageContent,
     ImageRef,
@@ -57,6 +57,7 @@ from quenda.runtime.events import (
 from quenda.runtime.permission import PermissionRequiredError
 from quenda.runtime.session import SessionState
 from quenda.runtime.state import RunState
+from quenda.tools.search import SearchToolsTool
 
 if TYPE_CHECKING:
     from quenda.runtime.compression import CompressionDecision
@@ -162,6 +163,20 @@ class Run:
     vision_model: Model | None = None
     capability_routing: bool = True
 
+    # Cheap, deterministic cleanup before expensive LLM summarization.
+    microcompact_trigger_tokens: int = 50_000
+    microcompact_keep_last_tool_results: int = 8
+
+    # Schemas for expensive or uncommon capabilities are discovered on demand.
+    _deferred_tool_names = frozenset({
+        "execute_python",
+        "get_current_datetime",
+        "http_request",
+        "memory_get",
+        "memory_search",
+        "web_fetch",
+    })
+
     _event_handlers: list[Callable[[AnyEvent], None]] = field(default_factory=list)
     _executor: ThreadPoolExecutor = field(default_factory=ThreadPoolExecutor)
 
@@ -178,6 +193,8 @@ class Run:
         tool_result_processing_policy: ToolResultProcessingPolicy | None = None,
         vision_model: Model | None = None,
         capability_routing: bool = True,
+        microcompact_trigger_tokens: int = 50_000,
+        microcompact_keep_last_tool_results: int = 8,
     ) -> Run:
         """
         Create a new Run.
@@ -209,6 +226,8 @@ class Run:
             tool_result_processing_policy=tool_result_processing_policy,
             vision_model=vision_model,
             capability_routing=capability_routing,
+            microcompact_trigger_tokens=microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=microcompact_keep_last_tool_results,
         )
 
     def on_event(self, handler: Callable[[AnyEvent], None]) -> None:
@@ -279,6 +298,8 @@ class Run:
             self._save_session_checkpoint()
             active_message = self.session.messages[-1]
 
+            self._microcompact_tool_results()
+
             # ADR-015: Check if compression is needed before execution
             compression_events = list(self._check_and_compress())
             for event in compression_events:
@@ -313,6 +334,7 @@ class Run:
                 # Tool calls and results can grow context substantially within a
                 # single run, so enforce the budget before every subsequent call.
                 if iteration > 1:
+                    self._microcompact_tool_results()
                     compression_events = list(self._check_and_compress())
                     for event in compression_events:
                         yield event
@@ -338,8 +360,11 @@ class Run:
                     self._emit(routing_event)
                     yield routing_event
 
-                # Create kernel with resolved model
-                kernel = Kernel(current_model, self.agent.tools)
+                # Keep every tool executable while exposing only the schemas the
+                # model needs. This works for any provider supported by Kernel.
+                runtime_tools = self._runtime_tools()
+                visible_tools = self._visible_tools(runtime_tools)
+                kernel = Kernel(current_model, runtime_tools)
                 call_messages = self._adapt_messages_for_model(active_messages, current_model)
                 provider = getattr(current_model, "provider", None)
                 provider_spec = getattr(provider, "spec", None)
@@ -368,6 +393,7 @@ class Run:
                         kernel,
                         call_messages,
                         retry_notices,
+                        visible_tools,
                     )
                     while not model_future.done():
                         await asyncio.wait({model_future}, timeout=0.1)
@@ -524,6 +550,7 @@ class Run:
                         termination_reason = tool_phase.termination_reason
 
                     tool_results = tool_phase.tool_results
+                    self._activate_discovered_tools(tool_results)
 
                     # Runtime owns message writeback
                     # Add assistant message with tool calls (preserves original request)
@@ -719,10 +746,11 @@ class Run:
         kernel: Kernel,
         messages: list[Message],
         notices: queue.SimpleQueue[RetryNotice],
+        tools: list[Tool],
     ) -> ModelResponse:
         token = set_retry_observer(notices.put)
         try:
-            return kernel.invoke_model(messages, None)
+            return kernel.invoke_model(messages, tools)
         finally:
             reset_retry_observer(token)
 
@@ -1193,6 +1221,46 @@ class Run:
                         skill_names.append(skill_name)
         return skill_names
 
+    def _runtime_tools(self) -> list[Tool]:
+        """Return the full execution registry, including tool discovery."""
+        deferred = [
+            tool for tool in self.agent.tools
+            if self._is_deferred_tool(tool)
+        ]
+        return [*self.agent.tools, SearchToolsTool(deferred)] if deferred else list(self.agent.tools)
+
+    def _visible_tools(self, runtime_tools: list[Tool]) -> list[Tool]:
+        """Select schemas visible on this model call."""
+        activated = set(self.session.metadata.get("activated_tool_names", []))
+        return [
+            tool for tool in runtime_tools
+            if tool.name == "search_tools"
+            or not self._is_deferred_tool(tool)
+            or tool.name in activated
+        ]
+
+    def _is_deferred_tool(self, tool: Tool) -> bool:
+        """Classify opt-in, built-in heavyweight, and MCP tools as deferred."""
+        explicit = getattr(tool, "defer_schema", None)
+        if isinstance(explicit, bool):
+            return explicit
+        return (
+            tool.name in self._deferred_tool_names
+            or tool.name.startswith("mcp__")
+        )
+
+    def _activate_discovered_tools(self, tool_results: list[ToolResult]) -> None:
+        """Persist tool-search matches for the remainder of the session."""
+        activated = set(self.session.metadata.get("activated_tool_names", []))
+        for result in tool_results:
+            summary = result.result_summary or ""
+            if result.name != "search_tools" or not summary.startswith("tool_activation:"):
+                continue
+            names = summary.removeprefix("tool_activation:").split(",")
+            activated.update(name.strip() for name in names if name.strip())
+        if activated:
+            self.session.metadata["activated_tool_names"] = sorted(activated)
+
     async def _execute_tool_with_permission(
         self,
         kernel: Kernel,
@@ -1512,6 +1580,112 @@ class Run:
                     ),
                 )
             yield from self._compress(decision)
+
+    def _microcompact_tool_results(self) -> int:
+        """Clear stale, reproducible tool payloads while preserving message shape."""
+        from quenda.runtime.token_estimator import TokenEstimator
+
+        if self.microcompact_keep_last_tool_results < 1:
+            return 0
+
+        estimator = TokenEstimator()
+        estimated_tokens = (
+            estimator.estimate_messages(self._build_messages())
+            + estimator.estimate_tools(self.agent.tools)
+        )
+        if estimated_tokens < self.microcompact_trigger_tokens:
+            return 0
+
+        compactable_tools = {
+            "apply_patch",
+            "read_file",
+            "list_files",
+            "search_text",
+            "run_shell",
+            "execute_python",
+            "http_request",
+            "web_fetch",
+            "write_file",
+        }
+        candidates: list[tuple[int, int]] = []
+        for message_index, message in enumerate(self.session.messages):
+            if message.role != "user" or isinstance(message.content, str):
+                continue
+            for block_index, block in enumerate(message.content):
+                if (
+                    isinstance(block, ToolResult)
+                    and block.name in compactable_tools
+                    and not block.is_error
+                    and block.image_content is None
+                    and block.content != "[Old tool result content cleared]"
+                ):
+                    candidates.append((message_index, block_index))
+
+        stale = candidates[:-self.microcompact_keep_last_tool_results]
+        if not stale:
+            return 0
+
+        stale_set = set(stale)
+        stale_call_ids = {
+            block.call_id
+            for message_index, block_index in stale
+            for block in [self.session.messages[message_index].content[block_index]]  # type: ignore[index]
+            if isinstance(block, ToolResult)
+        }
+        rewritten: list[Message] = []
+        for message_index, message in enumerate(self.session.messages):
+            if isinstance(message.content, str):
+                rewritten.append(message)
+                continue
+            blocks: list[object] = []
+            for block_index, block in enumerate(message.content):
+                if (
+                    (message_index, block_index) in stale_set
+                    and isinstance(block, ToolResult)
+                ):
+                    blocks.append(replace(
+                        block,
+                        content="[Old tool result content cleared]",
+                    ))
+                elif isinstance(block, ToolCall) and block.id in stale_call_ids:
+                    blocks.append(replace(
+                        block,
+                        arguments=self._compact_tool_arguments(block),
+                    ))
+                else:
+                    blocks.append(block)
+            rewritten.append(Message(role=message.role, content=blocks))  # type: ignore[arg-type]
+
+        self.session.messages = rewritten
+        self.session.metadata["microcompacted_tool_results"] = (
+            int(self.session.metadata.get("microcompacted_tool_results", 0))
+            + len(stale)
+        )
+        self._save_session_checkpoint()
+        return len(stale)
+
+    @staticmethod
+    def _compact_tool_arguments(call: ToolCall) -> dict[str, object]:
+        """Keep identifiers useful for later reasoning, drop bulky payloads."""
+        retained_keys = {
+            "path",
+            "file_path",
+            "pattern",
+            "glob",
+            "query",
+            "url",
+            "offset",
+            "limit",
+        }
+        compact = {
+            key: value
+            for key, value in call.arguments.items()
+            if key in retained_keys
+        }
+        compact["_context_note"] = (
+            "Old tool input cleared after successful execution."
+        )
+        return compact
 
     def _force_context_compression(self) -> AsyncIterator[AnyEvent]:
         """Force one conservative compression after a provider overflow response."""

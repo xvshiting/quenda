@@ -158,6 +158,8 @@ class Session:
         trace_sink: TraceSink | None = None,
         vision_model: Model | None = None,
         capability_routing: bool = True,
+        microcompact_trigger_tokens: int = 50_000,
+        microcompact_keep_last_tool_results: int = 8,
     ) -> None:
         self._state = state
         self._agent = agent
@@ -171,6 +173,8 @@ class Session:
         self._trace_sink = trace_sink
         self._vision_model = vision_model
         self._capability_routing = capability_routing
+        self._microcompact_trigger_tokens = microcompact_trigger_tokens
+        self._microcompact_keep_last_tool_results = microcompact_keep_last_tool_results
         # Persistent event loop for MCP connections
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -274,6 +278,8 @@ class Session:
         tool_result_processing_policy: ToolResultProcessingPolicy | None = None,
         termination_policy: TerminationPolicy | None = None,
         trace_sink: TraceSink | None = None,
+        microcompact_trigger_tokens: int = 50_000,
+        microcompact_keep_last_tool_results: int = 8,
     ) -> Session | None:
         """
         Load a session from storage.
@@ -307,6 +313,8 @@ class Session:
             tool_result_processing_policy=tool_result_processing_policy,
             termination_policy=termination_policy,
             trace_sink=trace_sink,
+            microcompact_trigger_tokens=microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=microcompact_keep_last_tool_results,
         )
 
     async def send(
@@ -349,6 +357,8 @@ class Session:
             tool_result_processing_policy=self._tool_result_processing_policy,
             vision_model=self._vision_model,
             capability_routing=self._capability_routing,
+            microcompact_trigger_tokens=self._microcompact_trigger_tokens,
+            microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
         )
 
         # ADR-015: Inject compression components

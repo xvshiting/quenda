@@ -78,6 +78,7 @@ from quenda.tools.datetime import GetCurrentDatetimeTool
 from quenda.tools.interaction import RequestInteractionTool
 from quenda.tools.resource_activation import ActivateResourceTool
 from quenda.tools.skill_activation import RequestSkillActivationTool
+from quenda.tools.search import SearchToolsTool
 from quenda.runtime.permission import PermissionPolicy
 
 __all__ = [
@@ -106,6 +107,7 @@ __all__ = [
     "RequestSkillActivationTool",
     "ActivateResourceTool",
     "GetCurrentDatetimeTool",
+    "SearchToolsTool",
     # Tool aggregation
     "get_core_tools",
     "get_extended_tools",
