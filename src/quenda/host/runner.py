@@ -32,6 +32,7 @@ from quenda.host.instructions import (
     InstructionSource,
     TemplateContext,
     resolve_instruction_sources,
+    resolve_mode_instruction_source,
 )
 from quenda.host.loader import (
     AgentConfigYaml,
@@ -195,7 +196,7 @@ def _core_tool_bundle(
 
     sandbox_config = _resolve_sandbox_config(config)
     return [
-        ListFilesTool(workspace),
+        ListFilesTool(workspace, permission_policy=permission_policy),
         SearchTextTool(workspace),
         ReadFileTool(workspace, permission_policy=permission_policy),
         WriteFileTool(workspace),
@@ -913,6 +914,7 @@ def refresh_run_context(
     binding: StableHostBinding,
     session_id: str = "",
     *,
+    mode: str = "chat",
     clock: "Clock | None" = None,
 ) -> RunContextSnapshot:
     """
@@ -929,6 +931,7 @@ def refresh_run_context(
     Args:
         binding: Stable capability bindings.
         session_id: Current session ID for template context.
+        mode: Current interaction mode used for mode-specific instructions.
 
     Returns:
         RunContextSnapshot with fresh text context.
@@ -972,6 +975,7 @@ def refresh_run_context(
         model_name=binding.model_name,
         date=temporal_context.local_date,
         session_id=session_id,
+        mode=mode,
     )
 
     # 5. Resolve instruction sources (includes discovered + active skills)
@@ -982,12 +986,20 @@ def refresh_run_context(
         agent_instructions=agent_package.instructions,
         workspace_path=binding.workspace_path,
         user=binding.user,
+        workspace_id=binding.workspace_id,
+        instruction_files=(
+            agent_package.config.instruction_files
+            if agent_package.config else None
+        ),
         discovered_skills=discovered_skills,
         active_skills=resolved_active_skills,
         include_skill_catalog=bool(
             agent_package.config and agent_package.config.include_skill_catalog
         ),
         temporal_context=temporal_context,
+    )
+    instruction_sources.extend(
+        resolve_mode_instruction_source(binding.agent_package_path, mode)
     )
     if binding.extension_context is not None:
         instruction_sources.extend(binding.context_providers.provide(
@@ -1158,6 +1170,10 @@ def setup_agent(
             workspace_path=binding.workspace_path,
             workspace_id=binding.workspace_id,
             user=binding.user,
+            instruction_files=(
+                binding.agent_package.config.instruction_files
+                if binding.agent_package and binding.agent_package.config else None
+            ),
         )
 
         # Use skill components from binding (already initialized)
@@ -1213,7 +1229,11 @@ def create_skill_activation_handler(
 
         setup.binding.active_skill_names = setup.skill_activator.list_persistent()
         setup.binding.transient_skill_names = setup.skill_activator.list_transient()
-        snapshot = refresh_run_context(setup.binding, session_id=session.id)
+        snapshot = refresh_run_context(
+            setup.binding,
+            session_id=session.id,
+            mode=getattr(session, "mode", "chat"),
+        )
         setup.context_snapshot = snapshot
         setup.instruction_sources = snapshot.instruction_sources
         session.set_system_prompt(snapshot.composed_prompt)
@@ -1263,6 +1283,18 @@ def run_agent_once(
 
     if on_setup is not None:
         on_setup(setup, session)
+
+    current_mode = getattr(session, "mode", "chat")
+    if current_mode != "chat":
+        snapshot = refresh_run_context(
+            setup.binding,
+            session_id=session.id,
+            mode=current_mode,
+        )
+        setup.context_snapshot = snapshot
+        setup.instruction_sources = snapshot.instruction_sources
+        session.set_system_prompt(snapshot.composed_prompt)
+        agent.set_system_prompt(snapshot.composed_prompt)
 
     session.send_sync(
         user_message,

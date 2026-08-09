@@ -11,19 +11,32 @@ ADR-027: Skill activation is handled within the Run, not as a separate phase.
 from __future__ import annotations
 
 import asyncio
-import base64
+import queue
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from uuid import uuid4
 
 from quenda.kernel import Kernel, Message, Model, ModelResponse
-from quenda.kernel.types import ImageContent, TextContent, ToolCall, ToolResult
+from quenda.kernel.types import (
+    ImageContent,
+    ImageRef,
+    ImageSource,
+    TextContent,
+    ToolCall,
+    ToolResult,
+)
 from quenda.providers.errors import APIError, ToolCallDecodeError, UnsupportedFeatureError
+from quenda.providers.observability import (
+    RetryNotice,
+    reset_retry_observer,
+    set_retry_observer,
+)
 from quenda.runtime.agent import AgentDefinition
 from quenda.runtime.events import (
     AnyEvent,
@@ -31,6 +44,8 @@ from quenda.runtime.events import (
     CompressionStarted,
     ErrorOccurred,
     InteractionRequested,
+    ModelCalled,
+    ModelRetrying,
     ModelResponded,
     RunCompleted,
     RunPaused,
@@ -240,6 +255,8 @@ class Run:
 
         self.status = RunStatus.RUNNING
         run_start_time = time.perf_counter()
+        last_model_provider = ""
+        last_model_id = ""
 
         # Convert user_message to string for logging/storage
         user_message_str = user_message if isinstance(user_message, str) else "[multimodal message]"
@@ -257,8 +274,6 @@ class Run:
         yield started
 
         try:
-            self._ensure_vision_supported(user_message)
-
             # Add user message to session
             self.session.add_user_message(user_message)
             self._save_session_checkpoint()
@@ -311,8 +326,13 @@ class Run:
                         )
                         committed_count = len(messages)
 
-                # ADR-028: Resolve model based on message capabilities
-                resolved_model, routing_event = self._resolve_model_for_messages(messages)
+                # Only the newest implicit tool image is attached. Older images
+                # remain available as session resources and can be re-activated
+                # explicitly by the model.
+                active_messages = self._project_active_resources(messages)
+
+                # ADR-028: Resolve model based on the effective message capabilities
+                resolved_model, routing_event = self._resolve_model_for_messages(active_messages)
                 current_model = resolved_model
                 if routing_event:
                     self._emit(routing_event)
@@ -320,15 +340,60 @@ class Run:
 
                 # Create kernel with resolved model
                 kernel = Kernel(current_model, self.agent.tools)
+                call_messages = self._adapt_messages_for_model(active_messages, current_model)
+                provider = getattr(current_model, "provider", None)
+                provider_spec = getattr(provider, "spec", None)
+                last_model_provider = getattr(provider, "id", "")
+                last_model_id = getattr(current_model, "id", type(current_model).__name__)
+                timeout_seconds = getattr(provider_spec, "timeout", None)
+                max_retries = getattr(provider_spec, "max_retries", None) or 3
+                model_called = ModelCalled(
+                    message_count=len(call_messages),
+                    provider=last_model_provider,
+                    model_id=last_model_id,
+                    timeout_seconds=timeout_seconds,
+                    max_attempts=max_retries + 1,
+                    iteration=iteration,
+                )
+                self._emit(model_called)
+                yield model_called
+                call_start_time = time.perf_counter()
+                retry_notices: queue.SimpleQueue[RetryNotice] = queue.SimpleQueue()
 
                 try:
                     # Invoke model (async wrapper around sync primitive)
-                    response = await asyncio.get_running_loop().run_in_executor(
+                    model_future = asyncio.get_running_loop().run_in_executor(
                         self._executor,
-                        kernel.invoke_model,
-                        messages,
-                        None,  # Use registered tools
+                        self._invoke_model_with_retry_observer,
+                        kernel,
+                        call_messages,
+                        retry_notices,
                     )
+                    while not model_future.done():
+                        await asyncio.wait({model_future}, timeout=0.1)
+                        for notice in self._drain_retry_notices(retry_notices):
+                            retry_event = ModelRetrying(
+                                provider=last_model_provider,
+                                model_id=last_model_id,
+                                attempt=notice.attempt,
+                                max_attempts=notice.max_attempts,
+                                delay_seconds=notice.delay_seconds,
+                                error_type=notice.error_type,
+                            )
+                            self._emit(retry_event)
+                            yield retry_event
+                    for notice in self._drain_retry_notices(retry_notices):
+                        retry_event = ModelRetrying(
+                            provider=last_model_provider,
+                            model_id=last_model_id,
+                            attempt=notice.attempt,
+                            max_attempts=notice.max_attempts,
+                            delay_seconds=notice.delay_seconds,
+                            error_type=notice.error_type,
+                        )
+                        self._emit(retry_event)
+                        yield retry_event
+                    response = await model_future
                 except ToolCallDecodeError as e:
                     if tool_call_decode_retry_used:
                         raise
@@ -377,6 +442,7 @@ class Run:
                     # Backward compatible (deprecated)
                     tool_arguments=[tc.arguments for tc in response.tool_calls],
                     stop_reason=response.stop_reason,
+                    duration_ms=int((time.perf_counter() - call_start_time) * 1000),
                 )
                 self._emit(model_event)
                 yield model_event
@@ -627,6 +693,9 @@ class Run:
             error = ErrorOccurred(
                 error_message=str(e),
                 error_type=type(e).__name__,
+                duration_ms=int((time.perf_counter() - run_start_time) * 1000),
+                provider=last_model_provider,
+                model_id=last_model_id,
             )
             self._emit(error)
             yield error
@@ -644,6 +713,29 @@ class Run:
                     completed_at=datetime.now(),
                 )
                 self.storage.save_run(run_state)
+
+    @staticmethod
+    def _invoke_model_with_retry_observer(
+        kernel: Kernel,
+        messages: list[Message],
+        notices: queue.SimpleQueue[RetryNotice],
+    ) -> ModelResponse:
+        token = set_retry_observer(notices.put)
+        try:
+            return kernel.invoke_model(messages, None)
+        finally:
+            reset_retry_observer(token)
+
+    @staticmethod
+    def _drain_retry_notices(
+        notices: queue.SimpleQueue[RetryNotice],
+    ) -> list[RetryNotice]:
+        drained: list[RetryNotice] = []
+        while True:
+            try:
+                drained.append(notices.get_nowait())
+            except queue.Empty:
+                return drained
 
     def _extract_key_arguments(self, tool_name: str, arguments: dict) -> dict[str, object]:
         """
@@ -814,6 +906,7 @@ class Run:
                     counters.consecutive_error_count = 0
 
                 result = self._process_tool_result(raw_result)
+                result = self._register_tool_image_resource(call, result)
                 tool_results_map[call.id] = result
 
                 tool_event = self._tool_executed_event(
@@ -899,6 +992,126 @@ class Run:
             result_summary=processed_result_summary,
             image_content=raw_result.image_content,
         )
+
+    def _register_tool_image_resource(
+        self,
+        call: ToolCall,
+        result: ToolResult,
+    ) -> ToolResult:
+        """Register an image tool result for later explicit activation."""
+        image = result.image_content
+        if image is None:
+            return result
+
+        ref_id = f"img{len(self.session.image_refs)}"
+        path = str(call.arguments.get("path", "")).strip()
+        source: ImageSource
+
+        if path.startswith(("https://", "http://")):
+            if path.startswith("https://"):
+                source = ImageSource(
+                    scheme="https",
+                    uri=path,
+                    media_type=image.media_type or "image/png",
+                    filename=result.display_hint or None,
+                )
+            else:
+                source = ImageSource(
+                    scheme="http",
+                    uri=path,
+                    media_type=image.media_type or "image/png",
+                    filename=result.display_hint or None,
+                )
+        else:
+            workspace = next(
+                (
+                    tool.workspace
+                    for tool in self.agent.tools
+                    if getattr(tool, "name", None) == call.name
+                    and getattr(tool, "workspace", None) is not None
+                ),
+                None,
+            )
+            candidate = (workspace / path).resolve() if workspace is not None and path else None
+            if candidate is not None and candidate.is_file():
+                source = ImageSource(
+                    scheme="file",
+                    uri=f"file://{candidate}",
+                    media_type=image.media_type or "image/png",
+                    filename=candidate.name,
+                )
+            else:
+                source = ImageSource(
+                    scheme="data",
+                    uri=f"data:{image.media_type or 'image/png'};base64,{image.data or ''}",
+                    media_type=image.media_type or "image/png",
+                    filename=result.display_hint or path or None,
+                )
+
+        self.session.add_image_ref(ImageRef(id=ref_id, source=source))
+        return replace(
+            result,
+            content=(
+                f"{result.content}\n[Resource {ref_id}] This image remains available via "
+                f"activate_resource(resource_id=\"{ref_id}\")."
+            ),
+        )
+
+    def _project_active_resources(self, messages: list[Message]) -> list[Message]:
+        """Attach the latest implicit image plus explicitly activated images."""
+        latest_tool_image: tuple[int, int] | None = None
+        last_assistant_index = max(
+            (index for index, message in enumerate(messages) if message.role == "assistant"),
+            default=-1,
+        )
+        for message_index, message in enumerate(messages):
+            if not isinstance(message.content, list | tuple):
+                continue
+            for block_index, block in enumerate(message.content):
+                if isinstance(block, ToolResult) and block.image_content is not None:
+                    latest_tool_image = (message_index, block_index)
+
+        projected: list[Message] = []
+        for message_index, message in enumerate(messages):
+            if not isinstance(message.content, list | tuple):
+                projected.append(message)
+                continue
+            blocks: list[object] = []
+            changed = False
+            is_expired_activation = (
+                message_index < last_assistant_index
+                and any(
+                    isinstance(block, TextContent)
+                    and block.text.startswith("[Activated resource ")
+                    for block in message.content
+                )
+            )
+            for block_index, block in enumerate(message.content):
+                if (
+                    isinstance(block, ToolResult)
+                    and block.image_content is not None
+                    and (message_index, block_index) != latest_tool_image
+                ):
+                    blocks.append(replace(
+                        block,
+                        content=(
+                            f"{block.content}\n\n"
+                            "[Raw image not attached by default; activate its resource if needed.]"
+                        ),
+                        image_content=None,
+                    ))
+                    changed = True
+                elif is_expired_activation and isinstance(block, ImageContent):
+                    blocks.append(TextContent(
+                        text="[Explicitly activated image expired after one model call.]"
+                    ))
+                    changed = True
+                else:
+                    blocks.append(block)
+            projected.append(
+                Message(role=message.role, content=blocks) if changed else message  # type: ignore[arg-type]
+            )
+        return projected
 
     def _tool_executed_event(
         self,
@@ -1083,6 +1296,23 @@ class Run:
 
         return Message(role=message.role, content=deactivated)  # type: ignore[arg-type]
 
+    def _adapt_messages_for_model(
+        self,
+        messages: list[Message],
+        model: Model,
+    ) -> list[Message]:
+        """Project unsupported resources to text for a provider call.
+
+        The canonical session keeps its image blocks so a later call can still
+        route them to a vision-capable model.  A non-vision model receives the
+        same conversation with resource placeholders instead of causing the
+        run to fail before the model can respond.
+        """
+        model_spec = getattr(model, "spec", None)
+        if bool(getattr(model_spec, "vision", False)):
+            return messages
+        return [self._deactivate_message_resources(message) for message in messages]
+
     def _image_placeholder(self, image: ImageContent) -> str:
         if image.image_url:
             return f"[Image resource: {image.image_url}. Raw content is not currently attached.]"
@@ -1162,14 +1392,17 @@ class Run:
         if source.scheme == "file":
             path = source.uri[7:] if source.uri.startswith("file://") else source.uri
             try:
-                with open(path, "rb") as f:
-                    data = base64.b64encode(f.read()).decode("utf-8")
+                from quenda.tools.filesystem.image_utils import read_image_file
+                return read_image_file(Path(path))
             except OSError:
                 return None
-            return ImageContent(media_type=source.media_type, data=data)
 
         if source.scheme in ("https", "http"):
-            return ImageContent(image_url=source.uri)
+            try:
+                from quenda.tools.filesystem.image_utils import ImageDownloadError, read_image_url
+                return read_image_url(source.uri)
+            except (ImageDownloadError, OSError):
+                return None
 
         if source.scheme == "data":
             data = source.uri.split(",", 1)[1] if "," in source.uri else source.uri
@@ -1227,41 +1460,6 @@ class Run:
         except UnsupportedFeatureError:
             # Re-raise with more context
             raise
-
-    def _ensure_vision_supported(self, user_message: str | Sequence[TextContent | ImageContent]) -> None:
-        """
-        Fail fast when image blocks are present but no vision model is available.
-
-        This is a compatibility check before routing. The actual routing happens
-        in _resolve_model_for_messages.
-
-        ADR-028: This method is kept for backward compatibility but delegates
-        to the routing system.
-        """
-        if isinstance(user_message, str):
-            return
-
-        has_image = any(isinstance(item, ImageContent) for item in user_message)
-        if not has_image:
-            return
-
-        # Check if default model supports vision
-        model_spec = getattr(self.model, "spec", None)
-        supports_vision = bool(getattr(model_spec, "vision", False))
-        if supports_vision:
-            return
-
-        # Check if vision model is configured
-        if self.vision_model is not None:
-            return
-
-        # No vision support available
-        model_id = getattr(self.model, "id", "current model")
-        raise UnsupportedFeatureError(
-            f"Model {model_id} does not support image input and no vision model is configured. "
-            "Choose a vision-capable model or configure a vision model in config.yaml.",
-            feature="vision",
-        )
 
     def _check_and_compress(self) -> AsyncIterator[AnyEvent]:
         """

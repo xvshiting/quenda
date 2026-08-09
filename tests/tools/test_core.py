@@ -150,6 +150,18 @@ class TestReadFileTool:
         assert "line10" in result.content
         assert "line11" not in result.content
 
+    def test_read_large_file_uses_bounded_default_window(self, temp_dir: Path) -> None:
+        """Omitting end should not inject an entire large file into context."""
+        lines = [f"line{i}" for i in range(1, 251)]
+        (temp_dir / "test.txt").write_text("\n".join(lines))
+
+        result = ReadFileTool(temp_dir).execute(path="test.txt")
+
+        assert not result.is_error
+        assert "line200" in result.content
+        assert "line201" not in result.content
+        assert "Continue with start=201, end=250" in result.content
+
     def test_read_last_n_lines(self, temp_dir: Path) -> None:
         """Test reading last N lines with negative start."""
         lines = [f"line{i}" for i in range(1, 101)]

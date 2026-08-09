@@ -103,6 +103,39 @@ The user's choice will be provided as a response in the next turn."""
                     "type": "string",
                     "description": "ID of the default option (alternative to is_default on option).",
                 },
+                "multiple": {
+                    "type": "boolean",
+                    "description": "Allow selecting multiple options. Space toggles the focused option.",
+                },
+                "questions": {
+                    "type": "array",
+                    "description": "Optional batch of choice questions shown as tabs. Left/right switches questions.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "Stable question identifier."},
+                            "title": {"type": "string", "description": "Short tab title."},
+                            "message": {"type": "string", "description": "Question text."},
+                            "multiple": {"type": "boolean", "description": "Allow multiple selected options."},
+                            "required": {"type": "boolean", "description": "Require an answer before submission."},
+                            "default_option_id": {"type": "string", "description": "Default option ID."},
+                            "options": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "label": {"type": "string"},
+                                        "description": {"type": "string"},
+                                        "is_default": {"type": "boolean"},
+                                    },
+                                    "required": ["id", "label"],
+                                },
+                            },
+                        },
+                        "required": ["id", "title", "options"],
+                    },
+                },
             },
             "required": ["kind", "title"],
         }

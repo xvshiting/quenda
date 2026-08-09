@@ -2,14 +2,18 @@
 Tests for the interactive selector UI.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from quenda.interface.selector import select_option, _select_basic
 from quenda.host.interactions import InteractionOption, InteractionRequest
+from quenda.interface.selector import _select_basic, _selection_marker
 
 
 class TestSelectOption:
     """Tests for select_option function."""
+
+    def test_choice_markers_use_square_brackets(self) -> None:
+        assert _selection_marker(False) == "[ ]"
+        assert _selection_marker(True) == "[x]"
 
     def test_select_basic_without_prompt_toolkit(self) -> None:
         """Test basic selection fallback without prompt_toolkit."""
@@ -92,3 +96,21 @@ class TestSelectOption:
         with patch("builtins.input", side_effect=KeyboardInterrupt()):
             result = _select_basic(request, None, None)
             assert result is None
+
+    def test_select_basic_multiple(self) -> None:
+        request = InteractionRequest(
+            kind="choice",
+            title="Pick several",
+            multiple=True,
+            options=[
+                InteractionOption(id="a", label="Option A"),
+                InteractionOption(id="b", label="Option B"),
+                InteractionOption(id="c", label="Option C"),
+            ],
+        )
+
+        with patch("builtins.input", return_value="1,3"):
+            result = _select_basic(request, None, None)
+
+        assert isinstance(result, list)
+        assert [option.id for option in result] == ["a", "c"]

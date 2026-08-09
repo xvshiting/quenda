@@ -8,9 +8,9 @@ Resources are auto-discovered from directory structure:
 - scripts/ → executable scripts (.py files only)
 """
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from quenda.host.skill import SkillDiscovery, SkillPackage
 
@@ -117,6 +117,29 @@ description: Minimal skill
         assert skill is not None
         assert skill.version == "0.1.0"  # Default version
         assert len(skill.resources) == 0
+
+    def test_skill_accepts_claude_code_argument_hint_with_colons(
+        self, tmp_path: Path
+    ) -> None:
+        """Claude Code-style argument hints may contain unquoted ``: ``."""
+        skill_dir = tmp_path / "skills" / "compatible-skill"
+        skill_dir.mkdir(parents=True)
+
+        (skill_dir / "SKILL.md").write_text("""---
+name: compatible-skill
+description: A compatible skill
+argument-hint: <script-path> [— mode: v1|v2] [— output: <path>]
+allowed-tools: Bash(*), Read
+---
+# Instructions
+""")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
+        skills = discovery.discover_skills()
+
+        skill = next((s for s in skills if s.name == "compatible-skill"), None)
+        assert skill is not None
+        assert skill.description == "A compatible skill"
 
     def test_multiple_skills(self, tmp_path: Path) -> None:
         """Test discovering multiple skills."""

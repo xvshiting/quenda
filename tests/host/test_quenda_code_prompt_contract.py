@@ -22,6 +22,8 @@ def test_quenda_code_keeps_general_and_mode_specific_rules_separate() -> None:
 
     assert "Before calling an internal function" in coding
     assert "Never invent an API" in coding
+    assert "Read the smallest relevant line range first" in coding
+    assert "After each meaningful increment" in coding
     assert "Definition of Done" not in coding
 
     assert "## Definition of Done" in mode_code
@@ -29,6 +31,8 @@ def test_quenda_code_keeps_general_and_mode_specific_rules_separate() -> None:
     assert "**Behavior verification**" in mode_code
     assert "**Project checks**" in mode_code
     assert "**Placeholder scan**" in mode_code
+    assert "最小语义增量" in mode_code
+    assert "不把所有验证推迟到最后" in mode_code
 
 
 def test_quenda_code_requires_evidence_before_claiming_completion() -> None:

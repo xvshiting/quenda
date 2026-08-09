@@ -26,6 +26,8 @@ dependencies = [
     "pyyaml>=6.0.0",
     "pillow>=10.0.0",  # Image processing for multimodal support
     "mcp>=1.28,<2",  # MCP SDK for Model Context Protocol support
+    "prompt-toolkit>=3.0.52",  # Cross-platform Unicode-aware terminal input
+    "wcwidth>=0.2.13",  # Correct terminal cell widths for CJK and emoji
 ]
 
 [project.optional-dependencies]

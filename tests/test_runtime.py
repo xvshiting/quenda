@@ -1316,6 +1316,89 @@ class TestToolResultProcessingPolicy:
         assert tool_result.image_content.media_type == "image/png"
 
     @pytest.mark.asyncio
+    async def test_only_latest_tool_image_is_attached_within_a_run(self) -> None:
+        """Repeated image reads expose resources without accumulating raw payloads."""
+
+        class ImageTool:
+            name = "read_file"
+            description = "Read an image"
+            parameters = {"type": "object"}
+
+            def execute(self, **kwargs: object) -> ToolResult:
+                path = str(kwargs["path"])
+                return ToolResult(
+                    call_id="",
+                    name=self.name,
+                    content=f"Image: {path}",
+                    display_hint=path,
+                    image_content=ImageContent(media_type="image/png", data="AAAA"),
+                )
+
+        model = CapturingModel([
+            ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="read_file", arguments={"path": "one.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall(id="c2", name="read_file", arguments={"path": "two.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall(id="c3", name="read_file", arguments={"path": "three.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content="Done", stop_reason="end_turn"),
+        ])
+        session = SessionState.create("test")
+        run = Run.create(AgentConfig(name="test", tools=[ImageTool()]), session, model)
+
+        await run.execute_to_completion("Inspect successive versions")
+
+        final_call = model.invocations[-1]
+        attached = [
+            block.image_content
+            for message in final_call
+            if isinstance(message.content, list)
+            for block in message.content
+            if isinstance(block, ToolResult) and block.image_content is not None
+        ]
+        assert len(attached) == 1
+        assert len(session.image_refs) == 3
+        assert all(
+            any(ref_id in str(message.content) for message in final_call)
+            for ref_id in session.image_refs
+        )
+
+    def test_explicit_image_activation_expires_after_next_model_call(self) -> None:
+        run = Run.create(AgentConfig(name="test"), SessionState.create("test"), FakeModel([]))
+        messages = [
+            Message(
+                role="assistant",
+                content=[ToolCall(id="activate", name="activate_resource", arguments={})],
+            ),
+            Message(
+                role="user",
+                content=[
+                    TextContent(text="[Activated resource img0: raw image content attached.]"),
+                    ImageContent(media_type="image/png", data="AAAA"),
+                ],
+            ),
+            Message(
+                role="assistant",
+                content=[ToolCall(id="next", name="read_file", arguments={})],
+            ),
+        ]
+
+        projected = run._project_active_resources(messages)
+
+        assert not any(
+            isinstance(block, ImageContent)
+            for message in projected
+            if isinstance(message.content, list)
+            for block in message.content
+        )
+
+    @pytest.mark.asyncio
     async def test_historical_images_do_not_keep_session_routed_to_vision(self) -> None:
         """Historical image payloads are lazy in later turns."""
         from quenda.runtime.events import ModelRouted

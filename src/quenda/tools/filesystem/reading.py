@@ -4,7 +4,7 @@ read_file tool - See specific content.
 Covers: cat, head, tail, sed -n
 
 Examples:
-    read_file(path="app.py")                       # Read entire file
+    read_file(path="app.py")                       # Read the first bounded window
     read_file(path="app.py", start=1, end=100)     # Read lines 1-100
     read_file(path="app.log", start=-50)           # Read last 50 lines
     read_file(path="config.json", end=30)          # Read first 30 lines
@@ -33,6 +33,7 @@ from quenda.runtime.permission import (
 )
 
 from .image_utils import (
+    DEFAULT_IMAGE_TOKEN_BUDGET,
     get_image_dimensions,
     infer_media_type,
     is_image_file,
@@ -45,7 +46,8 @@ class ReadFileConfig:
     """Configuration for read_file tool."""
 
     max_read_chars: int = 100000  # 100KB max file read
-    max_image_tokens: int = 4000  # Max tokens for image content
+    default_read_lines: int = 200
+    max_image_tokens: int = DEFAULT_IMAGE_TOKEN_BUDGET
 
 
 # URL pattern for detecting web URLs
@@ -137,8 +139,12 @@ class ReadFileTool(Tool):
     @property
     @override
     def description(self) -> str:
+        window_lines = max(1, self.config.default_read_lines)
         return (
-            "Read file content. Supports reading specific line ranges. "
+            "Read file content in bounded line ranges. Search first and read the "
+            "smallest relevant range. If end is omitted, at most "
+            f"{window_lines} lines "
+            "from start are returned; request the next range only when needed. "
             "Also supports reading image files (png, jpg, gif, webp) and image URLs. "
             "When reading images, returns the image content for vision understanding. "
             "Use negative start for last N lines."
@@ -147,6 +153,7 @@ class ReadFileTool(Tool):
     @property
     @override
     def parameters(self) -> dict[str, object]:
+        window_lines = max(1, self.config.default_read_lines)
         return {
             "type": "object",
             "properties": {
@@ -165,7 +172,10 @@ class ReadFileTool(Tool):
                 },
                 "end": {
                     "type": "integer",
-                    "description": "End line (inclusive). Omit to read to end of file.",
+                    "description": (
+                        "End line (inclusive). Omit for a bounded window of at most "
+                        f"{window_lines} lines."
+                    ),
                 },
             },
             "required": ["path"],
@@ -306,7 +316,12 @@ class ReadFileTool(Tool):
             if start_line < 0:
                 start_line = max(1, total_lines + start_line + 1)
 
-            end_line = int(end) if isinstance(end, (int, float)) else total_lines
+            window_lines = max(1, self.config.default_read_lines)
+            end_line = (
+                int(end)
+                if isinstance(end, (int, float))
+                else start_line + window_lines - 1
+            )
             if end_line is None or end_line > total_lines:
                 end_line = total_lines
 
@@ -330,6 +345,16 @@ class ReadFileTool(Tool):
             header = f"File: {path} (lines {start_line}-{end_line} of {total_lines})"
             if truncated:
                 header += " [TRUNCATED]"
+            continuation = ""
+            if end_line < total_lines:
+                next_end = min(
+                    total_lines,
+                    end_line + window_lines,
+                )
+                continuation = (
+                    f"\n\n[More lines available. Continue with "
+                    f"start={end_line + 1}, end={next_end} if needed.]"
+                )
 
             # Build display_hint and result_summary
             display_hint = path if len(path) <= 40 else "..." + path[-37:]
@@ -342,7 +367,7 @@ class ReadFileTool(Tool):
             return ToolResult(
                 "",
                 self.name,
-                f"{header}\n\n{output}",
+                f"{header}\n\n{output}{continuation}",
                 display_hint=display_hint,
                 result_summary=result_summary,
             )

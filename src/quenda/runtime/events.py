@@ -7,11 +7,11 @@ of the agent's behavior in real-time.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from quenda.runtime.permission import PermissionRequest, PermissionDecision
+    pass
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,24 @@ class ModelCalled(Event):
 
     type: Literal["model_called"] = "model_called"
     message_count: int = 0
+    provider: str = ""
+    model_id: str = ""
+    timeout_seconds: float | None = None
+    max_attempts: int = 1
+    iteration: int = 1
+
+
+@dataclass(frozen=True)
+class ModelRetrying(Event):
+    """Emitted when a failed model request will be retried."""
+
+    type: Literal["model_retrying"] = "model_retrying"
+    provider: str = ""
+    model_id: str = ""
+    attempt: int = 1
+    max_attempts: int = 1
+    delay_seconds: float = 0.0
+    error_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +100,7 @@ class ModelResponded(Event):
     # Backward compatible field (deprecated, use tool_call_details)
     tool_arguments: list[dict[str, Any]] = field(default_factory=list)
     stop_reason: str = ""
+    duration_ms: int = 0
 
 
 @dataclass(frozen=True)
@@ -193,6 +212,9 @@ class ErrorOccurred(Event):
     type: Literal["error_occurred"] = "error_occurred"
     error_message: str = ""
     error_type: str = ""
+    duration_ms: int = 0
+    provider: str = ""
+    model_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -286,7 +308,7 @@ class ModelRouted(Event):
 
 # Union type for all events
 AnyEvent = (
-    RunStarted | RunCompleted | ModelCalled | ModelResponded |
+    RunStarted | RunCompleted | ModelCalled | ModelRetrying | ModelResponded |
     ToolPhaseStarted | ToolExecuted | PermissionRequested | PermissionDecided |
     ErrorOccurred | RunInterrupted | InteractionRequested | RunPaused | RunTerminated |
     CompressionStarted | CompressionCompleted | ModelRouted

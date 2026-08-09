@@ -402,7 +402,11 @@ class ReplRuntime:
         if self._host_binding is not None:
             self._host_binding.provider_name = self._provider_name
             self._host_binding.model_name = self._model_name
-            snapshot = refresh_run_context(self._host_binding, session_id=self._session.id)
+            snapshot = refresh_run_context(
+                self._host_binding,
+                session_id=self._session.id,
+                mode=self._session.mode,
+            )
             new_prompt = snapshot.composed_prompt
 
             # Keep the in-memory skill managers aligned with the fresh snapshot.

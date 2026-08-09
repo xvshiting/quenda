@@ -142,6 +142,41 @@ This is new content.
         assert "Updated Content" in snapshot2.agent_md_content
         assert "This is new content" in snapshot2.composed_prompt
 
+    def test_current_mode_instruction_is_included(
+        self,
+        agent_setup: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Text refresh should compose only the current mode overlay."""
+        agent_dir, workspace = agent_setup
+        monkeypatch.setenv("HOME", str(workspace.parent / "home"))
+        instructions_dir = agent_dir / "instructions"
+        instructions_dir.mkdir()
+        (instructions_dir / "mode-code.md").write_text("CODE MODE OVERLAY")
+        (instructions_dir / "mode-architect.md").write_text("ARCHITECT MODE OVERLAY")
+
+        class ProviderRegistry:
+            def get_model(self, provider: str, model: str) -> object:
+                del provider, model
+                return object()
+
+        binding = setup_host_binding(
+            agent_dir,
+            workspace,
+            provider_registry=ProviderRegistry(),  # type: ignore[arg-type]
+        )
+        assert binding is not None
+
+        code_snapshot = refresh_run_context(binding, mode="code")
+        architect_snapshot = refresh_run_context(binding, mode="architect")
+        chat_snapshot = refresh_run_context(binding, mode="chat")
+
+        assert "CODE MODE OVERLAY" in code_snapshot.composed_prompt
+        assert "ARCHITECT MODE OVERLAY" not in code_snapshot.composed_prompt
+        assert "ARCHITECT MODE OVERLAY" in architect_snapshot.composed_prompt
+        assert "CODE MODE OVERLAY" not in architect_snapshot.composed_prompt
+        assert "MODE OVERLAY" not in chat_snapshot.composed_prompt
+
 
 class TestSkillRefreshPath:
     """Tests for skill discovery and activation at turn boundary."""

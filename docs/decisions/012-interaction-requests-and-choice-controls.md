@@ -16,6 +16,7 @@ Common examples:
 - confirming a risky action
 - selecting a provider/model/session from current state
 - picking one item from a menu of candidates
+- collecting several related decisions without serial model round trips
 
 LLMs can help generate the candidate options and explanatory text, but the framework must not rely on ad hoc markdown markers or brittle string matching to detect these moments.
 
@@ -53,6 +54,17 @@ Quenda should ship with a small set of common kinds:
 - `menu`
 
 These are the most common human-in-the-loop patterns needed by agents.
+
+### Multiple choice and question batches
+
+Choice requests may set `multiple=True`. In terminal interfaces, Space toggles
+the focused option and Enter submits the completed request.
+
+The `request_interaction` tool may also carry a `questions` array. The CLI
+renders each question as a tab, preserves its selection while navigating, and
+uses Left/Right to switch questions. This batch form returns all answers in one
+continuation message while the original single-question payload remains
+supported.
 
 ### Where the decision happens
 

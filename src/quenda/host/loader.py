@@ -427,7 +427,9 @@ class AgentConfigYaml:
         model_provider: Default model provider (legacy, prefer models.default).
         model_name: Default model name (legacy, prefer models.default).
         models: Model roles configuration (ADR-028).
-        instructions_include: List of instruction files to include.
+        instructions_include: List of instruction files bundled with the agent.
+        instruction_files: Project-user instruction filenames to discover across
+            user, project, and user-project scopes.
         skills: List of skills to activate by default.
         mcp: MCP server configuration.
         theme: Theme configuration for interface layer.
@@ -441,6 +443,7 @@ class AgentConfigYaml:
     model_name: str | None = None
     models: ModelsConfig = field(default_factory=ModelsConfig)
     instructions_include: list[str] = field(default_factory=list)
+    instruction_files: list[str] = field(default_factory=lambda: ["QUENDA.md"])
     skills: list[str] = field(default_factory=list)
     include_skill_catalog: bool = False
     mcp: MCPConfig | None = None
@@ -456,6 +459,7 @@ class AgentConfigYaml:
         model = data.get("model", {})
         models_data = data.get("models", {})
         instructions = data.get("instructions", {})
+        instruction_files = data.get("instruction_files", None)
         theme_data = data.get("theme", {})
         compression_data = data.get("compression", {})
         tools_data = data.get("tools", {})
@@ -515,6 +519,7 @@ class AgentConfigYaml:
             model_name=model.get("name") if isinstance(model, dict) else None,
             models=models_config,
             instructions_include=instructions.get("include", []) if isinstance(instructions, dict) else [],
+            instruction_files=_parse_instruction_files(instruction_files),
             skills=skills_list,
             include_skill_catalog=_coerce_bool(include_skill_catalog, False)
             if isinstance(skills_data, dict)
@@ -526,6 +531,31 @@ class AgentConfigYaml:
             execution=ExecutionConfig.from_dict(execution_data),
             policies=PoliciesConfig.from_dict(policies_data),
         )
+
+
+def _parse_instruction_files(value: object) -> list[str]:
+    """Parse and validate user-facing instruction filenames.
+
+    These values are filenames, not paths. Restricting them to one path
+    component keeps discovery inside the three documented instruction scopes.
+    """
+    if value is None:
+        return ["QUENDA.md"]
+    if not isinstance(value, list):
+        raise ValueError("instruction_files must be a list of filenames")
+
+    filenames: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise ValueError("instruction_files entries must be non-empty strings")
+        path = Path(item)
+        if path.is_absolute() or len(path.parts) != 1 or item in {".", ".."}:
+            raise ValueError(
+                f"instruction_files entries must be filenames, not paths: {item!r}"
+            )
+        if item not in filenames:
+            filenames.append(item)
+    return filenames
 
 
 @dataclass

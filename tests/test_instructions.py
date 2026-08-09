@@ -271,6 +271,72 @@ class TestResolveInstructionSources:
         assert sources[2].scope == InstructionScope.WORKSPACE
         assert sources[2].content == "Workspace-specific rules."
 
+    def test_default_quenda_md_loads_from_all_three_user_scopes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """QUENDA.md is discovered at user, project, and user-project scopes."""
+        home = tmp_path / "home"
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+        user_root = home / ".quenda" / "users" / "user_123"
+        user_root.mkdir(parents=True)
+        (user_root / "QUENDA.md").write_text("User rules.", encoding="utf-8")
+        (workspace / "QUENDA.md").write_text("Project rules.", encoding="utf-8")
+        project_quenda = workspace / ".quenda"
+        project_quenda.mkdir()
+        (project_quenda / "QUENDA.md").write_text(
+            "Project .quenda rules.", encoding="utf-8"
+        )
+        user_workspace = user_root / "workspaces" / "ws_123"
+        user_workspace.mkdir(parents=True)
+        (user_workspace / "QUENDA.md").write_text(
+            "User-project rules.", encoding="utf-8"
+        )
+
+        sources = resolve_instruction_sources(
+            agent_package_path=tmp_path / "agent",
+            agent_name="test-agent",
+            agent_md_content="Base prompt.",
+            agent_instructions=[],
+            workspace_path=workspace,
+            workspace_id="ws_123",
+            user=User(id="user_123"),
+        )
+
+        assert [source.content for source in sources[2:]] == [
+            "User rules.",
+            "Project rules.",
+            "Project .quenda rules.",
+            "User-project rules.",
+        ]
+        assert sources[-1].scope is InstructionScope.USER_WORKSPACE
+
+    def test_multiple_configured_instruction_filenames_preserve_order(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every configured filename is loaded in declaration order."""
+        home = tmp_path / "home"
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+        for name in ("TEAM.md", "AGENTS.md"):
+            (workspace / name).write_text(name, encoding="utf-8")
+
+        sources = resolve_instruction_sources(
+            agent_package_path=tmp_path / "agent",
+            agent_name="test-agent",
+            agent_md_content="Base prompt.",
+            agent_instructions=[],
+            workspace_path=workspace,
+            workspace_id="ws_123",
+            user=User(id="user_123"),
+            instruction_files=["TEAM.md", "AGENTS.md"],
+        )
+
+        assert [source.content for source in sources[2:]] == ["TEAM.md", "AGENTS.md"]
+
     def test_resolve_without_workspace_instructions(self, tmp_path: Path) -> None:
         """Resolve without workspace instructions (file doesn't exist)."""
         workspace = tmp_path / "workspace"
@@ -361,6 +427,22 @@ You are a test assistant.
         assert package.config is None
         assert len(package.instructions) == 0
 
+    def test_instruction_files_default_and_configuration(self, tmp_path: Path) -> None:
+        """Agent config defaults to QUENDA.md and accepts multiple filenames."""
+        default = AgentConfigYaml.from_dict({})
+        configured = AgentConfigYaml.from_dict(
+            {"instruction_files": ["TEAM.md", "AGENTS.md"]}
+        )
+
+        assert default.instruction_files == ["QUENDA.md"]
+        assert configured.instruction_files == ["TEAM.md", "AGENTS.md"]
+
+    @pytest.mark.parametrize("filename", ["../QUENDA.md", "docs/QUENDA.md", "/QUENDA.md"])
+    def test_instruction_files_reject_paths(self, filename: str) -> None:
+        """Configured entries cannot escape or introduce nested search paths."""
+        with pytest.raises(ValueError, match="filenames, not paths"):
+            AgentConfigYaml.from_dict({"instruction_files": [filename]})
+
     def test_load_agent_package_with_config(self, tmp_path: Path) -> None:
         """Load an agent package with config.yaml."""
         agent_md = tmp_path / "AGENT.md"
@@ -379,6 +461,10 @@ Base prompt.
 instructions:
   include:
     - instructions/coding.md
+
+instruction_files:
+  - QUENDA.md
+  - AGENTS.md
 """, encoding="utf-8")
 
         # Create instructions directory and file
@@ -393,6 +479,7 @@ instructions:
         assert package.config is not None
         assert package.config.model_provider == "openai"
         assert package.config.model_name == "gpt-4"
+        assert package.config.instruction_files == ["QUENDA.md", "AGENTS.md"]
         assert len(package.instructions) == 1
         assert package.instructions[0].content == "Coding guidelines."
 

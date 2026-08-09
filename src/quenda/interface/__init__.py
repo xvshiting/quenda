@@ -67,7 +67,7 @@ from quenda.interface.events import (
 from quenda.interface.interaction import render_interaction_request
 
 # Interactive selection
-from quenda.interface.selector import select_option
+from quenda.interface.selector import select_option, select_questions
 
 # REPL input
 from quenda.interface.repl import (
@@ -123,6 +123,7 @@ __all__ = [
     # Interaction
     "render_interaction_request",
     "select_option",
+    "select_questions",
     # REPL
     "ReplInput",
     "print_command_menu",

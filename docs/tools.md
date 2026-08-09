@@ -173,7 +173,7 @@ Read file content with range selection. Covers `cat`, `head`, `tail`,
 `sed -n`. Output is formatted with line numbers.
 
 ```python
-read_tool.execute(path="app.py")                       # Read entire file
+read_tool.execute(path="app.py")                       # Read first bounded window
 read_tool.execute(path="app.py", start=1, end=100)     # Read lines 1-100
 read_tool.execute(path="app.log", start=-50)           # Read last 50 lines
 read_tool.execute(path="config.json", end=30)          # Read first 30 lines
@@ -183,7 +183,7 @@ read_tool.execute(path="config.json", end=30)          # Read first 30 lines
 |-----------|------|---------|-------------|
 | `path` | `str` | — | File path to read |
 | `start` | `int` | `1` | Start line (1-indexed). Negative = last N lines |
-| `end` | `int` | — | End line (inclusive). Omit to read to EOF |
+| `end` | `int` | — | End line (inclusive). Omit for at most 200 lines from `start` |
 
 ### WriteFileTool
 

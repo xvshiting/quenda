@@ -24,6 +24,8 @@ class TestRequestInteractionTool:
         assert "title" in params["properties"]
         assert "message" in params["properties"]
         assert "options" in params["properties"]
+        assert "multiple" in params["properties"]
+        assert "questions" in params["properties"]
 
         # kind should have enum
         kind_prop = params["properties"]["kind"]

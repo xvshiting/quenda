@@ -201,6 +201,7 @@ class MemorySearchRequest:
 
     query: str
     limit: int = 10
+    session_id: str | None = None
 
 
 @dataclass
@@ -218,6 +219,7 @@ class MemoryFile:
     path: str
     title: str | None = None
     snippet: str | None = None
+    content: str | None = None
     modified_at: datetime | None = None
 
 

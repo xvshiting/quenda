@@ -176,6 +176,32 @@ class TestHandleInteractionRequest:
         assert response is not None
         assert "Option A" in response
 
+    def test_batched_questions(self) -> None:
+        registry = create_default_interaction_registry()
+        context = InteractionContext(session=FakeSession(), agent=FakeAgent())
+        payload = {
+            "kind": "choice",
+            "title": "Setup",
+            "questions": [
+                {"id": "editor", "title": "Editor", "options": [{"id": "vim", "label": "Vim"}]},
+                {
+                    "id": "features",
+                    "title": "Features",
+                    "multiple": True,
+                    "options": [{"id": "lint", "label": "Lint"}, {"id": "test", "label": "Tests"}],
+                },
+            ],
+        }
+
+        with patch("quenda.cli.select_questions") as selector:
+            selector.return_value = [
+                InteractionOption(id="vim", label="Vim"),
+                [InteractionOption(id="lint", label="Lint"), InteractionOption(id="test", label="Tests")],
+            ]
+            response = _handle_interaction_request(payload, registry, context, MagicMock())
+
+        assert response == "[User answers: editor: Vim; features: Lint, Tests]"
+
     def test_confirm_interaction(self) -> None:
         """Test handling a confirm interaction."""
         registry = create_default_interaction_registry()

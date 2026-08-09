@@ -127,6 +127,12 @@ instructions:
     - instructions/coding.md
     - instructions/communication.md
 
+# 普通用户可以在用户、项目和用户项目作用域中使用这些文件名。
+# 未配置时默认为 [QUENDA.md]。
+instruction_files:
+  - QUENDA.md
+  - AGENTS.md
+
 theme:
   preset: default  # 或 minimal / ascii / silent
   # 或自定义覆盖
@@ -140,6 +146,18 @@ compression:
   archive_raw_messages: true
   compression_model: "deepseek-v4-flash"
 ```
+
+`instruction_files` 中的每个名称会按以下作用域加载，后面的作用域更具体：
+
+```text
+~/.quenda/users/<user-id>/<filename>
+<project>/<filename>
+<project>/.quenda/<filename>
+~/.quenda/users/<user-id>/workspaces/<workspace-id>/<filename>
+```
+
+配置项只接受文件名，不接受绝对路径、子目录或 `..`。项目级文件可以提交到
+版本控制供团队共享；用户级和用户项目级文件保留在用户自己的 Quenda 数据目录。
 
 ---
 

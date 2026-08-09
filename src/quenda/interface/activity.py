@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
+
+from wcwidth import wcswidth
 
 if TYPE_CHECKING:
     from quenda.interface.theme import InterfaceTheme
@@ -109,6 +112,8 @@ class SpinnerIndicator:
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
     _started: bool = field(default=False, init=False)
     _frame_count: int = field(default=0, init=False)
+    _started_at: float = field(default=0.0, init=False)
+    _last_frame_width: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         # Import here to avoid circular import
@@ -135,6 +140,7 @@ class SpinnerIndicator:
         self._started = True
         self._stop_event.clear()
         self._frame_count = 0
+        self._started_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -155,6 +161,12 @@ class SpinnerIndicator:
         """Update the message shown by the indicator."""
         with self._lock:
             self.message = message
+
+    def begin(self, message: str) -> None:
+        """Start timing a new visible activity without restarting the thread."""
+        with self._lock:
+            self.message = message
+            self._started_at = time.monotonic()
 
     def _run(self) -> None:
         frame_index = 0
@@ -181,16 +193,22 @@ class SpinnerIndicator:
                     )
 
             hint = f" {self._theme.esc_hint_text}" if show_hint else ""
-            text = f"\r{frame} {self.message}{hint}"
-            padding = max(0, 60 - len(text))  # Fixed width for clearing
+            elapsed = max(0, int(time.monotonic() - self._started_at))
+            minutes, seconds = divmod(elapsed, 60)
+            elapsed_text = f"{minutes}m{seconds:02d}s" if minutes else f"{seconds}s"
+            visible = f"{frame} {self.message} · {elapsed_text}{hint}"
+            width = max(0, wcswidth(visible))
+            padding = max(0, self._last_frame_width - width)
             assert self.stream is not None
-            self.stream.write(text + (" " * padding))
+            self.stream.write("\r" + visible + (" " * padding))
             self.stream.flush()
+            self._last_frame_width = width
 
     def _clear_line(self) -> None:
         assert self.stream is not None
-        self.stream.write("\r" + (" " * 70) + "\r")
+        self.stream.write("\r" + (" " * self._last_frame_width) + "\r")
         self.stream.flush()
+        self._last_frame_width = 0
 
 
 @dataclass

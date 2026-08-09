@@ -171,7 +171,7 @@ def use_fake_context_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         service_module,
         "refresh_run_context",
-        lambda binding, session_id="": binding.context_snapshot,
+        lambda binding, session_id="", mode="chat": binding.context_snapshot,
     )
 
 
@@ -436,7 +436,7 @@ def test_get_context_reports_the_resolved_instruction_sources(
     monkeypatch.setattr(
         service_module,
         "refresh_run_context",
-        lambda _binding, session_id="": SimpleNamespace(
+        lambda _binding, session_id="", mode="chat": SimpleNamespace(
             instruction_sources=sources,
             composed_prompt="resolved",
         ),
