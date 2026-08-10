@@ -5,6 +5,15 @@
 
 ## 当前优先事项
 
+### P0.5: Local Agent Home
+
+- [x] 建立 `~/.quenda/agent-<name>/` Agent Home 约定
+- [x] 支持 `quenda agent create/list/run`
+- [x] 支持从 Agent package、源码目录或 `AGENT.md` 复制初始化
+- [x] 支持 `quenda <name>` 快捷启动和 home-local 默认 workspace
+- [ ] 设计 `~/.quenda/team-<name>/` 的成员、路由、状态与编排语义
+- [ ] 让 Server HostStore 映射同一个 Agent Home 逻辑模型
+
 ### P0: 稳定基础设施
 
 - [x] 统一本地开发环境到 Python 3.12+，避免默认 Python 3.9 导致测试收集失败

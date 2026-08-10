@@ -282,6 +282,23 @@ def resolve_instruction_sources(
     # 3. Agent package included instructions
     sources.extend(agent_instructions)
 
+    # Local Agent Homes keep their editable identity, user profile, and durable
+    # memory beside AGENT.md. Package agents without agent.yaml retain the
+    # existing user-scoped overlay behavior.
+    if (agent_package_path / "agent.yaml").is_file():
+        for filename in ("SOUL.md", "USER.md", "MEMORY.md"):
+            home_instruction = agent_package_path / filename
+            if home_instruction.is_file():
+                content = home_instruction.read_text(encoding="utf-8").strip()
+                if content:
+                    sources.append(
+                        InstructionSource(
+                            scope=InstructionScope.AGENT_INSTRUCTIONS,
+                            content=content,
+                            path=home_instruction,
+                        )
+                    )
+
     # 4. User-level configured instruction files
     user_root = Path.home() / ".quenda" / "users" / user.id
     for filename in configured_files:

@@ -1,0 +1,62 @@
+"""CLI tests for Agent Home management and named launchers."""
+
+from pathlib import Path
+
+from quenda import cli
+
+
+def test_agent_create_and_list_use_quenda_home(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setenv("QUENDA_HOME", str(tmp_path))
+
+    assert cli.main(["agent", "create", "reviewer"]) == 0
+    assert cli.main(["agent", "list"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Created agent: reviewer" in output
+    assert f"reviewer\t{tmp_path / 'agent-reviewer'}" in output
+
+
+def test_named_agent_uses_its_default_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QUENDA_HOME", str(tmp_path))
+    assert cli.main(["agent", "create", "reviewer"]) == 0
+    captured: dict[str, object] = {}
+
+    def fake_run_repl(agent_path: Path, workspace: Path, **kwargs) -> int:
+        captured["agent_path"] = agent_path
+        captured["workspace"] = workspace
+        return 0
+
+    monkeypatch.setattr(cli, "run_repl", fake_run_repl)
+
+    assert cli.main(["reviewer"]) == 0
+    assert captured == {
+        "agent_path": tmp_path / "agent-reviewer",
+        "workspace": tmp_path / "agent-reviewer" / "workspace",
+    }
+
+
+def test_explicit_agent_run_accepts_external_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QUENDA_HOME", str(tmp_path / "home"))
+    assert cli.main(["agent", "create", "reviewer"]) == 0
+    project = tmp_path / "project"
+    captured: dict[str, Path] = {}
+
+    def fake_run_repl(agent_path: Path, workspace: Path, **kwargs) -> int:
+        captured["workspace"] = workspace
+        return 0
+
+    monkeypatch.setattr(cli, "run_repl", fake_run_repl)
+
+    assert cli.main(["agent", "run", "reviewer", "--workspace", str(project)]) == 0
+    assert captured["workspace"] == project
+    assert project.is_dir()

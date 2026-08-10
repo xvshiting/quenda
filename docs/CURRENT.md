@@ -23,11 +23,19 @@ Agent 命令扩展机制见 [decisions/010-agent-command-extensions.md](decision
 REPL 命令提示见 [decisions/011-repl-command-hints.md](decisions/011-repl-command-hints.md)。
 交互请求与选择控件见 [decisions/012-interaction-requests-and-choice-controls.md](decisions/012-interaction-requests-and-choice-controls.md)。
 Agent 包分发模型见 [decisions/013-agent-package-distribution.md](decisions/013-agent-package-distribution.md)。
+本地 Agent Home 与按名称启动见 [decisions/034-local-agent-homes-and-named-launchers.md](decisions/034-local-agent-homes-and-named-launchers.md)。
 上下文压缩与分层存储见 [decisions/015-context-compression-and-storage.md](decisions/015-context-compression-and-storage.md)。
 
 ## 当前状态
 
 ### ✅ 已完成
+
+- **Local Agent Home ✅**
+  - `~/.quenda/agent-<name>/` 聚合定义、提示词、Skills、Memory 与默认 workspace
+  - `quenda agent create <name> [--from <source>]`
+  - `quenda agent list` / `quenda agent run <name>`
+  - `quenda <name>` 为每个本地 Agent 提供与 `quenda code` 一致的快捷启动
+  - 未指定 workspace 时使用 `<agent-home>/workspace/`
 
 - **Phase 0-6**: 框架核心全部完成
 

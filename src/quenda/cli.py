@@ -3,8 +3,9 @@ CLI for Quenda Agent Framework.
 
 Provides commands to run agents:
 - quenda run --agent <path> "message"  # One-shot execution
-- quenda code "message"                 # One-shot with quenda-code agent
-- quenda code                           # Interactive REPL mode
+- quenda agent create <name>            # Create a local Agent Home
+- quenda <name>                         # Run a local Agent Home
+- quenda code                           # Run local code agent or Quenda Code
 """
 
 from __future__ import annotations
@@ -12,50 +13,53 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from quenda.host import (
-    setup_agent,
-    run_agent_once,
-    find_builtin_agent,
-    load_agent_commands,
-    ReplRuntime,
-    create_default_registry,
-    create_default_interaction_registry,
+    AgentHome,
+    AgentHomeManager,
     InteractionContext,
-    InteractionRequest,
     InteractionOption,
     InteractionRegistry,
+    InteractionRequest,
+    ReplRuntime,
+    create_default_interaction_registry,
+    create_default_registry,
+    find_builtin_agent,
+    load_agent_commands,
+    run_agent_once,
+    setup_agent,
 )
+from quenda.host.permission_manager import PermissionManager, format_permission_prompt
 from quenda.interface import (
     ActivityEventHandler,
+    CollectingEventHandler,
+    CompositeEventHandler,
     ConsoleRenderer,
+    DefaultWelcomeProvider,
+    # Theme and providers
+    InterfaceTheme,
     ProgressEventHandler,
     SpinnerIndicator,
+    # Event handling
+    StreamingEventHandler,
+    WelcomeContext,
+    create_repl_input,
     get_status_bar,
     print_command_menu,
-    create_repl_input,
     render_markdown_lite,
     select_option,
     select_questions,
-    # Theme and providers
-    InterfaceTheme,
-    WelcomeContext,
-    DefaultWelcomeProvider,
-    # Event handling
-    StreamingEventHandler,
-    CollectingEventHandler,
-    CompositeEventHandler,
 )
 from quenda.kernel.types import ImageContent, TextContent
-from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.events import InteractionRequested
+from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.permission import PermissionRequest
-from quenda.host.permission_manager import PermissionManager, format_permission_prompt
-
 
 _DOUBLE_CTRL_C_WINDOW_SECONDS = 1.5
+_BUILTIN_COMMANDS = frozenset({"run", "agent", "code"})
 
 
 def _register_exit_interrupt(
@@ -193,7 +197,10 @@ def _handle_interaction_request(
         results = select_questions(requests, interaction_registry, interaction_context)
         if not results or all(result is None for result in results):
             return None
-        if any(request.required and result is None for request, result in zip(requests, results, strict=True)):
+        if any(
+            request.required and result is None
+            for request, result in zip(requests, results, strict=True)
+        ):
             return None
         answers: list[str] = []
         for payload, result in zip(question_payloads, results, strict=True):
@@ -255,7 +262,9 @@ def _handle_interaction_request(
             return f"[User selected: {labels}]"
 
         # User selected a predefined option
-        return f"[User selected: {result.label}]" + (f" - {result.description}" if result.description else "")
+        return f"[User selected: {result.label}]" + (
+            f" - {result.description}" if result.description else ""
+        )
 
     elif request.kind == "confirm":
         # Confirm: Yes/No with "Other..." option
@@ -266,7 +275,9 @@ def _handle_interaction_request(
                 title=request.title,
                 message=request.message,
                 options=[
-                    InteractionOption(id="yes", label="Yes", description="Proceed", is_default=True),
+                    InteractionOption(
+                        id="yes", label="Yes", description="Proceed", is_default=True
+                    ),
                     InteractionOption(id="no", label="No", description="Cancel"),
                 ],
                 source="llm",
@@ -351,8 +362,7 @@ def _run_interactive_turn(
             indicator.stop()
 
         requests = [
-            event for event in collector.get_events()
-            if isinstance(event, InteractionRequested)
+            event for event in collector.get_events() if isinstance(event, InteractionRequested)
         ]
         if not requests:
             return
@@ -495,8 +505,18 @@ def run_repl(
 
     # Run REPL loop (Interface layer handles input)
     return _run_repl(
-        session, agent, runtime, renderer, indicator, phase_handler, registry, theme,
-        provider_name, model_name, workspace_id, permission_manager
+        session,
+        agent,
+        runtime,
+        renderer,
+        indicator,
+        phase_handler,
+        registry,
+        theme,
+        provider_name,
+        model_name,
+        workspace_id,
+        permission_manager,
     )
 
 
@@ -550,7 +570,9 @@ def _run_repl(
     def permission_prompt_handler(request: PermissionRequest) -> bool:
         """Prompt the user for a permission decision."""
         indicator.stop()
-        print(f"\n{theme.permission_icon if hasattr(theme, 'permission_icon') else '🔐'} {format_permission_prompt(request)}")
+        print(
+            f"\n{theme.permission_icon if hasattr(theme, 'permission_icon') else '🔐'} {format_permission_prompt(request)}"
+        )
 
         try:
             response = repl_input.get_input("Approve? [y/N]: ").strip().lower()
@@ -601,12 +623,19 @@ def _run_repl(
 
                         if resolution.status in ("needs_input", "partial"):
                             # Command needs more input - trigger interactive selection
-                            from quenda.host.interactions import InteractionRequest, InteractionOption
+                            from quenda.host.interactions import (
+                                InteractionOption,
+                                InteractionRequest,
+                            )
                             from quenda.interface.selector import select_option
 
                             # Interactive selection loop (supports multi-level)
                             current_args = cmd_args
-                            candidates = resolution.candidates if resolution.candidates else runtime.get_command_candidates(cmd_name, current_args)
+                            candidates = (
+                                resolution.candidates
+                                if resolution.candidates
+                                else runtime.get_command_candidates(cmd_name, current_args)
+                            )
 
                             while candidates:
                                 # Build interaction request from candidates
@@ -624,7 +653,9 @@ def _run_repl(
                                 request = InteractionRequest(
                                     kind="menu",
                                     title=f"Select {cmd_name}",
-                                    message=f"Choose an option for /{cmd_name}:" if not current_args else f"Current: {current_args}",
+                                    message=f"Choose an option for /{cmd_name}:"
+                                    if not current_args
+                                    else f"Current: {current_args}",
                                     options=options,
                                 )
 
@@ -634,7 +665,7 @@ def _run_repl(
                                     # User cancelled
                                     break
 
-                                if hasattr(option_result, 'value'):
+                                if hasattr(option_result, "value"):
                                     selected_value = option_result.value
                                 else:
                                     selected_value = str(option_result)
@@ -643,7 +674,9 @@ def _run_repl(
                                 if selected_value.endswith("/") and selected_value.count("/") == 1:
                                     # Partial provider selection - get model candidates
                                     current_args = selected_value
-                                    candidates = runtime.get_command_candidates(cmd_name, current_args)
+                                    candidates = runtime.get_command_candidates(
+                                        cmd_name, current_args
+                                    )
                                     if not candidates:
                                         # No more candidates, break
                                         break
@@ -691,16 +724,24 @@ def _run_repl(
                     if is_local_path:
                         expanded_path = Path(word).expanduser()
                         if expanded_path.exists():
-                            permission_manager.grant_user_provided_resource(str(expanded_path.resolve()))
+                            permission_manager.grant_user_provided_resource(
+                                str(expanded_path.resolve())
+                            )
 
                         # Check if it's an image file
                         if expanded_path.exists() and expanded_path.suffix.lower() in {
-                            ".png", ".jpg", ".jpeg", ".gif", ".webp"
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".gif",
+                            ".webp",
                         }:
                             ref = runtime.create_image_ref(word)
                             if ref:
                                 # Replace path with reference marker in display
-                                processed_input = processed_input.replace(word, f"[{ref.id}: {ref.display_name()}]")
+                                processed_input = processed_input.replace(
+                                    word, f"[{ref.id}: {ref.display_name()}]"
+                                )
                                 print(f"   Loaded image: {ref.display_name()} -> [{ref.id}]")
 
                 # Execute the user request (ADR-027: no followup phase for skill activation)
@@ -765,12 +806,12 @@ def _run_repl(
                         last_exit_interrupt_at
                     )
                     if should_exit:
-                        print(f"\n\n👋 Session saved. Bye!")
+                        print("\n\n👋 Session saved. Bye!")
                         break
                     print("\nPress Ctrl+C again within 1.5s to exit.")
                     continue
             except EOFError:
-                print(f"\n\n👋 Session saved. Bye!")
+                print("\n\n👋 Session saved. Bye!")
                 break
 
     except Exception as e:
@@ -780,13 +821,97 @@ def _run_repl(
     return 0
 
 
-def main() -> int:
+def _add_agent_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the common arguments accepted by named Agent launchers."""
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="Workspace directory (default: the Agent Home workspace)",
+    )
+    parser.add_argument("--provider", help="Model provider override")
+    parser.add_argument("--model", help="Model name override")
+    parser.add_argument("--session", help="Resume a session by ID")
+    parser.add_argument(
+        "--image",
+        action="append",
+        dest="images",
+        help="Image file to attach (can be used multiple times)",
+    )
+    parser.add_argument(
+        "message",
+        nargs="?",
+        help="Task or question for the agent (omit for REPL mode)",
+    )
+
+
+def _launch_agent_home(home: AgentHome, args: argparse.Namespace) -> int:
+    """Launch a named Agent Home in one-shot or interactive mode."""
+    workspace = args.workspace.expanduser() if args.workspace else home.workspace
+    workspace.mkdir(parents=True, exist_ok=True)
+    if args.message:
+        return run_agent(
+            agent_path=home.path,
+            workspace=workspace,
+            user_message=_build_cli_user_message(args.message, args.images),
+            provider=args.provider,
+            model=args.model,
+            session_id=args.session,
+        )
+    return run_repl(
+        agent_path=home.path,
+        workspace=workspace,
+        provider=args.provider,
+        model=args.model,
+        session_id=args.session,
+    )
+
+
+def _run_agent_shortcut(
+    name: str,
+    argv: Sequence[str],
+    manager: AgentHomeManager,
+) -> int | None:
+    """Run ``quenda <name>`` when name resolves to an Agent Home."""
+    home = manager.get(name)
+    if home is None:
+        return None
+    parser = argparse.ArgumentParser(prog=f"quenda {name}")
+    _add_agent_run_arguments(parser)
+    return _launch_agent_home(home, parser.parse_args(list(argv)))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Main CLI entry point."""
+    cli_args = list(sys.argv[1:] if argv is None else argv)
+    agent_manager = AgentHomeManager()
+    if cli_args and cli_args[0] not in _BUILTIN_COMMANDS:
+        shortcut_result = _run_agent_shortcut(cli_args[0], cli_args[1:], agent_manager)
+        if shortcut_result is not None:
+            return shortcut_result
+
     parser = argparse.ArgumentParser(
         prog="quenda",
         description="Quenda Agent Framework",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    agent_parser = subparsers.add_parser("agent", help="Create and manage local agents")
+    agent_subparsers = agent_parser.add_subparsers(dest="agent_command", required=True)
+
+    create_parser = agent_subparsers.add_parser("create", help="Create an Agent Home")
+    create_parser.add_argument("name", help="Agent name")
+    create_parser.add_argument(
+        "--from",
+        dest="source",
+        help="Seed from an installed agent, source directory, or AGENT.md",
+    )
+
+    agent_subparsers.add_parser("list", help="List local Agent Homes")
+
+    agent_run_parser = agent_subparsers.add_parser("run", help="Run a local Agent Home")
+    agent_run_parser.add_argument("name", help="Agent name")
+    _add_agent_run_arguments(agent_run_parser)
 
     # kora run --agent <path> [message]
     run_parser = subparsers.add_parser("run", help="Run an agent from AGENT.md")
@@ -831,8 +956,8 @@ def main() -> int:
     code_parser.add_argument(
         "--workspace",
         type=Path,
-        default=Path.cwd(),
-        help="Workspace directory (default: current directory)",
+        default=None,
+        help="Workspace directory (local Agent Home default, otherwise current directory)",
     )
     code_parser.add_argument(
         "--provider",
@@ -858,7 +983,37 @@ def main() -> int:
         help="Task or question for the agent (omit for REPL mode)",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(cli_args)
+
+    if args.command == "agent":
+        if args.agent_command == "create":
+            try:
+                home = agent_manager.create(args.name, source=args.source)
+            except (FileExistsError, FileNotFoundError, ValueError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+            print(f"Created agent: {home.name}")
+            print(f"Home: {home.path}")
+            print(f"Workspace: {home.workspace}")
+            print(f"Run: quenda {home.name}")
+            return 0
+
+        if args.agent_command == "list":
+            homes = agent_manager.list()
+            if not homes:
+                print("No local agents. Create one with: quenda agent create <name>")
+                return 0
+            for home in homes:
+                source = f" (from {home.created_from})" if home.created_from else ""
+                print(f"{home.name}\t{home.path}{source}")
+            return 0
+
+        if args.agent_command == "run":
+            home = agent_manager.get(args.name)
+            if home is None:
+                print(f'Error: Agent "{args.name}" not found', file=sys.stderr)
+                return 1
+            return _launch_agent_home(home, args)
 
     if args.command == "run":
         agent_path = args.agent
@@ -882,6 +1037,10 @@ def main() -> int:
             )
 
     elif args.command == "code":
+        local_code = agent_manager.get("code")
+        if local_code is not None:
+            return _launch_agent_home(local_code, args)
+
         agent_dir = find_builtin_agent("quenda-code")
         if agent_dir is None:
             print("Error: Quenda Code Agent not found", file=sys.stderr)
@@ -893,7 +1052,7 @@ def main() -> int:
             user_message = _build_cli_user_message(args.message, args.images)
             return run_agent(
                 agent_path=agent_dir,
-                workspace=args.workspace,
+                workspace=args.workspace or Path.cwd(),
                 user_message=user_message,
                 provider=args.provider,
                 model=args.model,
@@ -902,7 +1061,7 @@ def main() -> int:
         else:
             return run_repl(
                 agent_path=agent_dir,
-                workspace=args.workspace,
+                workspace=args.workspace or Path.cwd(),
                 provider=args.provider,
                 model=args.model,
                 session_id=args.session,

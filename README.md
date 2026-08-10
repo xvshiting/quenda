@@ -43,6 +43,30 @@ quenda code
 quenda code "Add error handling to the API client"
 ```
 
+## Personal Agents
+
+Create a long-lived local agent with its own prompts, skills, memory, sessions,
+and default workspace:
+
+```bash
+quenda agent create reviewer
+quenda reviewer
+```
+
+Seed an independent agent from an installed package or source directory:
+
+```bash
+quenda agent create coder --from quenda-code
+quenda agent create writer --from ./agents/writer
+```
+
+Agents live under `~/.quenda/agent-<name>/`. Without `--workspace`, they work
+inside their own `workspace/`; the same agent can enter a project explicitly:
+
+```bash
+quenda reviewer --workspace ~/Workspace/my-project
+```
+
 ### Features
 
 - **Code-aware** — Reads and understands your codebase structure

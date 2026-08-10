@@ -16,6 +16,7 @@ from quenda.host.loader import (
     load_agent_initializers,
     find_builtin_agent,
 )
+from quenda.host.agent_home import AgentHome, AgentHomeManager
 from quenda.host.storage import (
     FileStorage,
     FileStorageConfig,
@@ -160,6 +161,8 @@ __all__ = [
     "ThemeConfig",
     "AgentConfigYaml",
     "AgentPackage",
+    "AgentHome",
+    "AgentHomeManager",
     # Storage
     "Storage",
     "FileStorage",

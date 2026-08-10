@@ -666,7 +666,11 @@ def setup_host_binding(
 
         # 5. Resolve user
         user = DefaultUserResolver().resolve()
-        user_agent_path = resolver.get_user_agent_path(user, agent_package.name)
+        user_agent_path = (
+            agent_dir
+            if (agent_dir / "agent.yaml").is_file()
+            else resolver.get_user_agent_path(user, agent_package.name)
+        )
         extension_context = AgentExtensionContext(
             agent_name=agent_package.name,
             agent_package_path=agent_dir,
@@ -1009,6 +1013,20 @@ def refresh_run_context(
             )
         ))
         instruction_sources.sort(key=lambda source: source.scope)
+
+    # An Agent Home may expose a core file directly and through an inherited
+    # context provider. Preserve the first resolved source instead of injecting
+    # duplicate prompt content.
+    deduplicated_sources: list[InstructionSource] = []
+    seen_paths: set[Path] = set()
+    for source in instruction_sources:
+        if source.path is not None:
+            resolved_path = source.path.resolve()
+            if resolved_path in seen_paths:
+                continue
+            seen_paths.add(resolved_path)
+        deduplicated_sources.append(source)
+    instruction_sources = deduplicated_sources
 
     # 6. Compose prompt
     composer = InstructionComposer(template_context)
