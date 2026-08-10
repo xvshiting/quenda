@@ -11,9 +11,13 @@ from quenda.interface.selector import _select_basic, _selection_marker
 class TestSelectOption:
     """Tests for select_option function."""
 
-    def test_choice_markers_use_square_brackets(self) -> None:
-        assert _selection_marker(False) == "[ ]"
-        assert _selection_marker(True) == "[x]"
+    def test_single_choice_has_no_marker(self) -> None:
+        assert _selection_marker(multiple=False, checked=False) == ""
+        assert _selection_marker(multiple=False, checked=True) == ""
+
+    def test_multiple_choice_uses_square_brackets(self) -> None:
+        assert _selection_marker(multiple=True, checked=False) == "[ ]"
+        assert _selection_marker(multiple=True, checked=True) == "[x]"
 
     def test_select_basic_without_prompt_toolkit(self) -> None:
         """Test basic selection fallback without prompt_toolkit."""

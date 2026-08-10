@@ -32,8 +32,10 @@ except ImportError:
 type SelectionResult = InteractionOption | list[InteractionOption] | str | None
 
 
-def _selection_marker(checked: bool) -> str:
-    """Render a consistent checkbox marker for every choice mode."""
+def _selection_marker(*, multiple: bool, checked: bool) -> str:
+    """Render checkboxes only when the request allows multiple choices."""
+    if not multiple:
+        return ""
     return "[x]" if checked else "[ ]"
 
 
@@ -128,11 +130,12 @@ def _select_questions_with_prompt_toolkit(
         for i, option in enumerate(all_options):
             focused = i == current_indexes[question_idx]
             checked = option.id in selected_ids[question_idx]
-            marker = _selection_marker(checked)
+            marker = _selection_marker(multiple=request.multiple, checked=checked)
             prefix = "→ " if focused else "  "
             description = f" - {option.description}" if option.description else ""
             style = "class:selected" if focused else ""
-            fragments.extend([(style, f"{prefix}{marker} {option.label}{description}"), ("", "\n")])
+            marker_prefix = f"{marker} " if marker else ""
+            fragments.extend([(style, f"{prefix}{marker_prefix}{option.label}{description}"), ("", "\n")])
         fragments.extend([
             ("", "\n"),
             ("class:hint", "←/→  Question   ↑/↓  Navigate   Space  Select   Enter  Submit   Esc  Cancel"),
