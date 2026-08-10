@@ -11,8 +11,7 @@ import os
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from pathlib import Path
-    from quenda.host.commands import CommandRegistry, CommandCandidate
+    from quenda.host.commands import CommandRegistry
     from quenda.host.repl import ReplRuntime
 
 from quenda.interface.status import get_status_bar
@@ -21,10 +20,8 @@ from quenda.interface.status import get_status_bar
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import Completer, Completion
-    from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.keys import Keys
-    from prompt_toolkit.layout.processors import BeforeInput
+    from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
 
     HAS_PROMPT_TOOLKIT = True
@@ -209,7 +206,10 @@ if HAS_PROMPT_TOOLKIT:
 
         def get_input(self, prompt: str) -> str:
             """Get user input with completion support."""
-            with patch_stdout(raw=True):
+            # Let prompt_toolkit coordinate asynchronous output with its own
+            # renderer. Raw writes can split wide CJK cells and corrupt redraws
+            # on Windows Terminal, VS Code terminals, and some Linux terminals.
+            with patch_stdout():
                 return self._session.prompt(prompt)
 
     def create_repl_input(

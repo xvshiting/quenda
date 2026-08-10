@@ -9,9 +9,11 @@ from __future__ import annotations
 import asyncio
 import functools
 import time
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
-from quenda.providers.errors import APIError, NetworkError, RateLimitError
+from quenda.providers.errors import NetworkError, RateLimitError
+from quenda.providers.observability import RetryNotice, notify_retry
 
 T = TypeVar("T")
 
@@ -70,6 +72,13 @@ def retry_with_backoff(
                     if isinstance(e, RateLimitError) and e.retry_after is not None:
                         delay = max(delay, e.retry_after)
 
+                    notify_retry(RetryNotice(
+                        attempt=attempt + 2,
+                        max_attempts=max_retries + 1,
+                        delay_seconds=delay,
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                    ))
                     time.sleep(delay)
 
             # This should never be reached, but satisfies type checker
@@ -136,6 +145,13 @@ def retry_with_backoff_async(
                     if isinstance(e, RateLimitError) and e.retry_after is not None:
                         delay = max(delay, e.retry_after)
 
+                    notify_retry(RetryNotice(
+                        attempt=attempt + 2,
+                        max_attempts=max_retries + 1,
+                        delay_seconds=delay,
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                    ))
                     await asyncio.sleep(delay)
 
             # This should never be reached, but satisfies type checker

@@ -355,6 +355,74 @@ class TestRun:
         assert "Echo:" in tool_events[0].result
 
     @pytest.mark.asyncio
+    async def test_deferred_tool_schema_is_loaded_after_tool_search(self) -> None:
+        """Deferred schemas are hidden until search_tools activates a match."""
+
+        class DeferredTool:
+            name = "costly_remote"
+            description = "Send an HTTP request to a remote API endpoint."
+            defer_schema = True
+            parameters = {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+            }
+
+            def execute(self, **kwargs: object) -> ToolResult:
+                return ToolResult(
+                    call_id="",
+                    name=self.name,
+                    content=f"Fetched {kwargs['url']}",
+                )
+
+        class ToolRecordingModel:
+            def __init__(self) -> None:
+                self.visible_tool_names: list[list[str]] = []
+
+            def invoke(
+                self,
+                messages: list[Message],
+                *,
+                tools: list[Tool],
+            ) -> ModelResponse:
+                self.visible_tool_names.append([tool.name for tool in tools])
+                if len(self.visible_tool_names) == 1:
+                    return ModelResponse(
+                        tool_calls=[ToolCall(
+                            id="search-1",
+                            name="search_tools",
+                            arguments={"query": "send HTTP request"},
+                        )],
+                        stop_reason="tool_use",
+                    )
+                if len(self.visible_tool_names) == 2:
+                    return ModelResponse(
+                        tool_calls=[ToolCall(
+                            id="http-1",
+                            name="costly_remote",
+                            arguments={"url": "https://example.test"},
+                        )],
+                        stop_reason="tool_use",
+                    )
+                return ModelResponse(content="Done", stop_reason="end_turn")
+
+        agent = AgentConfig(name="test", tools=[FakeTool(), DeferredTool()])
+        session = SessionState.create("test")
+        model = ToolRecordingModel()
+
+        run = Run.create(agent, session, model)  # type: ignore[arg-type]
+        events = await run.execute_to_completion("Fetch the endpoint")
+
+        assert "echo" in model.visible_tool_names[0]
+        assert "search_tools" in model.visible_tool_names[0]
+        assert "costly_remote" not in model.visible_tool_names[0]
+        assert "costly_remote" in model.visible_tool_names[1]
+        assert session.metadata["activated_tool_names"] == ["costly_remote"]
+        assert any(
+            isinstance(event, ToolExecuted) and event.tool_name == "costly_remote"
+            for event in events
+        )
+
+    @pytest.mark.asyncio
     async def test_interaction_request_pauses_before_followup_model_call(self) -> None:
         """A human decision must be handled by Host before the model continues."""
         from quenda.tools import RequestInteractionTool
@@ -437,6 +505,66 @@ class TestRun:
         assert len(session.summary_blocks) == 1
         assert session.summary_blocks[0].content == "compressed"
         assert any(isinstance(event, RunCompleted) for event in events)
+
+    @pytest.mark.asyncio
+    async def test_run_microcompacts_old_tool_results_before_model_call(self) -> None:
+        """Old read/search outputs leave hot context while recent results stay exact."""
+        agent = AgentConfig(name="test")
+        session = SessionState.create("test")
+        for index in range(4):
+            call_id = f"read-{index}"
+            session.add_message(Message(
+                role="assistant",
+                content=[ToolCall(
+                    id=call_id,
+                    name="read_file",
+                    arguments={"path": f"file-{index}.py"},
+                )],
+            ))
+            session.add_message(Message(
+                role="user",
+                content=[ToolResult(
+                    call_id=call_id,
+                    name="read_file",
+                    content=f"result-{index}-" + ("x" * 2_000),
+                )],
+            ))
+
+        model = CapturingModel([
+            ModelResponse(content="Done!", stop_reason="end_turn"),
+        ])
+        run = Run.create(agent, session, model)
+        run.microcompact_trigger_tokens = 1
+        run.microcompact_keep_last_tool_results = 2
+
+        await run.execute_to_completion("Continue")
+
+        sent_results = [
+            block.content
+            for message in model.invocations[0]
+            if not isinstance(message.content, str)
+            for block in message.content
+            if isinstance(block, ToolResult)
+        ]
+        assert sent_results[:2] == [
+            "[Old tool result content cleared]",
+            "[Old tool result content cleared]",
+        ]
+        assert sent_results[2].startswith("result-2-")
+        assert sent_results[3].startswith("result-3-")
+        sent_calls = [
+            block
+            for message in model.invocations[0]
+            if not isinstance(message.content, str)
+            for block in message.content
+            if isinstance(block, ToolCall)
+        ]
+        assert sent_calls[0].arguments == {
+            "path": "file-0.py",
+            "_context_note": "Old tool input cleared after successful execution.",
+        }
+        assert sent_calls[1].arguments["_context_note"].startswith("Old tool input")
+        assert sent_calls[2].arguments == {"path": "file-2.py"}
 
     @pytest.mark.asyncio
     async def test_run_compresses_and_retries_context_overflow_once(self) -> None:
@@ -1314,6 +1442,89 @@ class TestToolResultProcessingPolicy:
         assert isinstance(tool_result, ToolResult)
         assert tool_result.image_content is not None
         assert tool_result.image_content.media_type == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_only_latest_tool_image_is_attached_within_a_run(self) -> None:
+        """Repeated image reads expose resources without accumulating raw payloads."""
+
+        class ImageTool:
+            name = "read_file"
+            description = "Read an image"
+            parameters = {"type": "object"}
+
+            def execute(self, **kwargs: object) -> ToolResult:
+                path = str(kwargs["path"])
+                return ToolResult(
+                    call_id="",
+                    name=self.name,
+                    content=f"Image: {path}",
+                    display_hint=path,
+                    image_content=ImageContent(media_type="image/png", data="AAAA"),
+                )
+
+        model = CapturingModel([
+            ModelResponse(
+                tool_calls=[ToolCall(id="c1", name="read_file", arguments={"path": "one.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall(id="c2", name="read_file", arguments={"path": "two.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall(id="c3", name="read_file", arguments={"path": "three.png"})],
+                stop_reason="tool_use",
+            ),
+            ModelResponse(content="Done", stop_reason="end_turn"),
+        ])
+        session = SessionState.create("test")
+        run = Run.create(AgentConfig(name="test", tools=[ImageTool()]), session, model)
+
+        await run.execute_to_completion("Inspect successive versions")
+
+        final_call = model.invocations[-1]
+        attached = [
+            block.image_content
+            for message in final_call
+            if isinstance(message.content, list)
+            for block in message.content
+            if isinstance(block, ToolResult) and block.image_content is not None
+        ]
+        assert len(attached) == 1
+        assert len(session.image_refs) == 3
+        assert all(
+            any(ref_id in str(message.content) for message in final_call)
+            for ref_id in session.image_refs
+        )
+
+    def test_explicit_image_activation_expires_after_next_model_call(self) -> None:
+        run = Run.create(AgentConfig(name="test"), SessionState.create("test"), FakeModel([]))
+        messages = [
+            Message(
+                role="assistant",
+                content=[ToolCall(id="activate", name="activate_resource", arguments={})],
+            ),
+            Message(
+                role="user",
+                content=[
+                    TextContent(text="[Activated resource img0: raw image content attached.]"),
+                    ImageContent(media_type="image/png", data="AAAA"),
+                ],
+            ),
+            Message(
+                role="assistant",
+                content=[ToolCall(id="next", name="read_file", arguments={})],
+            ),
+        ]
+
+        projected = run._project_active_resources(messages)
+
+        assert not any(
+            isinstance(block, ImageContent)
+            for message in projected
+            if isinstance(message.content, list)
+            for block in message.content
+        )
 
     @pytest.mark.asyncio
     async def test_historical_images_do_not_keep_session_routed_to_vision(self) -> None:

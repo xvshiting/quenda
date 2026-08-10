@@ -21,6 +21,16 @@ def test_compression_config_coerces_yaml_numeric_strings() -> None:
     assert isinstance(config.threshold_ratio, float)
     assert config.keep_last_n_messages == 10
     assert isinstance(config.keep_last_n_messages, int)
+
+
+def test_compression_config_parses_microcompaction_budget() -> None:
+    config = CompressionConfig.from_dict({
+        "microcompact_trigger_tokens": "42000",
+        "microcompact_keep_last_tool_results": "6",
+    })
+
+    assert config.microcompact_trigger_tokens == 42_000
+    assert config.microcompact_keep_last_tool_results == 6
 from quenda.runtime import AgentConfig
 
 

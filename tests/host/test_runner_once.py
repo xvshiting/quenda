@@ -12,6 +12,7 @@ from quenda.host import runner
 class FakeSession:
     def __init__(self, session_id: str = "session-1") -> None:
         self.id = session_id
+        self.mode = "chat"
         self.sent_message: object | None = None
         self.on_event = None
         self.skill_activation_handler = None
@@ -160,6 +161,38 @@ def test_run_agent_once_forwards_provider_registry(monkeypatch, tmp_path: Path) 
 
     assert ok is True
     assert seen["provider_registry"] is provider_registry
+
+
+def test_run_agent_once_refreshes_a_resumed_mode_prompt(monkeypatch, tmp_path: Path) -> None:
+    setup, agent = make_setup()
+    session = FakeSession("session-42")
+    session.mode = "code"
+    agent.load_session = lambda _session_id: session  # type: ignore[method-assign]
+    snapshot = SimpleNamespace(
+        composed_prompt="base plus code mode",
+        instruction_sources=["mode-code.md"],
+    )
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(runner, "setup_agent", lambda *args, **kwargs: setup)
+
+    def refresh(*args, **kwargs):
+        seen.update(kwargs)
+        return snapshot
+
+    monkeypatch.setattr(runner, "refresh_run_context", refresh)
+
+    ok = runner.run_agent_once(
+        agent_path=tmp_path / "agent",
+        workspace=tmp_path,
+        user_message="continue",
+        session_id="session-42",
+    )
+
+    assert ok is True
+    assert seen["mode"] == "code"
+    assert session.system_prompt == "base plus code mode"
+    assert agent.system_prompt == "base plus code mode"
 
 
 def test_skill_activation_handler_refreshes_prompt(monkeypatch) -> None:

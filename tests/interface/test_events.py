@@ -3,10 +3,23 @@
 from dataclasses import dataclass, field
 from io import StringIO
 
-from quenda.interface import ActivityEventHandler, InterfaceTheme, ProgressEventHandler, StreamingEventHandler
+from quenda.interface import (
+    ActivityEventHandler,
+    InterfaceTheme,
+    ProgressEventHandler,
+    StreamingEventHandler,
+)
 from quenda.interface.console import ConsoleRenderer
 from quenda.interface.status import StatusBarManager
-from quenda.runtime.events import ModelResponded, ModelRouted, RunCompleted, RunStarted, ToolExecuted
+from quenda.runtime.events import (
+    ModelCalled,
+    ModelResponded,
+    ModelRetrying,
+    ModelRouted,
+    RunCompleted,
+    RunStarted,
+    ToolExecuted,
+)
 
 
 @dataclass
@@ -58,6 +71,29 @@ def test_activity_event_handler_drives_indicator_without_rendering() -> None:
     assert "Fetching latest filings" in indicator.messages
     assert indicator.messages[-1] == "Thinking..."
     assert any("Fetching latest filings" in line for line in status_bar.get_activity_log())
+
+
+def test_streaming_handler_shows_compact_model_and_retry_status() -> None:
+    indicator = FakeIndicator()
+    output = StringIO()
+    handler = StreamingEventHandler(
+        renderer=ConsoleRenderer(),
+        indicator=indicator,
+        theme=InterfaceTheme(),
+        output=output,
+    )
+
+    handler.on_event(ModelCalled(provider="jdcloud", model_id="GLM-5"))
+    handler.on_event(ModelRetrying(
+        provider="jdcloud",
+        model_id="GLM-5",
+        attempt=2,
+        max_attempts=4,
+        delay_seconds=2,
+    ))
+
+    assert "GLM-5" in indicator.messages
+    assert "retrying 2/4 in 2s" in output.getvalue()
 
 
 def test_progress_event_handler_renders_tool_progress_without_run_headers() -> None:

@@ -38,6 +38,7 @@ from quenda.interface import (
     create_repl_input,
     render_markdown_lite,
     select_option,
+    select_questions,
     # Theme and providers
     InterfaceTheme,
     WelcomeContext,
@@ -178,6 +179,36 @@ def _handle_interaction_request(
     Returns:
         User's response as a message to inject into next turn, or None if cancelled.
     """
+    # A batched request is rendered as tabs and submitted as one response.
+    question_payloads = request_payload.get("questions")
+    if question_payloads:
+        requests = [_interaction_request_from_payload(item) for item in question_payloads]
+        for request in requests:
+            errors = interaction_registry.validate(request, interaction_context)
+            if errors:
+                print("\n⚠ Invalid interaction request:")
+                for error in errors:
+                    print(f"  - {error}")
+                return None
+        results = select_questions(requests, interaction_registry, interaction_context)
+        if not results or all(result is None for result in results):
+            return None
+        if any(request.required and result is None for request, result in zip(requests, results, strict=True)):
+            return None
+        answers: list[str] = []
+        for payload, result in zip(question_payloads, results, strict=True):
+            if result is None:
+                continue
+            question_id = payload.get("id", payload.get("title", "question"))
+            if isinstance(result, list):
+                value = ", ".join(option.label for option in result)
+            elif isinstance(result, InteractionOption):
+                value = result.label
+            else:
+                value = str(result)
+            answers.append(f"{question_id}: {value}")
+        return "[User answers: " + "; ".join(answers) + "]"
+
     # Construct InteractionRequest
     options = [
         InteractionOption(
@@ -195,6 +226,7 @@ def _handle_interaction_request(
         message=request_payload.get("message", ""),
         options=options,
         default_option_id=request_payload.get("default_option_id"),
+        multiple=request_payload.get("multiple", False),
         source="llm",
     )
 
@@ -217,6 +249,10 @@ def _handle_interaction_request(
         if isinstance(result, str):
             # User entered custom input via "Other..."
             return f"[User input: {result}]"
+
+        if isinstance(result, list):
+            labels = ", ".join(option.label for option in result)
+            return f"[User selected: {labels}]"
 
         # User selected a predefined option
         return f"[User selected: {result.label}]" + (f" - {result.description}" if result.description else "")
@@ -244,6 +280,9 @@ def _handle_interaction_request(
         if isinstance(result, str):
             return f"[User input: {result}]"
 
+        if isinstance(result, list):
+            return f"[User confirmed: {', '.join(option.label for option in result)}]"
+
         return f"[User confirmed: {result.label}]"
 
     elif request.kind == "input":
@@ -255,6 +294,29 @@ def _handle_interaction_request(
         return f"[User input: {user_input}]"
 
     return None
+
+
+def _interaction_request_from_payload(payload: dict[str, Any]) -> InteractionRequest:
+    """Build a choice request from one legacy or batched tool payload."""
+    options = [
+        InteractionOption(
+            id=option.get("id", ""),
+            label=option.get("label", ""),
+            description=option.get("description", ""),
+            is_default=option.get("is_default", False),
+        )
+        for option in payload.get("options", [])
+    ]
+    return InteractionRequest(
+        kind=payload.get("kind", "choice"),
+        title=payload.get("title", payload.get("header", "Interaction Required")),
+        message=payload.get("message", payload.get("question", "")),
+        options=options,
+        default_option_id=payload.get("default_option_id"),
+        multiple=payload.get("multiple", False),
+        required=payload.get("required", True),
+        source="llm",
+    )
 
 
 def _run_interactive_turn(
@@ -309,6 +371,11 @@ def _run_interactive_turn(
             return
         pending_message = response
         interactions_handled += 1
+
+
+def _is_local_path_reference(value: str) -> bool:
+    """Return whether a user-input token explicitly references a local path."""
+    return value.startswith(("/", "~", "./", "../"))
 
 
 def run_repl(
@@ -561,16 +628,16 @@ def _run_repl(
                                     options=options,
                                 )
 
-                                result = select_option(request)
+                                option_result = select_option(request)
 
-                                if result is None:
+                                if option_result is None:
                                     # User cancelled
                                     break
 
-                                if hasattr(result, 'value'):
-                                    selected_value = result.value
+                                if hasattr(option_result, 'value'):
+                                    selected_value = option_result.value
                                 else:
-                                    selected_value = str(result)
+                                    selected_value = str(option_result)
 
                                 # Check if this is a partial selection (ends with /)
                                 if selected_value.endswith("/") and selected_value.count("/") == 1:
@@ -619,7 +686,7 @@ def _run_repl(
                 words = user_input.split()
                 for word in words:
                     # Check if word looks like a local file path
-                    is_local_path = word.startswith("/") or word.startswith("~") or word.startswith("./")
+                    is_local_path = _is_local_path_reference(word)
 
                     if is_local_path:
                         expanded_path = Path(word).expanduser()

@@ -52,7 +52,7 @@ def get_filesystem_tools(
 
     workspace = Path(workspace_root)
     return [
-        ListFilesTool(workspace),
+        ListFilesTool(workspace, permission_policy=permission_policy),
         SearchTextTool(workspace),
         ReadFileTool(workspace, permission_policy=permission_policy),
         WriteFileTool(workspace),

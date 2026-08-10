@@ -43,6 +43,10 @@ ALLOWED_IMAGE_MEDIA_TYPES = {
 # Maximum image download size (10 MB)
 MAX_IMAGE_DOWNLOAD_SIZE = 10 * 1024 * 1024
 
+# A single 4K-token image is unnecessarily expensive for iterative visual work
+# and several such images can overwhelm providers during multimodal preprocessing.
+DEFAULT_IMAGE_TOKEN_BUDGET = 1600
+
 
 def is_image_file(path: Path | str) -> bool:
     """Check if a file path is an image based on extension."""
@@ -85,7 +89,7 @@ class ProcessedImage:
 
 def resize_image_for_tokens(
     data: bytes,
-    max_tokens: int = 4000,
+    max_tokens: int = DEFAULT_IMAGE_TOKEN_BUDGET,
     min_dimension: int = 200,
 ) -> ProcessedImage:
     """
@@ -170,7 +174,7 @@ def _detect_media_type(data: bytes, img: Image.Image | None = None) -> str:
         return "image/png"  # Default fallback
 
 
-def read_image_file(path: Path, max_tokens: int = 4000) -> ImageContent:
+def read_image_file(path: Path, max_tokens: int = DEFAULT_IMAGE_TOKEN_BUDGET) -> ImageContent:
     """
     Read an image file and return ImageContent.
 
@@ -200,7 +204,7 @@ class ImageDownloadError(Exception):
     pass
 
 
-def read_image_url(url: str, max_tokens: int = 4000) -> ImageContent:
+def read_image_url(url: str, max_tokens: int = DEFAULT_IMAGE_TOKEN_BUDGET) -> ImageContent:
     """
     Read an image from URL and return ImageContent.
 
@@ -304,6 +308,7 @@ def read_image_url(url: str, max_tokens: int = 4000) -> ImageContent:
 
 __all__ = [
     "IMAGE_EXTENSIONS",
+    "DEFAULT_IMAGE_TOKEN_BUDGET",
     "ALLOWED_IMAGE_MEDIA_TYPES",
     "ProcessedImage",
     "ImageDownloadError",

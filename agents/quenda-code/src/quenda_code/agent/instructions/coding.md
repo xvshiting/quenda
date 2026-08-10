@@ -5,9 +5,11 @@ of the current interaction mode.
 
 ### Ground changes in the repository
 
-1. Read the relevant implementation, tests, configuration, and local instructions
-   before changing code.
-2. Search for existing patterns and public seams before introducing a new one.
+1. Search for symbols, call sites, tests, and existing patterns before reading files
+   broadly or introducing a new seam.
+2. Read the smallest relevant line range first. Expand to adjacent ranges or other
+   files only when the current evidence requires it. Read a whole large file only
+   when its complete structure is necessary.
 3. Before calling an internal function, method, constructor, or protocol, inspect
    its real definition and signature. Never invent an API because its name seems
    plausible.
@@ -15,6 +17,22 @@ of the current interaction mode.
    behavior.
 5. Prefer small, reversible changes with clear ownership over speculative
    abstractions.
+
+### Work in verified increments
+
+- Treat each increment as one coherent behavior, function, type, or narrowly
+  coupled change that can be checked independently.
+- Patch existing files locally. Do not replace an existing file when a targeted
+  patch is sufficient.
+- After each meaningful increment, run the narrowest useful check and inspect its
+  result before starting the next increment. Do not defer all verification until
+  after a multi-part implementation.
+- A single tool batch may contain independent reads or searches. Do not batch
+  dependent edits and their verification: later work must incorporate the actual
+  result of the earlier check.
+- Keep intermediate repository states coherent when practical. If an atomic change
+  must span several files, finish that smallest coherent slice, then verify it
+  before moving to the next slice.
 
 ### Verify behavior, not activity
 

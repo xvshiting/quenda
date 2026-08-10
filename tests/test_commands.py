@@ -21,6 +21,7 @@ from quenda.host.commands import (
     SessionCommand,
     ContextCommand,
     ResetCommand,
+    StatusCommand,
     ReplAction,
     VALID_MODES,
 )
@@ -174,6 +175,31 @@ class TestCommandRegistry:
         cmd = registry.get("test")
         assert cmd is not None
         assert cmd.name == "test"
+
+
+def test_status_reports_context_cost_by_category() -> None:
+    """Users can see which context category is consuming the prompt budget."""
+    from quenda.runtime import Agent
+    from quenda.runtime.session import SummaryBlock
+    from datetime import datetime
+
+    agent = Agent(name="status-agent", system_prompt="system instructions")
+    session = agent.open_session()
+    session.state.summary_blocks.append(SummaryBlock(
+        content="old decisions",
+        message_range=(0, 2),
+        created_at=datetime.now(),
+        token_count=4,
+    ))
+    session.state.add_user_message("current task")
+
+    result = StatusCommand().execute("", CommandContext(session=session, agent=agent))
+
+    assert result.status == "ok"
+    assert "System prompt:" in result.message
+    assert "Tool schemas:" in result.message
+    assert "Summaries:" in result.message
+    assert "Hot history:" in result.message
 
     def test_list_commands(self) -> None:
         registry = CommandRegistry()

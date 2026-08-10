@@ -59,6 +59,7 @@ class InteractionRequest:
     message: str = ""
     options: list[InteractionOption] = field(default_factory=list)
     default_option_id: str | None = None
+    multiple: bool = False
     required: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
     source: str = "host"
@@ -95,6 +96,7 @@ class InteractionResponse:
     kind: str
     status: Literal["ok", "cancelled", "error"]
     selected_option_id: str | None = None
+    selected_option_ids: list[str] = field(default_factory=list)
     value: Any = None
     message: str = ""
 

@@ -71,6 +71,8 @@ class ConsoleRenderer:
             return self._render_run_started(event)
         if event.type == "model_routed":
             return self._render_model_routed(event)
+        if event.type == "model_retrying":
+            return self._render_model_retrying(event)
         if event.type == "model_responded":
             return self._render_model_responded(event)
         if event.type == "tool_executed":
@@ -138,6 +140,15 @@ class ConsoleRenderer:
             lines.append(f"\n🔧 Using tools: {tools_str}")
 
         return "\n".join(lines) if lines else None
+
+    def _render_model_retrying(self, event: AnyEvent) -> str:
+        """Render a compact, durable retry notice."""
+        model = event.model_id or "model"
+        delay = f" in {event.delay_seconds:g}s" if event.delay_seconds else ""
+        return (
+            f"\n⚠ {model} request failed; retrying "
+            f"{event.attempt}/{event.max_attempts}{delay}"
+        )
 
     def _render_tool_executed(self, event: AnyEvent) -> str:
         """
@@ -278,7 +289,13 @@ class ConsoleRenderer:
 
     def _render_error(self, event: AnyEvent) -> str:
         """Render error event."""
-        return f"\n{self.theme.error_icon} Error ({event.error_type}): {event.error_message}"
+        model = f" {event.model_id}" if getattr(event, "model_id", "") else ""
+        duration_ms = getattr(event, "duration_ms", 0)
+        duration = f" after {duration_ms / 1000:.1f}s" if duration_ms else ""
+        return (
+            f"\n{self.theme.error_icon}{model} request failed{duration} "
+            f"({event.error_type}): {event.error_message}"
+        )
 
     def _format_error_result(self, result: str) -> str:
         """Format error result for display."""

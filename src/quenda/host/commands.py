@@ -1697,22 +1697,29 @@ class StatusCommand:
         from quenda.kernel.types import Message
         from quenda.runtime.token_estimator import TokenEstimator
 
-        context_messages: list[Message] = []
         system_prompt = context.get_system_prompt()
-        if system_prompt:
-            context_messages.append(Message(role="system", content=system_prompt))
-        context_messages.extend(
+        system_messages = (
+            [Message(role="system", content=system_prompt)] if system_prompt else []
+        )
+        summary_messages = [
             Message(role="system", content=f"[历史摘要]\n{block.content}")
             for block in session_state.summary_blocks
-        )
-        context_messages.extend(session_state.messages)
+        ]
         estimator = TokenEstimator()
-        current_estimate = (
-            estimator.estimate_messages(context_messages)
-            + estimator.estimate_tools(context.get_tools())
-        )
+        system_tokens = estimator.estimate_messages(system_messages) if system_messages else 0
+        tool_tokens = estimator.estimate_tools(context.get_tools())
+        summary_tokens = estimator.estimate_messages(summary_messages) if summary_messages else 0
+        history_tokens = estimator.estimate_messages(session_state.messages)
+        current_estimate = system_tokens + tool_tokens + summary_tokens + history_tokens
         lines.append("\n**Current Context (estimated):**")
         lines.append(f"  Input: ~{current_estimate} tokens")
+        lines.append(f"  System prompt: ~{system_tokens} tokens")
+        lines.append(f"  Tool schemas: ~{tool_tokens} tokens")
+        lines.append(f"  Summaries: ~{summary_tokens} tokens")
+        lines.append(f"  Hot history: ~{history_tokens} tokens")
+        microcompacted = int(session_state.metadata.get("microcompacted_tool_results", 0))
+        if microcompacted:
+            lines.append(f"  Cleared old tool results: {microcompacted}")
         model_spec = getattr(context.model, "spec", None)
         context_window = getattr(model_spec, "context_window", None)
         if context_window:

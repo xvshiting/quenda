@@ -242,7 +242,11 @@ class WriteFileTool(Tool):
     @property
     @override
     def description(self) -> str:
-        return "Create a new file or completely overwrite an existing file. Creates parent directories automatically."
+        return (
+            "Create a new file or deliberately replace a file in full. Prefer "
+            "apply_patch for existing files when a targeted edit is sufficient. "
+            "Creates parent directories automatically."
+        )
 
     @property
     @override

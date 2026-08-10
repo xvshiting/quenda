@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 
 from quenda.host.instructions import (
     InstructionComposer,
-    InstructionScope,
     InstructionSource,
     TemplateContext,
     resolve_instruction_sources,
+    resolve_mode_instruction_source,
 )
 from quenda.runtime.temporal import Clock, SystemClock, TemporalContext
 
@@ -67,6 +67,7 @@ class ContextRebuilder:
         workspace_path: Path,
         workspace_id: str,
         user: User,
+        instruction_files: list[str] | None = None,
         clock: Clock | None = None,
     ) -> None:
         """
@@ -90,6 +91,7 @@ class ContextRebuilder:
         self._workspace_path = workspace_path
         self._workspace_id = workspace_id
         self._user = user
+        self._instruction_files = instruction_files
         self._clock = clock or SystemClock()
 
     def rebuild(
@@ -125,6 +127,8 @@ class ContextRebuilder:
             agent_instructions=self._agent_instructions,
             workspace_path=self._workspace_path,
             user=self._user,
+            workspace_id=self._workspace_id,
+            instruction_files=self._instruction_files,
             temporal_context=temporal_context,
         )
 
@@ -162,16 +166,7 @@ class ContextRebuilder:
         Returns:
             List of instruction sources for the mode, or empty list.
         """
-        mode_file = self._agent_package_path / "instructions" / f"mode-{mode}.md"
-        if mode_file.exists():
-            return [
-                InstructionSource(
-                    scope=InstructionScope.AGENT_INSTRUCTIONS,
-                    content=mode_file.read_text(encoding="utf-8"),
-                    path=mode_file,
-                )
-            ]
-        return []
+        return resolve_mode_instruction_source(self._agent_package_path, mode)
 
     def apply(
         self,

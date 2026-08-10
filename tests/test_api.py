@@ -10,10 +10,12 @@ from types import SimpleNamespace
 import pytest
 
 from quenda import Agent, tool
-from quenda.kernel import Message, Model, ModelResponse
+from quenda.kernel import Message, ModelResponse
 from quenda.kernel.types import ImageContent, TextContent
-from quenda.runtime.events import ErrorOccurred
 from quenda.runtime import RunCompleted, RunStarted
+from quenda.providers.errors import NetworkError
+from quenda.providers.retry import retry_with_backoff
+from quenda.runtime.events import ErrorOccurred, ModelCalled, ModelRetrying
 
 
 class FakeModel:
@@ -40,13 +42,30 @@ class CapturingVisionModel:
 
 
 class NonVisionModel:
-    """Fake non-vision model used to verify early rejection."""
+    """Fake non-vision model used to verify image resource adaptation."""
 
     def __init__(self) -> None:
         self.spec = SimpleNamespace(vision=False, context_window=None, max_output_tokens=None)
+        self.last_messages: list[Message] | None = None
 
     def invoke(self, messages: list[Message], *, tools: list) -> ModelResponse:
-        return ModelResponse(content="should not be reached", stop_reason="end_turn")
+        self.last_messages = messages
+        return ModelResponse(content="I cannot inspect the image.", stop_reason="end_turn")
+
+
+class RetryingModel:
+    """Model that deterministically exercises provider retry diagnostics."""
+
+    id = "slow-model"
+    spec = SimpleNamespace(vision=False, context_window=None, max_output_tokens=None)
+    provider = SimpleNamespace(
+        id="test-provider",
+        spec=SimpleNamespace(timeout=5.0, max_retries=1),
+    )
+
+    @retry_with_backoff(max_retries=1, base_delay=0)
+    def invoke(self, messages: list[Message], *, tools: list) -> ModelResponse:
+        raise NetworkError("Request timed out")
 
 
 class TestConvenienceAPI:
@@ -252,9 +271,10 @@ class TestConvenienceAPI:
         assert isinstance(content[1], ImageContent)
 
     @pytest.mark.asyncio
-    async def test_run_rejects_images_for_non_vision_model(self) -> None:
-        """Test that image input fails fast on non-vision models."""
-        agent = Agent(name="test", model=NonVisionModel())
+    async def test_run_adapts_images_for_non_vision_model(self) -> None:
+        """Image input reaches non-vision models as resource text."""
+        model = NonVisionModel()
+        agent = Agent(name="test", model=model)
         events = []
 
         result = await agent.run(
@@ -265,5 +285,30 @@ class TestConvenienceAPI:
             on_event=events.append,
         )
 
+        assert result == "I cannot inspect the image."
+        assert not any(isinstance(event, ErrorOccurred) for event in events)
+        assert model.last_messages is not None
+        content = model.last_messages[0].content
+        assert isinstance(content, list)
+        assert isinstance(content[0], TextContent)
+        assert isinstance(content[1], TextContent)
+        assert "[Image resource: image/png" in content[1].text
+
+    @pytest.mark.asyncio
+    async def test_model_call_reports_start_retry_and_failure_timing(self) -> None:
+        events = []
+        result = await Agent(name="test", model=RetryingModel()).run(
+            "Generate a large artifact",
+            on_event=events.append,
+        )
+
         assert result == ""
-        assert any(isinstance(event, ErrorOccurred) for event in events)
+        called = next(event for event in events if isinstance(event, ModelCalled))
+        retrying = next(event for event in events if isinstance(event, ModelRetrying))
+        error = next(event for event in events if isinstance(event, ErrorOccurred))
+        assert (called.provider, called.model_id) == ("test-provider", "slow-model")
+        assert called.timeout_seconds == 5.0
+        assert called.max_attempts == 2
+        assert (retrying.attempt, retrying.max_attempts) == (2, 2)
+        assert error.model_id == "slow-model"
+        assert error.duration_ms >= 0

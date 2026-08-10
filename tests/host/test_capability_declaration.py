@@ -18,6 +18,7 @@ from quenda.host.loader import (
     load_agent_package,
 )
 from quenda.host.policy_registry import PolicyRegistryBuilder
+from quenda.host.permission_manager import PermissionManager
 from quenda.host.runner import (
     _resolve_policy_bindings,
     _resolve_tools,
@@ -222,6 +223,18 @@ class TestResolveTools:
         # Network tools NOT included (not requested)
         assert "http_request" not in tool_names
         assert "web_fetch" not in tool_names
+
+    def test_core_list_files_receives_permission_policy(self, workspace: Path) -> None:
+        permission_manager = PermissionManager()
+
+        tools = _resolve_tools(
+            workspace,
+            None,
+            permission_policy=permission_manager,
+        )
+
+        list_files = next(tool for tool in tools if tool.name == "list_files")
+        assert list_files.permission_policy is permission_manager
 
     def test_explicit_core_bundle(self, workspace: Path) -> None:
         """Test that explicitly requesting 'core' gives core tools."""

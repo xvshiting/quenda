@@ -22,15 +22,15 @@ if TYPE_CHECKING:
     from quenda.interface.theme import InterfaceTheme
     from quenda.runtime.events import (
         AnyEvent,
-        RunStarted,
+        CompressionCompleted,
+        CompressionStarted,
+        ErrorOccurred,
+        ModelResponded,
         RunCompleted,
         RunInterrupted,
         RunPaused,
-        ModelResponded,
+        RunStarted,
         ToolExecuted,
-        ErrorOccurred,
-        CompressionStarted,
-        CompressionCompleted,
     )
 
 
@@ -144,6 +144,23 @@ class StreamingEventHandler:
             print(rendered, file=self.output)
             self.indicator.start()
 
+    def on_model_called(self, event: AnyEvent) -> None:
+        """Show the selected model and reset the compact elapsed timer."""
+        label = event.model_id or "Model"
+        begin = getattr(self.indicator, "begin", None)
+        if callable(begin):
+            begin(label)
+        else:
+            self.indicator.update(label)
+
+    def on_model_retrying(self, event: AnyEvent) -> None:
+        """Keep retry transitions in the durable activity output."""
+        self.indicator.stop()
+        rendered = self.renderer.render(event)
+        if rendered:
+            print(rendered, file=self.output)
+        self.indicator.start()
+
     def on_model_responded(self, event: ModelResponded) -> None:
         """Render model response and manage indicator."""
         # Track pending tools for indicator updates
@@ -242,6 +259,10 @@ class StreamingEventHandler:
         """Dispatch event to appropriate handler."""
         if event.type == "run_started":
             self.on_run_started(event)  # type: ignore[arg-type]
+        elif event.type == "model_called":
+            self.on_model_called(event)  # type: ignore[arg-type]
+        elif event.type == "model_retrying":
+            self.on_model_retrying(event)  # type: ignore[arg-type]
         elif event.type == "model_routed":
             self.on_model_routed(event)  # type: ignore[arg-type]
         elif event.type == "model_responded":

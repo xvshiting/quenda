@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from quenda.kernel.types import ToolResult
 from quenda.host.permission_manager import PermissionManager
@@ -100,6 +101,15 @@ class TestFilesystemTools:
 
         assert not result.is_error
         assert "Hello, World!" in result.content
+
+    def test_read_image_uses_safe_default_visual_budget(self, temp_dir: Path) -> None:
+        image_path = temp_dir / "large.png"
+        Image.new("RGB", (1200, 1600), "white").save(image_path)
+
+        result = ReadFileTool(temp_dir).execute(path="large.png")
+
+        assert result.image_content is not None
+        assert result.result_summary == "948x1264"
 
     def test_read_file_not_found(self, temp_dir: Path) -> None:
         """Test reading a non-existent file."""
@@ -213,6 +223,44 @@ class TestFilesystemTools:
         assert "file1.txt" in result.content
         assert "file2.txt" in result.content
         assert "subdir" in result.content
+
+    def test_list_files_outside_workspace_with_permission_policy(self, temp_dir: Path) -> None:
+        """Test listing an outside directory when the user grants access."""
+        with tempfile.TemporaryDirectory(dir=temp_dir.parent) as outside:
+            outside_dir = Path(outside)
+            (outside_dir / "lesson.md").write_text("Lesson content")
+
+            permission_manager = PermissionManager()
+            requests = []
+
+            def allow(request) -> bool:
+                requests.append(request)
+                return True
+
+            permission_manager.prompt_handler = allow
+            tool = ListFilesTool(temp_dir, permission_policy=permission_manager)
+
+            result = tool.execute(path=f"../{outside_dir.name}")
+
+            assert not result.is_error
+            assert "lesson.md" in result.content
+            assert len(requests) == 1
+            assert requests[0].resource == str(outside_dir.resolve())
+
+    def test_list_files_user_provided_directory_is_auto_allowed(self, temp_dir: Path) -> None:
+        """A directory explicitly provided by the user needs no second prompt."""
+        with tempfile.TemporaryDirectory(dir=temp_dir.parent) as outside:
+            outside_dir = Path(outside)
+            (outside_dir / "class01.md").write_text("First class")
+
+            permission_manager = PermissionManager()
+            permission_manager.grant_user_provided_resource(str(outside_dir))
+            tool = ListFilesTool(temp_dir, permission_policy=permission_manager)
+
+            result = tool.execute(path=f"../{outside_dir.name}")
+
+            assert not result.is_error
+            assert "class01.md" in result.content
 
     def test_list_empty_directory(self, temp_dir: Path) -> None:
         """Test listing empty directory."""

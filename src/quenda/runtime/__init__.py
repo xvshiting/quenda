@@ -15,6 +15,7 @@ from quenda.runtime.events import (
     InteractionRequested,
     ModelCalled,
     ModelResponded,
+    ModelRetrying,
     ModelRouted,
     RunCompleted,
     RunPaused,
@@ -22,8 +23,6 @@ from quenda.runtime.events import (
     RunTerminated,
     ToolExecuted,
 )
-from quenda.runtime.run import Run, RunStatus, SkillActivationHandler
-from quenda.runtime.state import RunState
 from quenda.runtime.ports import Storage
 from quenda.runtime.routing import (
     CapabilityGuard,
@@ -34,7 +33,9 @@ from quenda.runtime.routing import (
     resolve_requirements,
     route_model,
 )
+from quenda.runtime.run import Run, RunStatus, SkillActivationHandler
 from quenda.runtime.session import Session, SessionState
+from quenda.runtime.state import RunState
 from quenda.runtime.temporal import Clock, SystemClock, TemporalContext
 from quenda.runtime.termination import (
     CompositeTerminationPolicy,
@@ -87,6 +88,7 @@ __all__ = [
     "Event",
     "InteractionRequested",
     "ModelCalled",
+    "ModelRetrying",
     "ModelResponded",
     "ModelRouted",
     "RunCompleted",

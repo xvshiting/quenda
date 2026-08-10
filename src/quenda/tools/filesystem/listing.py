@@ -18,6 +18,14 @@ from typing import override
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
+from quenda.runtime.permission import (
+    DenyPermissionPolicy,
+    PermissionKind,
+    PermissionLifetime,
+    PermissionPolicy,
+    PermissionRequest,
+    PermissionScope,
+)
 
 
 @dataclass
@@ -56,9 +64,11 @@ class ListFilesTool(Tool):
         self,
         workspace_root: Path | str,
         config: ListFilesConfig | None = None,
+        permission_policy: PermissionPolicy | None = None,
     ) -> None:
         self.workspace = Path(workspace_root).resolve()
         self.config = config or ListFilesConfig()
+        self.permission_policy = permission_policy
 
     @property
     @override
@@ -105,7 +115,27 @@ class ListFilesTool(Tool):
 
         dir_path, error = _validate_path(self.workspace, path)
         if error:
-            return ToolResult("", self.name, f"Error: {error}", is_error=True)
+            if "outside workspace" not in error:
+                return ToolResult("", self.name, f"Error: {error}", is_error=True)
+
+            request = PermissionRequest(
+                kind=PermissionKind.FILESYSTEM_READ,
+                resource=str(dir_path),
+                scope=PermissionScope.DIRECTORY,
+                reason=f"Listing directory outside workspace: {dir_path}",
+                lifetime=PermissionLifetime.SESSION,
+                tool_name=self.name,
+                tool_args={"path": path, "depth": depth, "pattern": pattern},
+            )
+            policy = self.permission_policy or DenyPermissionPolicy()
+            decision = policy.decide(request)
+            if not decision.allowed:
+                return ToolResult(
+                    "",
+                    self.name,
+                    f"Error: {decision.reason or error}",
+                    is_error=True,
+                )
 
         if not dir_path.exists():
             return ToolResult("", self.name, f"Error: Directory not found: {path}", is_error=True)
@@ -137,14 +167,15 @@ class ListFilesTool(Tool):
             icon = "📁" if entry.is_dir() else "📄"
             entries.append(f"{icon} {entry.name}")
 
+        display_path = self._display_path(dir_path)
         if not entries:
-            return f"Directory '{dir_path.relative_to(self.workspace)}' is empty"
+            return f"Directory '{display_path}' is empty"
 
-        return f"Contents of '{dir_path.relative_to(self.workspace)}':\n" + "\n".join(entries)
+        return f"Contents of '{display_path}':\n" + "\n".join(entries)
 
     def _list_tree(self, dir_path: Path, max_depth: int, pattern: str | None) -> str:
         """Tree-style directory listing."""
-        lines = [f"📂 {dir_path.relative_to(self.workspace)}/"]
+        lines = [f"📂 {self._display_path(dir_path)}/"]
 
         def walk(current: Path, prefix: str, depth: int) -> None:
             if depth > max_depth:
@@ -173,3 +204,10 @@ class ListFilesTool(Tool):
 
         walk(dir_path, "", 1)
         return "\n".join(lines)
+
+    def _display_path(self, path: Path) -> Path:
+        """Return a workspace-relative path when possible, otherwise absolute."""
+        try:
+            return path.relative_to(self.workspace)
+        except ValueError:
+            return path

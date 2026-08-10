@@ -59,3 +59,10 @@ Thumbs.db
 claude-code/
 # Custom providers (may contain company-specific configuration)
 agents/quenda-code/src/quenda_code/agent/extensions/providers/
+
+
+.mypy_cache
+.ruff_cache 
+uv.lock 
+
+

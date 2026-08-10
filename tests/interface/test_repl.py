@@ -1,6 +1,16 @@
 """Tests for REPL-specific interface helpers."""
 
-from quenda.interface.repl import format_activity_log
+from types import SimpleNamespace
+
+import pytest
+from prompt_toolkit.document import Document
+
+from quenda.interface.repl import (
+    HAS_PROMPT_TOOLKIT,
+    CommandCompleter,
+    PromptToolkitInput,
+    format_activity_log,
+)
 from quenda.interface.status import StatusBarManager
 
 
@@ -40,3 +50,29 @@ def test_expanded_activity_panel_renders_in_status_text() -> None:
     assert "Activity" in text
     assert "Run 1" in text
     assert "3 matches" in text
+
+
+@pytest.mark.skipif(not HAS_PROMPT_TOOLKIT, reason="prompt-toolkit is unavailable")
+def test_prompt_session_keeps_automatic_slash_completion_enabled() -> None:
+    command = SimpleNamespace(name="model", description="Switch model")
+    registry = SimpleNamespace(
+        list_commands=lambda: [command],
+        get=lambda _name: command,
+    )
+    repl = PromptToolkitInput(registry, StatusBarManager())
+
+    assert repl._session.default_buffer.complete_while_typing()
+
+
+@pytest.mark.skipif(not HAS_PROMPT_TOOLKIT, reason="prompt-toolkit is unavailable")
+def test_slash_completer_returns_command_prefix_matches() -> None:
+    commands = [
+        SimpleNamespace(name="model", description="Switch model"),
+        SimpleNamespace(name="mode", description="Switch mode"),
+    ]
+    registry = SimpleNamespace(list_commands=lambda: commands, get=lambda _name: None)
+    completer = CommandCompleter(registry)
+
+    completions = list(completer.get_completions(Document("/mod"), None))
+
+    assert [completion.text for completion in completions] == ["/model", "/mode"]

@@ -17,6 +17,7 @@ Resources are auto-discovered from directory structure:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,10 +26,10 @@ import yaml
 
 from quenda.host.skill.models import SkillFrontmatter
 from quenda.host.skill.package import (
+    EXECUTABLE_DIRECTORIES,
+    RESOURCE_DIRECTORIES,
     SkillPackage,
     SkillResource,
-    RESOURCE_DIRECTORIES,
-    EXECUTABLE_DIRECTORIES,
 )
 
 if TYPE_CHECKING:
@@ -220,14 +221,41 @@ class SkillDiscovery:
         if len(parts) < 3:
             return None
 
+        frontmatter = parts[1]
         try:
-            fm_data = yaml.safe_load(parts[1])
+            try:
+                fm_data = yaml.safe_load(frontmatter)
+            except yaml.YAMLError:
+                # Claude Code accepts unquoted argument hints containing ``: ``,
+                # even though YAML treats that sequence as a mapping delimiter.
+                # Retry with only that optional, presentation-only scalar quoted;
+                # all other malformed YAML remains an error.
+                compatible_frontmatter = self._quote_plain_argument_hint(frontmatter)
+                if compatible_frontmatter == frontmatter:
+                    raise
+                fm_data = yaml.safe_load(compatible_frontmatter)
+
             if fm_data is None:
                 return None
             return SkillFrontmatter(**fm_data)
         except Exception as e:
             logger.warning(f"Failed to parse frontmatter: {e}")
             return None
+
+    @staticmethod
+    def _quote_plain_argument_hint(frontmatter: str) -> str:
+        """Quote a top-level plain ``argument-hint`` scalar when needed."""
+        repaired_lines: list[str] = []
+        for line in frontmatter.splitlines(keepends=True):
+            stripped = line.rstrip("\r\n")
+            newline = line[len(stripped):]
+            prefix = "argument-hint:"
+            if stripped.startswith(prefix):
+                value = stripped[len(prefix):].strip()
+                if value and not value.startswith(('"', "'", "|", ">")) and ": " in value:
+                    line = f"{prefix} {json.dumps(value, ensure_ascii=False)}{newline}"
+            repaired_lines.append(line)
+        return "".join(repaired_lines)
 
     def _discover_resources(self, skill_dir: Path) -> list[SkillResource]:
         """
