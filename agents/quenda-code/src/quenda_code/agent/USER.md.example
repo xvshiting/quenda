@@ -1,0 +1,34 @@
+# USER.md - User Preferences
+
+This file contains user-specific preferences and workflow patterns.
+
+## Workflow Preferences
+
+- **Commit style**: Small, focused commits with clear messages
+- **Review process**: Prefers to see changes before committing
+- **Testing**: Wants to see test results before considering work done
+
+## Tool Preferences
+
+- **Package manager**: `pnpm` over `npm`
+- **Linter**: `biome` for code formatting
+- **Test framework**: `vitest` for unit tests
+
+## Communication Style
+
+- **Explanations**: Brief and to-the-point, not tutorials
+- **Code examples**: Prefers code over prose when explaining
+- **Progress updates**: Wants to see test results and verification
+
+## Frequently Used Tools
+
+- `pnpm install` — Install dependencies
+- `pnpm test` — Run tests
+- `pnpm build` — Build the project
+- `biome check src/` — Lint code
+
+## Project-Specific Notes
+
+- Uses TypeScript strict mode
+- Prefers functional style over classes
+- Uses Zod for runtime validation
