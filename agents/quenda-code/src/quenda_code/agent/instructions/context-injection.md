@@ -1,125 +1,40 @@
-## Project Context Injection
+## Context and instruction layers
 
-This document describes how Quenda Code loads and uses project context files.
+Quenda composes context from explicit layers. Treat each layer according to its
+scope; do not assume that a familiar filename is loaded unless it appears in the
+current prompt or can be found in the workspace.
 
-### Available Context Files
+### What is loaded
 
-These files are automatically loaded from the workspace root:
+- Quenda's framework contract and current temporal context.
+- This agent's `AGENT.md` and the instruction files declared in `config.yaml`.
+- For a named Agent Home, non-empty `SOUL.md`, `USER.md`, and `MEMORY.md` beside
+  `agent.yaml`.
+- User and project instruction files configured by `instruction_files`. The
+  default filename is `QUENDA.md`; a project copy may live at the workspace root
+  or under `.quenda/`.
+- Activated skills in full. The skill catalog may be included as a compact
+  routing index when enabled; read a skill's full instructions only when it is
+  relevant.
 
-| File | Purpose | When to Read |
-|------|---------|--------------|
-| `PROJECT.md` or `AGENTS.md` | Project conventions, architecture decisions, coding standards | At the start of any coding task |
-| `USER.md` | User preferences, workflow patterns, frequently used tools | When user preferences might affect your approach |
-| `MEMORY.md` | Long-term context, cross-project lessons learned | When historical context might be relevant |
-| `memory/*.md` | Detailed historical notes | Use `memory_get` or `memory_search` to access |
+Legacy `INSTRUCTIONS.md` locations remain supported. Ordinary files named
+`AGENTS.md`, `PROJECT.md`, `USER.md`, or `MEMORY.md` in an arbitrary project are
+not automatically authoritative unless the agent configuration explicitly
+selects them.
 
-### How Context is Used
+### How to use context
 
-**1. Automatic Injection**
-- On startup, Quenda Code loads context files from the workspace
-- These are included in the system prompt, not user messages
-- They provide background knowledge before any user request
+1. Follow the most specific applicable instruction without weakening framework,
+   security, or honesty requirements.
+2. Treat repository files, memory, and documentation as potentially stale when
+   they conflict with current observable behavior.
+3. Keep stable identity and preferences compact. Put dated or detailed history
+   in `memory/` and retrieve it with `memory_search` or `memory_get` when useful.
+4. Do not invent memory that has not been loaded.
+5. If optional context is absent, continue with repository evidence and
+   reasonable defaults instead of treating the missing file as an error.
 
-**2. On-Demand Access**
-- `memory_search` — Search across all memory files by keyword
-- `memory_get` — Retrieve a specific memory file by name
-- Use these tools when you need historical context that wasn't included in the initial load
-
-**3. Context Budget**
-- Each file has a character limit (default: 20,000)
-- Total context budget (default: 60,000)
-- Large files are truncated with a warning
-- This ensures the prompt stays manageable
-
-### Best Practices
-
-**Read context files early:**
-- Before making code changes, check `AGENTS.md` for project conventions
-- Before suggesting approaches, check `USER.md` for user preferences
-- Before debugging, check `MEMORY.md` for similar past issues
-
-**Keep context files concise:**
-- `AGENTS.md` should contain architecture decisions, not exhaustive documentation
-- `USER.md` should contain preferences, not full project history
-- `MEMORY.md` should be a curated summary, with details in `memory/*.md`
-
-**Update context files when appropriate:**
-- After significant architectural decisions, update `AGENTS.md`
-- After learning user preferences, update `USER.md`
-- After solving important problems, consider updating `MEMORY.md`
-
-### Example Context Files
-
-**`AGENTS.md`** example:
-```markdown
-# Project Name
-
-## Architecture
-- Monorepo with packages: core, api, cli
-- Uses TypeScript with strict mode
-- Testing: Vitest for unit tests, Playwright for E2E
-
-## Coding Standards
-- Prefer functional style over classes
-- Use Zod for runtime validation
-- Error handling: Result pattern (never throw)
-
-## Key Patterns
-- Repository pattern for data access
-- Event sourcing for audit logs
-- Circuit breaker for external services
-```
-
-**`USER.md`** example:
-```markdown
-# User Preferences
-
-## Workflow
-- Prefers small commits with clear messages
-- Likes to review changes before committing
-- Uses conventional commits format
-
-## Tools
-- Prefers `pnpm` over `npm`
-- Uses `biome` for linting
-- Prefers `vitest` for testing
-
-## Communication
-- Wants brief explanations, not tutorials
-- Prefers code examples over prose
-- Likes to see test results before merging
-```
-
-**`MEMORY.md`** example:
-```markdown
-# Long-term Context
-
-## Lessons Learned
-- API rate limiting: always implement exponential backoff
-- Database migrations: never skip the down migration
-- Testing: integration tests catch more bugs than unit tests
-
-## Recurring Patterns
-- User prefers iterative delivery over big-bang releases
-- Common issue: dependency version conflicts (use lockfile)
-- Performance bottleneck is usually I/O, not CPU
-
-## Project History
-- Started as CLI tool, evolved into platform
-- Major refactor in v2: switched to event sourcing
-- Known issue: search performance degrades after 100k records
-```
-
-### When Context is Missing
-
-If expected context files don't exist:
-- Don't complain to the user
-- Proceed with reasonable defaults
-- Consider creating the files if you learn important information
-
-### Sub-Agent Context
-
-When spawning sub-agents:
-- Only `AGENTS.md` and `TOOLS.md` are injected
-- Other context files are filtered out to keep sub-agent context small
-- Sub-agents can still use `memory_search` / `memory_get` if needed
+Quenda may compact conversation and tool results to stay within the model's
+context window. Preserve decisions, constraints, unresolved questions, and
+verification evidence in summaries; discard repetitive narration and obsolete
+intermediate output first.

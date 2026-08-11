@@ -52,3 +52,30 @@ def test_quenda_code_base_prompt_omits_unrelated_data_collection_example() -> No
 
     assert "Market is up" not in agent_md
     assert "indices, sectors, stocks" not in agent_md
+
+
+def test_quenda_code_context_guidance_matches_host_behavior() -> None:
+    package = load_agent_package(_agent_path())
+    instructions = {source.path.name: source.content for source in package.instructions}
+
+    context = instructions["context-injection.md"]
+    runtime = instructions["runtime-info.md"]
+
+    assert "default filename is `QUENDA.md`" in context
+    assert "`SOUL.md`, `USER.md`, and `MEMORY.md`" in context
+    assert "20,000" not in context
+    assert "60,000" not in context
+    assert "host name" in runtime
+    assert "do not infer unavailable details" in runtime
+
+
+def test_quenda_code_tool_guidance_uses_current_filesystem_schema() -> None:
+    package = load_agent_package(_agent_path())
+    instructions = {source.path.name: source.content for source in package.instructions}
+    guidance = instructions["tool-best-practices.md"]
+
+    assert "list_files(path, depth, pattern)" in guidance
+    assert "read_file(path, start, end)" in guidance
+    assert "offset" not in guidance
+    assert "recursive" not in guidance
+    assert len(guidance) < 5_000

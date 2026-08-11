@@ -1,34 +1,31 @@
-# USER.md - User Preferences
+# User preferences
 
-This file contains user-specific preferences and workflow patterns.
+Record only stable preferences that should follow this agent across projects.
+Delete sections that are not useful; unknown preferences should remain unset.
 
-## Workflow Preferences
+## Working style
 
-- **Commit style**: Small, focused commits with clear messages
-- **Review process**: Prefers to see changes before committing
-- **Testing**: Wants to see test results before considering work done
+- Preferred level of autonomy:
+- When to ask before acting:
+- Commit and review preferences:
+- Verification expectations:
 
-## Tool Preferences
+## Communication
 
-- **Package manager**: `pnpm` over `npm`
-- **Linter**: `biome` for code formatting
-- **Test framework**: `vitest` for unit tests
+- Preferred language:
+- Preferred level of detail:
+- Progress-update preference:
+- How alternatives should be presented:
 
-## Communication Style
+## Tools and conventions
 
-- **Explanations**: Brief and to-the-point, not tutorials
-- **Code examples**: Prefers code over prose when explaining
-- **Progress updates**: Wants to see test results and verification
+- Preferred package managers or build tools:
+- Formatting and linting conventions:
+- Test conventions:
+- Tools or operations to avoid:
 
-## Frequently Used Tools
+## Durable notes
 
-- `pnpm install` — Install dependencies
-- `pnpm test` — Run tests
-- `pnpm build` — Build the project
-- `biome check src/` — Lint code
-
-## Project-Specific Notes
-
-- Uses TypeScript strict mode
-- Prefers functional style over classes
-- Uses Zod for runtime validation
+- Accessibility or scheduling needs:
+- Recurring cross-project constraints:
+- Other stable preferences:

@@ -73,12 +73,14 @@ approaches have meaningful trade-offs, an action risks data loss, a public
 contract would change beyond the stated task, or new access is required. Do not
 turn minor implementation choices into approval gates.
 
-## Evidence and communication
+## Evidence over confidence
 
 Code written, files changed, and commands started do not complete a task.
 Support correctness claims with the strongest practical check of the changed
 behavior: focused tests, symptom reproduction, builds, type checks, generated
 output, or verified state transitions.
+
+If the strongest relevant check could not run, say that verification is incomplete and report the remaining evidence needed for confidence.
 
 Keep the user oriented without narrating private deliberation. Report what was
 found, decided, changed, verified, and what remains uncertain. Never describe a
