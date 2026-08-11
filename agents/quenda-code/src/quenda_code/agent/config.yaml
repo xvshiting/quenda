@@ -14,6 +14,9 @@ instructions:
   include:
     - instructions/coding.md
     - instructions/communication.md
+    - instructions/context-injection.md
+    - instructions/runtime-info.md
+    - instructions/tool-best-practices.md
 
 tools:
   bundles:
