@@ -47,7 +47,11 @@ workspace/
 `quenda agent create <name>` creates a minimal runnable home. Supplying
 `--from <source>` copies an installed Agent package, a source directory, or the
 parent directory of an `AGENT.md` into a new independent home. The source is an
-initialization origin, not a live dependency.
+initialization origin, not a live dependency. Copying excludes runtime state
+(`sessions/`, `workspace/`, `artifacts/`, detailed `memory/`, and source
+`agent.yaml`) while retaining the editable definition and curated `MEMORY.md`.
+Creation is staged and published atomically so a failed scaffold does not leave
+a discoverable partial Agent Home.
 
 The filesystem is the discovery source of truth. The local Host scans
 `agent-*` directories containing `AGENT.md`; no central registry is required.
@@ -62,7 +66,8 @@ quenda agent run <name>
 
 Without `--workspace`, execution uses the home-local `workspace/`. With an
 explicit workspace, identity and capabilities still come from the Agent Home
-while tools operate in the selected project.
+while tools operate in the selected existing project. Quenda does not silently
+create a misspelled external workspace path.
 
 `QUENDA_HOME` may replace `~/.quenda` for tests and alternate Host setups.
 Server Hosts may map the same logical Agent Home interface to another store;

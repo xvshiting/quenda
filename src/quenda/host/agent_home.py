@@ -12,6 +12,8 @@ import json
 import os
 import re
 import shutil
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +29,8 @@ _SCAFFOLD_DIRS = (
     "artifacts",
     "workspace",
 )
+_RUNTIME_STATE_NAMES = frozenset({"agent.yaml", "artifacts", "memory", "sessions", "workspace"})
+_CopyIgnore = Callable[[str, list[str]], set[str]]
 
 
 @dataclass(frozen=True)
@@ -63,15 +67,23 @@ class AgentHomeManager:
 
         resolved_source = self._resolve_source(source) if source is not None else None
         self.root.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=f".agent-{name}-", dir=self.root))
+        try:
+            if resolved_source is not None:
+                shutil.copytree(
+                    resolved_source,
+                    staging,
+                    dirs_exist_ok=True,
+                    ignore=self._source_ignore(resolved_source),
+                )
 
-        if resolved_source is None:
-            target.mkdir()
-        else:
-            shutil.copytree(resolved_source, target)
-
-        self._ensure_scaffold(target, name)
-        source_label = str(source) if source is not None else None
-        self._write_metadata(target, name, source_label)
+            self._ensure_scaffold(staging, name)
+            source_label = str(source) if source is not None else None
+            self._write_metadata(staging, name, source_label)
+            staging.replace(target)
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
         return AgentHome(name=name, path=target, created_from=source_label)
 
     def get(self, name: str) -> AgentHome | None:
@@ -126,6 +138,18 @@ class AgentHomeManager:
             )
 
     @staticmethod
+    def _source_ignore(source_root: Path) -> _CopyIgnore:
+        """Return a copy filter that excludes Agent Home runtime state."""
+
+        def ignore(directory: str, names: list[str]) -> set[str]:
+            ignored = {name for name in names if name in {".DS_Store", "__pycache__"}}
+            if Path(directory).resolve() == source_root:
+                ignored.update(name for name in names if name in _RUNTIME_STATE_NAMES)
+            return ignored
+
+        return ignore
+
+    @staticmethod
     def _ensure_scaffold(path: Path, name: str) -> None:
         for relative in _SCAFFOLD_DIRS:
             (path / relative).mkdir(parents=True, exist_ok=True)
@@ -133,12 +157,7 @@ class AgentHomeManager:
         agent_md = path / "AGENT.md"
         if agent_md.exists():
             content = agent_md.read_text(encoding="utf-8")
-            content = re.sub(
-                r"(?m)^name:\s*.*$",
-                f"name: {name}",
-                content,
-                count=1,
-            )
+            content = AgentHomeManager._with_agent_name(content, name)
             agent_md.write_text(content, encoding="utf-8")
         else:
             agent_md.write_text(
@@ -166,6 +185,28 @@ memory stored in your Agent Home.
             destination = path / filename
             if not destination.exists():
                 destination.write_text(content, encoding="utf-8")
+
+    @staticmethod
+    def _with_agent_name(content: str, name: str) -> str:
+        """Return AGENT.md content with a canonical frontmatter name."""
+        if not content.startswith("---"):
+            return f"---\nname: {name}\n---\n\n{content}"
+
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            raise ValueError("Source AGENT.md has unclosed frontmatter")
+        frontmatter = parts[1].strip()
+        if re.search(r"(?m)^name:\s*.*$", frontmatter):
+            frontmatter = re.sub(
+                r"(?m)^name:\s*.*$",
+                f"name: {name}",
+                frontmatter,
+                count=1,
+            )
+        else:
+            frontmatter = f"name: {name}\n{frontmatter}" if frontmatter else f"name: {name}"
+        body = parts[2].lstrip("\n")
+        return f"---\n{frontmatter}\n---\n\n{body}"
 
     @staticmethod
     def _write_metadata(path: Path, name: str, source: str | None) -> None:

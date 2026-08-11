@@ -847,8 +847,14 @@ def _add_agent_run_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _launch_agent_home(home: AgentHome, args: argparse.Namespace) -> int:
     """Launch a named Agent Home in one-shot or interactive mode."""
-    workspace = args.workspace.expanduser() if args.workspace else home.workspace
-    workspace.mkdir(parents=True, exist_ok=True)
+    if args.workspace:
+        workspace = args.workspace.expanduser()
+        if not workspace.is_dir():
+            print(f"Error: Workspace directory not found: {workspace}", file=sys.stderr)
+            return 1
+    else:
+        workspace = home.workspace
+        workspace.mkdir(parents=True, exist_ok=True)
     if args.message:
         return run_agent(
             agent_path=home.path,
@@ -995,7 +1001,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Created agent: {home.name}")
             print(f"Home: {home.path}")
             print(f"Workspace: {home.workspace}")
-            print(f"Run: quenda {home.name}")
+            if home.name in _BUILTIN_COMMANDS and home.name != "code":
+                print(
+                    f'Note: "{home.name}" is a built-in command; run this agent with: '
+                    f"quenda agent run {home.name}"
+                )
+            else:
+                print(f"Run: quenda {home.name}")
             return 0
 
         if args.agent_command == "list":

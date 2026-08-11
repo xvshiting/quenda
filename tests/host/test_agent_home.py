@@ -1,5 +1,6 @@
 """Tests for local Agent Home management."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,35 @@ def test_create_from_source_copies_content_and_renames_agent(tmp_path: Path) -> 
     assert home.created_from == str(source)
 
 
+def test_create_from_agent_home_does_not_copy_runtime_state(tmp_path: Path) -> None:
+    source = AgentHomeManager(tmp_path / "source-root").create("source")
+    (source.path / "sessions" / "private.json").write_text("session", encoding="utf-8")
+    (source.path / "workspace" / "private.txt").write_text("workspace", encoding="utf-8")
+    (source.path / "artifacts" / "private.txt").write_text("artifact", encoding="utf-8")
+    (source.path / "memory" / "private.md").write_text("detail", encoding="utf-8")
+    (source.path / "MEMORY.md").write_text("durable memory", encoding="utf-8")
+
+    clone = AgentHomeManager(tmp_path / "clone-root").create("clone", source=source.path)
+
+    assert not (clone.path / "sessions" / "private.json").exists()
+    assert not (clone.path / "workspace" / "private.txt").exists()
+    assert not (clone.path / "artifacts" / "private.txt").exists()
+    assert not (clone.path / "memory" / "private.md").exists()
+    assert (clone.path / "MEMORY.md").read_text(encoding="utf-8") == "durable memory"
+    assert json.loads((clone.path / "agent.yaml").read_text(encoding="utf-8"))["name"] == "clone"
+
+
+def test_create_adds_name_to_source_without_frontmatter(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "AGENT.md").write_text("A plain agent prompt.\n", encoding="utf-8")
+
+    home = AgentHomeManager(tmp_path / "homes").create("named", source=source)
+
+    assert load_agent_package(home.path).name == "named"
+    assert "A plain agent prompt." in (home.path / "AGENT.md").read_text(encoding="utf-8")
+
+
 def test_list_uses_agent_directories_as_source_of_truth(tmp_path: Path) -> None:
     manager = AgentHomeManager(tmp_path)
     manager.create("writer")
@@ -67,6 +97,18 @@ def test_source_must_be_agent_directory(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="must contain AGENT.md"):
         AgentHomeManager(tmp_path / "homes").create("broken", source=source)
+
+
+def test_failed_scaffold_does_not_leave_partial_agent_home(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "AGENT.md").write_bytes(b"\xff\xfe")
+    manager = AgentHomeManager(tmp_path / "homes")
+
+    with pytest.raises(UnicodeDecodeError):
+        manager.create("broken", source=source)
+
+    assert not manager.home_path("broken").exists()
 
 
 def test_agent_home_core_prompt_files_are_context_sources(tmp_path: Path) -> None:
