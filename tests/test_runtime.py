@@ -423,6 +423,57 @@ class TestRun:
         )
 
     @pytest.mark.asyncio
+    async def test_builtin_tool_schemas_are_visible_without_tool_search(self) -> None:
+        """Configured built-in capabilities must remain directly discoverable."""
+
+        class BuiltinLikeTool:
+            description = "Configured built-in capability."
+            parameters = {"type": "object", "properties": {}}
+
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def execute(self, **kwargs: object) -> ToolResult:
+                return ToolResult(
+                    call_id="",
+                    name=self.name,
+                    content="Done",
+                )
+
+        class ToolRecordingModel:
+            def __init__(self) -> None:
+                self.visible_tool_names: list[str] = []
+
+            def invoke(
+                self,
+                messages: list[Message],
+                *,
+                tools: list[Tool],
+            ) -> ModelResponse:
+                self.visible_tool_names = [tool.name for tool in tools]
+                return ModelResponse(content="Done", stop_reason="end_turn")
+
+        builtin_names = {
+            "execute_python",
+            "get_current_datetime",
+            "http_request",
+            "memory_get",
+            "memory_search",
+            "web_fetch",
+        }
+        agent = AgentConfig(
+            name="test",
+            tools=[FakeTool(), *(BuiltinLikeTool(name) for name in builtin_names)],
+        )
+        model = ToolRecordingModel()
+        run = Run.create(agent, SessionState.create("test"), model)  # type: ignore[arg-type]
+
+        await run.execute_to_completion("Use configured built-in tools")
+
+        assert builtin_names <= set(model.visible_tool_names)
+        assert "search_tools" not in model.visible_tool_names
+
+    @pytest.mark.asyncio
     async def test_interaction_request_pauses_before_followup_model_call(self) -> None:
         """A human decision must be handled by Host before the model continues."""
         from quenda.tools import RequestInteractionTool

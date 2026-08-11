@@ -12,7 +12,7 @@ Resources are auto-discovered from directory structure:
 - references/ → reference resources (read-only)
 - templates/ → template resources (read-only)
 - assets/ → asset resources (read-only)
-- scripts/ → executable scripts (.py files only)
+- scripts/ → executable Python scripts at any depth under the directory
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, override
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
-from quenda.host.skill.uri import SkillResourceURI
 
 if TYPE_CHECKING:
     from quenda.host.skill.resources import ResourceResolver
@@ -56,6 +55,7 @@ class ReadSkillResourceTool(Tool):
 
 Skill resources include reference documents, templates, and guides provided by active skills.
 Use list_skill_resources to discover available resources.
+Use the complete URI returned by the catalog; nested resources may share a filename.
 
 Example: read_skill_resource(uri="skill://code-review/checklist.md")"""
 
@@ -159,7 +159,7 @@ Executable scripts are marked with [executable]."""
             resources = [r for r in resources if r.resource_type == resource_type]
 
         if not resources:
-            active_skills = list(set(r.skill_name for r in self._resolver.list_resources()))
+            active_skills = list({r.skill_name for r in self._resolver.list_resources()})
             if not active_skills:
                 return ToolResult(
                     call_id="",
@@ -218,8 +218,9 @@ class ExecuteSkillAssetTool(Tool):
     def description(self) -> str:
         return """Execute a skill script.
 
-Only scripts/*.py files can be executed (auto-discovered from directory structure).
+Only Python files under the Skill's top-level scripts/ tree can be executed.
 Use list_skill_resources to see which scripts are executable (marked with [executable]).
+Use the complete URI returned by the catalog; do not shorten nested script paths.
 
 Arguments are passed as command-line arguments to the script."""
 
@@ -279,7 +280,8 @@ Arguments are passed as command-line arguments to the script."""
             return ToolResult(
                 call_id="",
                 name=self.name,
-                content="Error: Asset not executable.\n\nOnly scripts/*.py files can be executed.\n"
+                content="Error: Asset not executable.\n\nOnly Python files under the Skill's top-level "
+                        "scripts/ tree can be executed.\n"
                         "This is a security measure to prevent execution of non-script files.",
                 is_error=True,
             )

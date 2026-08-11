@@ -12,7 +12,7 @@ Resources are auto-discovered from directory structure:
 - references/ → reference resources
 - templates/ → template resources
 - assets/ → asset resources
-- scripts/ → executable scripts (.py files)
+- scripts/ → executable Python scripts at any depth under the directory
 """
 
 from __future__ import annotations
@@ -265,7 +265,7 @@ class SkillDiscovery:
         - references/ → reference resources (read-only)
         - templates/ → template resources (read-only)
         - assets/ → asset resources (read-only)
-        - scripts/ → executable scripts (.py files only)
+        - scripts/ → executable Python scripts at any depth under the directory
         """
         resources: list[SkillResource] = []
 
@@ -280,7 +280,7 @@ class SkillDiscovery:
                 if not file_path.is_file():
                     continue
 
-                # Only .py files in scripts/ are executable
+                # Every .py file anywhere under the top-level scripts/ tree is executable.
                 executable = is_executable_dir and file_path.suffix == ".py"
 
                 resources.append(SkillResource(

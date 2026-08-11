@@ -8,7 +8,7 @@ Resources are auto-discovered from directory structure:
 - references/ → reference resources (read-only)
 - templates/ → template resources (read-only)
 - assets/ → asset resources (read-only)
-- scripts/ → executable scripts (.py files only)
+- scripts/ → executable Python scripts at any depth under the directory
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class SkillResource:
     Attributes:
         path: Absolute path to the resource file
         type: Resource type (reference, template, asset, script)
-        executable: Whether this resource can be executed (scripts/*.py only)
+        executable: Whether this is a Python file under the top-level scripts/ tree
         description: Optional description (currently unused, for future use)
         content: Lazy-loaded content
     """

@@ -11,13 +11,13 @@ Resources are auto-discovered from directory structure:
 - references/ → reference resources (read-only)
 - templates/ → template resources (read-only)
 - assets/ → asset resources (read-only)
-- scripts/ → executable scripts (.py files only)
+- scripts/ → executable Python scripts at any depth under the directory
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -124,7 +124,7 @@ class ResourceResolver:
         self._activator: SkillActivator | None = None
 
     @classmethod
-    def from_activator(cls, activator: SkillActivator) -> "ResourceResolver":
+    def from_activator(cls, activator: SkillActivator) -> ResourceResolver:
         """
         Create a resolver that dynamically accesses active skills.
 
@@ -207,7 +207,7 @@ class ResourceResolver:
 
         Args:
             skill_name: Name of the skill containing the resource.
-            resource_name: Name of the resource file.
+            resource_name: Relative resource path, or a unique legacy basename.
 
         Returns:
             LoadedResource with content, or None if not found.
@@ -284,7 +284,7 @@ class ResourceResolver:
 
         Args:
             skill_name: Name of the skill containing the resource.
-            resource_name: Name of the resource file.
+            resource_name: Relative resource path, or a unique legacy basename.
 
         Returns:
             Path to the resource file, or None if not found.
@@ -411,11 +411,12 @@ class ResourceResolver:
         relative_path: str,
     ) -> SkillResource | None:
         """Find a resource by its relative path within the skill."""
-        # Normalize the path
         normalized = relative_path.lstrip("/")
 
+        # Complete the exact-path pass before considering basename compatibility.
+        # Otherwise an earlier nested resource named e.g. ``guide.md`` can steal a
+        # URI that exactly identifies a later ``.../personal-info/guide.md``.
         for resource in skill.resources:
-            # Try exact relative path match
             try:
                 resource_relative = str(resource.path.relative_to(skill.path))
                 if resource_relative == normalized:
@@ -423,9 +424,17 @@ class ResourceResolver:
             except ValueError:
                 pass
 
-            # Try filename match for simple cases
-            if resource.path.name == normalized or resource.path.name == Path(normalized).name:
-                return resource
+        # Preserve legacy short URIs only when the basename is unambiguous. A URI
+        # containing a directory is an exact identifier and must never degrade to
+        # a filename match.
+        if "/" not in normalized:
+            matches = [
+                resource
+                for resource in skill.resources
+                if resource.path.name == normalized
+            ]
+            if len(matches) == 1:
+                return matches[0]
 
         return None
 
@@ -441,18 +450,25 @@ class ResourceResolver:
         skill: SkillPackage,
         name: str,
     ) -> SkillResource | None:
-        """Find a resource in a skill by name."""
-        # Try exact match first
-        for resource in skill.resources:
-            if resource.path.name == name:
-                return resource
+        """Find a resource by relative path or an unambiguous legacy basename."""
+        normalized = name.lstrip("/")
 
-        # Try partial match (e.g., "guide.md" matches "docs/guide.md")
         for resource in skill.resources:
-            if resource.path.name == name:
-                return resource
-            if str(resource.path).endswith(name):
-                return resource
+            try:
+                resource_relative = str(resource.path.relative_to(skill.path))
+                if resource_relative == normalized:
+                    return resource
+            except ValueError:
+                pass
+
+        if "/" not in normalized:
+            matches = [
+                resource
+                for resource in skill.resources
+                if resource.path.name == normalized
+            ]
+            if len(matches) == 1:
+                return matches[0]
 
         return None
 

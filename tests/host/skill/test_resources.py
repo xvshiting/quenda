@@ -8,15 +8,16 @@ Resources are auto-discovered from directory structure:
 - scripts/ → executable scripts (.py files only)
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from quenda.host.skill import (
-    SkillDiscovery,
-    SkillActivator,
-    ResourceResolver,
-    ResourceInfo,
     LoadedResource,
+    ResourceInfo,
+    ResourceResolver,
+    SkillActivator,
+    SkillDiscovery,
 )
 
 
@@ -140,6 +141,35 @@ description: Testing skill
         for ref in refs:
             assert ref.executable is False
 
+    def test_deeply_nested_script_is_executable(
+        self, skill_with_resources: Path
+    ) -> None:
+        """Python scripts remain executable at any depth under scripts/."""
+        script = (
+            skill_with_resources
+            / "code-review"
+            / "scripts"
+            / "generators"
+            / "charts"
+            / "render.py"
+        )
+        script.parent.mkdir(parents=True)
+        script.write_text("print('rendered')")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
+        skill = discovery.get_skill("code-review")
+        assert skill is not None
+        resolver = ResourceResolver([skill])
+
+        info = resolver.resolve_uri_to_info(
+            "skill://code-review/scripts/generators/charts/render.py"
+        )
+
+        assert info is not None
+        assert info.resource_path == "scripts/generators/charts/render.py"
+        assert info.resource_type == "script"
+        assert info.executable is True
+
     def test_load_resource(self, skill_with_resources: Path) -> None:
         """Test loading a specific resource."""
         discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
@@ -165,6 +195,51 @@ description: Testing skill
         loaded = resolver.load_resource("code-review", "nonexistent.md")
 
         assert loaded is None
+
+    def test_resolve_nested_resources_with_same_basename_by_full_uri(
+        self, skill_with_resources: Path
+    ) -> None:
+        """Full resource paths must win before basename compatibility matching."""
+        skill_dir = skill_with_resources / "code-review"
+        financial = skill_dir / "references" / "scenarios" / "financial"
+        personal = skill_dir / "references" / "scenarios" / "personal-info"
+        financial.mkdir(parents=True)
+        personal.mkdir(parents=True)
+        (financial / "guide.md").write_text("financial workflow")
+        (personal / "guide.md").write_text("personal workflow")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
+        skill = discovery.get_skill("code-review")
+        assert skill is not None
+        resolver = ResourceResolver([skill])
+
+        loaded = resolver.resolve_uri(
+            "skill://code-review/references/scenarios/personal-info/guide.md"
+        )
+
+        assert loaded is not None
+        assert loaded.resource_path == "references/scenarios/personal-info/guide.md"
+        assert loaded.content == "personal workflow"
+
+    def test_ambiguous_basename_does_not_select_arbitrary_nested_resource(
+        self, skill_with_resources: Path
+    ) -> None:
+        """Legacy basename lookup must fail when more than one resource matches."""
+        skill_dir = skill_with_resources / "code-review"
+        first = skill_dir / "references" / "first"
+        second = skill_dir / "references" / "second"
+        first.mkdir()
+        second.mkdir()
+        (first / "guide.md").write_text("first")
+        (second / "guide.md").write_text("second")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=skill_with_resources)
+        skill = discovery.get_skill("code-review")
+        assert skill is not None
+        resolver = ResourceResolver([skill])
+
+        assert resolver.resolve_uri("skill://code-review/guide.md") is None
+        assert resolver.load_resource("code-review", "guide.md") is None
 
     def test_load_resource_from_nonexistent_skill(
         self, skill_with_resources: Path

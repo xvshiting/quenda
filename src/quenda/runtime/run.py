@@ -167,16 +167,6 @@ class Run:
     microcompact_trigger_tokens: int = 50_000
     microcompact_keep_last_tool_results: int = 8
 
-    # Schemas for expensive or uncommon capabilities are discovered on demand.
-    _deferred_tool_names = frozenset({
-        "execute_python",
-        "get_current_datetime",
-        "http_request",
-        "memory_get",
-        "memory_search",
-        "web_fetch",
-    })
-
     _event_handlers: list[Callable[[AnyEvent], None]] = field(default_factory=list)
     _executor: ThreadPoolExecutor = field(default_factory=ThreadPoolExecutor)
 
@@ -1240,14 +1230,11 @@ class Run:
         ]
 
     def _is_deferred_tool(self, tool: Tool) -> bool:
-        """Classify opt-in, built-in heavyweight, and MCP tools as deferred."""
+        """Defer only explicit opt-in tools and MCP catalog entries."""
         explicit = getattr(tool, "defer_schema", None)
         if isinstance(explicit, bool):
             return explicit
-        return (
-            tool.name in self._deferred_tool_names
-            or tool.name.startswith("mcp__")
-        )
+        return tool.name.startswith("mcp__")
 
     def _activate_discovered_tools(self, tool_results: list[ToolResult]) -> None:
         """Persist tool-search matches for the remainder of the session."""
