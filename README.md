@@ -14,6 +14,12 @@
 
 ## What's New
 
+### 2026-08 (v0.3.4)
+
+- **Web UI** — A FastAPI gateway + React dashboard for agents, sessions, workspaces, and settings. `quenda web` for foreground use, `quenda gateway` for a background service.
+- **Self-Evolution Platform** — Post-run memory evolution with `automatic`/`review`/`disabled` write modes, plus staged skill proposals with validation and rollback.
+- **Config-Driven Providers** — Declare `builtin` overrides, `custom` OpenAI-compatible endpoints, and local `llama-server` presets directly in `config.yaml` ([ADR-035](docs/decisions/035-config-driven-provider-catalogs.md)).
+
 ### 2026-06 (v0.3.0)
 
 - **Skills Framework** — Composable capability packages with instructions, resources, and tools. Discover, activate, and use skills on demand. [Learn more →](docs/skills.md)
@@ -173,21 +179,46 @@ pip install quenda
 
 ---
 
+## Web UI
+
+A FastAPI gateway plus React dashboard to manage agents, sessions, workspaces,
+and settings from the browser:
+
+```bash
+pip install "quenda[web]"   # optional dependencies
+
+quenda web --port 8000      # foreground (dev)
+
+quenda gateway start        # background service
+quenda gateway status
+quenda gateway logs
+quenda gateway stop
+```
+
+Pages cover agents (create/edit/detail with model picker), sessions (chat with
+streaming events), workspaces, and settings. Sessions run through the same
+Host layer as the CLI.
+
+---
+
 ## Features
 
 - **Minimal API.** `Agent`, `Session`, `@tool`, and you're done.
-- **26 model providers.** OpenAI, Anthropic, DeepSeek, DashScope, and more — one registry, one API.
+- **27 model providers.** OpenAI, Anthropic, DeepSeek, DashScope, and more — one registry, one API.
 - **Core tools.** Filesystem, local-trusted shell/Python, and user interaction.
 - **Skills framework.** Composable capability packages with instructions and resources.
 - **Explicit security contracts.** SSRF protection, command filtering, permissions, and fail-closed isolation requirements.
 - **Observable by default.** Every run emits structured events for streaming and debugging.
 - **Context compression.** Automatic summarization when context grows large.
+- **Self-evolution.** Post-run memory writes and staged skill proposals, auditable and roll-back-able.
+- **Config-driven providers.** Built-in overrides, custom OpenAI-compatible endpoints, and `llama-server` presets in `config.yaml`.
+- **Web UI.** Optional FastAPI/React dashboard with `quenda web` and `quenda gateway`.
 
 ---
 
 ## Model Providers
 
-Quenda ships with **26 built-in providers** covering 300+ models:
+Quenda ships with **27 built-in providers** covering 300+ models:
 
 | Provider | Example Models | API Key Env |
 |----------|---------------|-------------|
@@ -217,6 +248,28 @@ registry.register(ProviderSpec(
     api_key="${MY_API_KEY}",
     models=(ModelSpec(id="my-model", name="My Model", tool_calling=True),),
 ))
+```
+
+Agents can also declare providers in `config.yaml` — a `builtin` override, a
+`custom` OpenAI-compatible endpoint, or a `llama-server` preset — and select
+roles with `models.default` / `models.vision` using `provider/model`
+([ADR-035](docs/decisions/035-config-driven-provider-catalogs.md)):
+
+```yaml
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+
+  local-llama:
+    type: llama-server
+    url: http://127.0.0.1:8080/v1
+    models:
+      - id: "qwen3.5:9b"
+        tool_calling: true
+
+models:
+  default: openai/gpt-4o
+  vision: local-llama/qwen3.5:9b
 ```
 
 ---

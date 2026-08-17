@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from quenda._version import __version__
+from quenda import __version__
 from quenda.host.skill.package import EXECUTABLE_DIRECTORIES, RESOURCE_DIRECTORIES
 from quenda.providers.api import build_default_api_registry
 from quenda.providers.registry import build_default_provider_registry

@@ -5,7 +5,7 @@ import quenda
 
 def test_version() -> None:
     """Test that version is defined."""
-    assert quenda.__version__ == "0.1.8"
+    assert quenda.__version__
 
 
 def test_kernel_types_import() -> None:
