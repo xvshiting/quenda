@@ -1,238 +1,196 @@
-"""
-Agent service - business logic for agent management.
-"""
+"""Agent Home backed business logic for the Web UI."""
 
-import os
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import Any
+
 import yaml
 
+from quenda.host import AgentHome, AgentHomeManager
+from quenda.host.loader import ModelsConfig
 from quenda.web.models.agent import AgentConfig, AgentSummary, AgentTemplate
 
 
 class AgentService:
-    """Service for managing agents."""
-    
-    def __init__(self, agents_dir: Optional[Path] = None):
-        """
-        Initialize agent service.
-        
-        Args:
-            agents_dir: Directory to store agent configs. If None, uses default.
-        """
-        self.agents_dir = agents_dir or Path.home() / ".quenda" / "agents"
-        self.agents_dir.mkdir(parents=True, exist_ok=True)
-    
-    async def list_agents(self) -> List[AgentSummary]:
-        """List all available agents."""
-        agents = []
-        
-        # Scan agents directory
-        for agent_file in self.agents_dir.glob("*/AGENT.md"):
-            agent_id = agent_file.parent.name
-            summary = await self._load_agent_summary(agent_id)
-            if summary:
-                agents.append(summary)
-        
-        # Also include Quenda Code agent (bundled)
-        # TODO: Dynamically discover bundled agents
-        agents.append(AgentSummary(
-            id="quenda-code",
-            name="Quenda Code",
-            description="Official coding agent",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            model="GLM-5",
-            tool_count=11,
-        ))
-        
-        return agents
-    
-    async def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
-        """Get agent by ID."""
-        # Check if it's a bundled agent
-        if agent_id == "quenda-code":
-            # TODO: Load from package
-            return AgentConfig(
-                id="quenda-code",
-                name="Quenda Code",
-                description="Official coding agent",
-                system_prompt="You are Quenda Code...",
-                tools=["list_files", "read_file", "write_file", "run_shell"],
-                model="GLM-5",
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
+    """Expose the same named Agent Homes used by the CLI."""
+
+    def __init__(
+        self,
+        agents_dir: Path | None = None,
+        *,
+        manager: AgentHomeManager | None = None,
+    ) -> None:
+        # ``agents_dir`` remains as a compatibility injection point for callers
+        # of the prototype service; it now means the Quenda Home root.
+        self.manager = manager or AgentHomeManager(agents_dir)
+
+    async def list_agents(self) -> list[AgentSummary]:
+        return [self._summary(home) for home in self.manager.list()]
+
+    async def get_agent(self, agent_id: str) -> AgentConfig | None:
+        try:
+            home = self.manager.get(agent_id)
+        except ValueError:
+            return None
+        return self._load_package(agent_id, home.path) if home else None
+
+    async def create_agent(self, request: Any) -> AgentConfig:
+        source = getattr(request, "source", None)
+        home = self.manager.create(request.name, source=source)
+        if request.description or request.system_prompt:
+            self._update_agent_md(
+                home.path / "AGENT.md",
+                description=request.description,
+                body=request.system_prompt,
             )
-        
-        # Load from file system
-        agent_dir = self.agents_dir / agent_id
-        if not agent_dir.exists():
+        if request.config_yaml is not None:
+            self._validate_config(request.config_yaml)
+            (home.path / "config.yaml").write_text(request.config_yaml, encoding="utf-8")
+        loaded = self._load_package(home.name, home.path)
+        assert loaded is not None
+        return loaded
+
+    async def update_agent(self, agent_id: str, request: Any) -> AgentConfig | None:
+        try:
+            home = self.manager.get(agent_id)
+        except ValueError:
             return None
-        
-        return await self._load_agent_config(agent_id)
-    
-    async def create_agent(self, request) -> AgentConfig:
-        """Create a new agent."""
-        agent_id = request.name.lower().replace(" ", "-")
-        agent_dir = self.agents_dir / agent_id
-        
-        if agent_dir.exists():
-            raise ValueError(f"Agent '{agent_id}' already exists")
-        
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create AGENT.md
-        agent_md = agent_dir / "AGENT.md"
-        frontmatter = {
-            "name": request.name,
-            "description": request.description,
-        }
-        
-        with open(agent_md, "w") as f:
-            f.write("---\n")
-            yaml.dump(frontmatter, f)
-            f.write("---\n\n")
-            if request.system_prompt:
-                f.write(request.system_prompt)
-            f.write("\n")
-        
-        # Create config.yaml if provided
-        if request.config_yaml:
-            config_file = agent_dir / "config.yaml"
-            with open(config_file, "w") as f:
-                f.write(request.config_yaml)
-        
-        return await self._load_agent_config(agent_id)
-    
-    async def update_agent(self, agent_id: str, request) -> Optional[AgentConfig]:
-        """Update an agent."""
-        agent_dir = self.agents_dir / agent_id
-        if not agent_dir.exists():
+        if home is None:
             return None
-        
-        # Load existing config
-        config = await self._load_agent_config(agent_id)
-        if not config:
-            return None
-        
-        # Update fields
-        if request.name:
-            # Update name in AGENT.md
-            pass
-        if request.system_prompt:
-            # Update system prompt in AGENT.md
-            pass
-        if request.config_yaml:
-            # Update config.yaml
-            config_file = agent_dir / "config.yaml"
-            with open(config_file, "w") as f:
-                f.write(request.config_yaml)
-        
-        # Reload and return
-        return await self._load_agent_config(agent_id)
-    
+        if request.name is not None and request.name != agent_id:
+            raise ValueError("Renaming an Agent Home is not supported; create a new named agent")
+        if request.description is not None or request.system_prompt is not None:
+            self._update_agent_md(
+                home.path / "AGENT.md",
+                description=request.description,
+                body=request.system_prompt,
+            )
+        if request.config_yaml is not None:
+            self._validate_config(request.config_yaml)
+            (home.path / "config.yaml").write_text(request.config_yaml, encoding="utf-8")
+        return self._load_package(agent_id, home.path)
+
     async def delete_agent(self, agent_id: str) -> bool:
-        """Delete an agent."""
-        agent_dir = self.agents_dir / agent_id
-        if not agent_dir.exists():
+        try:
+            home = self.manager.get(agent_id)
+        except ValueError:
             return False
-        
-        # Remove directory
+        if home is None:
+            return False
+        # The validated manager lookup guarantees an exact agent-<name> child.
         import shutil
-        shutil.rmtree(agent_dir)
+
+        shutil.rmtree(home.path)
         return True
-    
-    async def get_templates(self) -> List[AgentTemplate]:
-        """Get available agent templates."""
+
+    async def get_templates(self) -> list[AgentTemplate]:
         return [
             AgentTemplate(
-                id="coding",
-                name="Coding Agent",
-                description="Agent for code generation and debugging",
+                id="blank",
+                name="Blank personal agent",
+                description="An editable Agent Home with identity, memory, skills, and workspace",
+                category="general",
+                config={},
+            ),
+            AgentTemplate(
+                id="quenda-code",
+                name="Quenda Code",
+                description="Seed a personal coding agent from the installed Quenda Code package",
                 category="coding",
-                config={
-                    "tools": ["core"],
-                    "model": "deepseek-v4-flash",
-                }
-            ),
-            AgentTemplate(
-                id="chat",
-                name="Chat Agent",
-                description="General-purpose conversational agent",
-                category="chat",
-                config={
-                    "tools": ["core"],
-                    "model": "gpt-4o",
-                }
-            ),
-            AgentTemplate(
-                id="analysis",
-                name="Analysis Agent",
-                description="Agent for data analysis and reporting",
-                category="analysis",
-                config={
-                    "tools": ["core", "network"],
-                    "model": "claude-3-5-sonnet",
-                }
+                config={"source": "quenda-code"},
             ),
         ]
-    
-    async def _load_agent_summary(self, agent_id: str) -> Optional[AgentSummary]:
-        """Load agent summary from file system."""
-        agent_config = await self._load_agent_config(agent_id)
-        if not agent_config:
-            return None
-        
+
+    def _summary(self, home: AgentHome) -> AgentSummary:
+        config = self._load_package(home.name, home.path)
+        assert config is not None
         return AgentSummary(
-            id=agent_config.id,
-            name=agent_config.name,
-            description=agent_config.description,
-            created_at=agent_config.created_at,
-            updated_at=agent_config.updated_at,
-            model=agent_config.model,
-            tool_count=len(agent_config.tools),
+            id=config.id,
+            name=config.name,
+            description=config.description,
+            created_at=config.created_at,
+            updated_at=config.updated_at,
+            model=config.model,
+            provider=config.provider,
+            tool_count=len(config.tools),
+            home_path=config.home_path,
+            workspace_path=config.workspace_path,
+            created_from=config.created_from,
         )
-    
-    async def _load_agent_config(self, agent_id: str) -> Optional[AgentConfig]:
-        """Load full agent config from file system."""
-        agent_dir = self.agents_dir / agent_id
-        if not agent_dir.exists():
+
+    @staticmethod
+    def _load_package(agent_id: str, path: Path) -> AgentConfig | None:
+        agent_md = path / "AGENT.md"
+        if not agent_md.is_file():
             return None
-        
-        agent_md = agent_dir / "AGENT.md"
-        if not agent_md.exists():
-            return None
-        
-        # Parse AGENT.md
-        with open(agent_md, "r") as f:
-            content = f.read()
-        
-        # Parse frontmatter
-        metadata = {}
+        content = agent_md.read_text(encoding="utf-8")
+        metadata: dict[str, Any] = {}
+        body = content
         if content.startswith("---"):
             parts = content.split("---", 2)
-            if len(parts) >= 3:
-                frontmatter = yaml.safe_load(parts[1])
-                metadata = frontmatter or {}
-                system_prompt = parts[2].strip()
-        
-        # Load config.yaml if exists
-        config_yaml = None
-        config_file = agent_dir / "config.yaml"
-        if config_file.exists():
-            with open(config_file, "r") as f:
-                config_yaml = f.read()
-        
+            if len(parts) == 3:
+                parsed_metadata = yaml.safe_load(parts[1]) or {}
+                metadata = parsed_metadata if isinstance(parsed_metadata, dict) else {}
+                body = parts[2].strip()
+        config_file = path / "config.yaml"
+        config_yaml = config_file.read_text(encoding="utf-8") if config_file.is_file() else None
+        parsed_config = yaml.safe_load(config_yaml) if config_yaml else {}
+        config_data = parsed_config if isinstance(parsed_config, dict) else {}
+        default_model = ModelsConfig.from_dict(config_data.get("models") or {}).default
+        tool_config = config_data.get("tools") or {}
+        tools = list(tool_config.get("include") or [])
+        stat = agent_md.stat()
         return AgentConfig(
             id=agent_id,
-            name=metadata.get("name", agent_id),
+            name=str(metadata.get("name", agent_id)),
             description=metadata.get("description"),
-            system_prompt=system_prompt,
-            tools=[],  # TODO: Load from config
-            model=metadata.get("model"),
+            system_prompt=body,
+            tools=tools,
+            model=(default_model.model if default_model else None)
+            or metadata.get("model"),
+            provider=(default_model.provider if default_model else None)
+            or metadata.get("provider"),
+            home_path=str(path),
+            workspace_path=str(path / "workspace") if (path / "agent.yaml").is_file() else None,
+            created_from=AgentService._load_created_from(path / "agent.yaml"),
             config_yaml=config_yaml,
-            created_at=datetime.fromtimestamp(agent_md.stat().st_ctime),
-            updated_at=datetime.fromtimestamp(agent_md.stat().st_mtime),
+            created_at=datetime.fromtimestamp(stat.st_ctime, UTC),
+            updated_at=datetime.fromtimestamp(stat.st_mtime, UTC),
             metadata=metadata,
         )
+
+    @staticmethod
+    def _update_agent_md(path: Path, *, description: str | None, body: str | None) -> None:
+        content = path.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        if len(parts) != 3:
+            raise ValueError("AGENT.md must contain valid YAML frontmatter")
+        metadata = yaml.safe_load(parts[1]) or {}
+        if description is not None:
+            metadata["description"] = description
+        next_body = body if body is not None else parts[2].strip()
+        rendered = yaml.safe_dump(metadata, sort_keys=False).strip()
+        path.write_text(f"---\n{rendered}\n---\n\n{next_body}\n", encoding="utf-8")
+
+    @staticmethod
+    def _validate_config(content: str) -> None:
+        parsed = yaml.safe_load(content)
+        if parsed is not None and not isinstance(parsed, dict):
+            raise ValueError("config_yaml must contain a YAML mapping")
+
+    @staticmethod
+    def _load_created_from(path: Path) -> str | None:
+        """Read optional provenance without making the whole Agent list fragile."""
+        if not path.is_file():
+            return None
+        try:
+            metadata = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        if not isinstance(metadata, dict):
+            return None
+        created_from = metadata.get("created_from")
+        return str(created_from) if created_from is not None else None

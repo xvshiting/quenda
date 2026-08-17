@@ -62,7 +62,7 @@ def test_quenda_code_context_guidance_matches_host_behavior() -> None:
     runtime = instructions["runtime-info.md"]
 
     assert "default filename is `QUENDA.md`" in context
-    assert "`SOUL.md`, `USER.md`, and `MEMORY.md`" in context
+    assert "`IDENTITY.md`, `SOUL.md`, `USER.md`, and `MEMORY.md`" in context
     assert "20,000" not in context
     assert "60,000" not in context
     assert "host name" in runtime

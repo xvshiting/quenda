@@ -31,13 +31,24 @@ from quenda.kernel.types import (
     ToolCall,
     ToolResult,
 )
-from quenda.providers.errors import APIError, ToolCallDecodeError, UnsupportedFeatureError
+from quenda.providers.errors import (
+    APIError,
+    RequestCancelledError,
+    ToolCallDecodeError,
+    UnsupportedFeatureError,
+)
 from quenda.providers.observability import (
     RetryNotice,
+    StreamDeltaNotice,
+    reset_cancellation_context,
     reset_retry_observer,
+    reset_stream_delta_observer,
     set_retry_observer,
+    set_cancellation_context,
+    set_stream_delta_observer,
 )
 from quenda.runtime.agent import AgentDefinition
+from quenda.runtime.cancellation import CancellationToken
 from quenda.runtime.events import (
     AnyEvent,
     CompressionCompleted,
@@ -46,12 +57,13 @@ from quenda.runtime.events import (
     InteractionRequested,
     ModelCalled,
     ModelRetrying,
+    ModelResponseDelta,
     ModelResponded,
     RunCompleted,
+    RunInterrupted,
     RunPaused,
     RunStarted,
     RunTerminated,
-    RunInterrupted,
     ToolExecuted,
 )
 from quenda.runtime.permission import PermissionRequiredError
@@ -60,6 +72,7 @@ from quenda.runtime.state import RunState
 from quenda.tools.search import SearchToolsTool
 
 if TYPE_CHECKING:
+    from quenda.runtime.events import ModelRouted
     from quenda.runtime.compression import CompressionDecision
     from quenda.runtime.compressor import Compressor
     from quenda.runtime.ports.compression import CompressionPolicy
@@ -101,6 +114,7 @@ class RunStatus(StrEnum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
 
 
 @dataclass
@@ -138,6 +152,7 @@ class Run:
     agent: AgentDefinition
     session: SessionState
     model: Model  # Default model (may be overridden by routing)
+    cancellation_token: CancellationToken = field(default_factory=CancellationToken)
     status: RunStatus = RunStatus.PENDING
     created_at: datetime = field(default_factory=datetime.now)
     storage: Storage | None = None
@@ -185,6 +200,7 @@ class Run:
         capability_routing: bool = True,
         microcompact_trigger_tokens: int = 50_000,
         microcompact_keep_last_tool_results: int = 8,
+        cancellation_token: CancellationToken | None = None,
     ) -> Run:
         """
         Create a new Run.
@@ -200,6 +216,7 @@ class Run:
             tool_result_processing_policy: Optional policy for shaping tool results.
             vision_model: Optional vision model for capability routing (ADR-028).
             capability_routing: Whether to enable capability-based routing (ADR-028).
+            cancellation_token: Optional Run-scoped cancellation state.
 
         Returns:
             A new Run instance.
@@ -209,6 +226,7 @@ class Run:
             agent=agent,
             session=session,
             model=model,
+            cancellation_token=cancellation_token or CancellationToken(),
             storage=storage,
             trace_sink=trace_sink,
             termination_policy=termination_policy,
@@ -260,8 +278,6 @@ class Run:
         Yields:
             Events describing the execution progress in real-time.
         """
-        from quenda.utils.interrupt import is_interrupted, clear_interrupt, InterruptReason
-
         self.status = RunStatus.RUNNING
         run_start_time = time.perf_counter()
         last_model_provider = ""
@@ -269,9 +285,6 @@ class Run:
 
         # Convert user_message to string for logging/storage
         user_message_str = user_message if isinstance(user_message, str) else "[multimodal message]"
-
-        # Clear any previous interrupt signal
-        clear_interrupt()
 
         # Emit run started
         started = RunStarted(
@@ -318,7 +331,7 @@ class Run:
                 iteration += 1
 
                 # Check for interrupt
-                if is_interrupted():
+                if self.cancellation_token.is_cancelled:
                     break
 
                 # Tool calls and results can grow context substantially within a
@@ -361,7 +374,12 @@ class Run:
                 last_model_provider = getattr(provider, "id", "")
                 last_model_id = getattr(current_model, "id", type(current_model).__name__)
                 timeout_seconds = getattr(provider_spec, "timeout", None)
-                max_retries = getattr(provider_spec, "max_retries", None) or 3
+                configured_max_retries = getattr(provider_spec, "max_retries", None)
+                max_retries = (
+                    configured_max_retries
+                    if configured_max_retries is not None
+                    else 3
+                )
                 model_called = ModelCalled(
                     message_count=len(call_messages),
                     provider=last_model_provider,
@@ -374,6 +392,7 @@ class Run:
                 yield model_called
                 call_start_time = time.perf_counter()
                 retry_notices: queue.SimpleQueue[RetryNotice] = queue.SimpleQueue()
+                stream_deltas: queue.SimpleQueue[StreamDeltaNotice] = queue.SimpleQueue()
 
                 try:
                     # Invoke model (async wrapper around sync primitive)
@@ -383,6 +402,8 @@ class Run:
                         kernel,
                         call_messages,
                         retry_notices,
+                        stream_deltas,
+                        self.cancellation_token,
                         visible_tools,
                     )
                     while not model_future.done():
@@ -395,9 +416,14 @@ class Run:
                                 max_attempts=notice.max_attempts,
                                 delay_seconds=notice.delay_seconds,
                                 error_type=notice.error_type,
+                                error_message=notice.error_message,
                             )
                             self._emit(retry_event)
                             yield retry_event
+                        for delta in self._drain_stream_deltas(stream_deltas):
+                            delta_event = ModelResponseDelta(content=delta.content)
+                            self._emit(delta_event)
+                            yield delta_event
                     for notice in self._drain_retry_notices(retry_notices):
                         retry_event = ModelRetrying(
                             provider=last_model_provider,
@@ -406,10 +432,17 @@ class Run:
                             max_attempts=notice.max_attempts,
                             delay_seconds=notice.delay_seconds,
                             error_type=notice.error_type,
+                            error_message=notice.error_message,
                         )
                         self._emit(retry_event)
                         yield retry_event
+                    for delta in self._drain_stream_deltas(stream_deltas):
+                        delta_event = ModelResponseDelta(content=delta.content)
+                        self._emit(delta_event)
+                        yield delta_event
                     response = await model_future
+                except RequestCancelledError:
+                    break
                 except ToolCallDecodeError as e:
                     if tool_call_decode_retry_used:
                         raise
@@ -459,6 +492,18 @@ class Run:
                     tool_arguments=[tc.arguments for tc in response.tool_calls],
                     stop_reason=response.stop_reason,
                     duration_ms=int((time.perf_counter() - call_start_time) * 1000),
+                    input_tokens=response.usage.input_tokens if response.usage else 0,
+                    output_tokens=response.usage.output_tokens if response.usage else 0,
+                    cached_input_tokens=(
+                        response.usage.cached_input_tokens if response.usage else None
+                    ),
+                    cache_creation_input_tokens=(
+                        response.usage.cache_creation_input_tokens
+                        if response.usage else None
+                    ),
+                    reasoning_tokens=(
+                        response.usage.reasoning_tokens if response.usage else None
+                    ),
                 )
                 self._emit(model_event)
                 yield model_event
@@ -577,7 +622,7 @@ class Run:
                         committed_count = len(messages)
 
                     # Check if interrupted during tool phase
-                    if is_interrupted():
+                    if self.cancellation_token.is_cancelled:
                         break
 
                     # Check if terminated during tool phase
@@ -643,17 +688,17 @@ class Run:
                 return
 
             # Handle interruption
-            if is_interrupted():
+            if self.cancellation_token.is_cancelled:
                 self._commit_session_messages(messages[committed_count:])
 
                 interrupted = RunInterrupted(
-                    reason="user_cancel",
+                    reason=self.cancellation_token.reason.value,
                     steps_completed=counters.step_count,
                 )
                 self._emit(interrupted)
                 yield interrupted
 
-                self.status = RunStatus.FAILED
+                self.status = RunStatus.INTERRUPTED
 
                 if self.storage:
                     run_state = RunState(
@@ -736,19 +781,39 @@ class Run:
         kernel: Kernel,
         messages: list[Message],
         notices: queue.SimpleQueue[RetryNotice],
+        stream_deltas: queue.SimpleQueue[StreamDeltaNotice],
+        cancellation_token: CancellationToken,
         tools: list[Tool],
     ) -> ModelResponse:
-        token = set_retry_observer(notices.put)
+        retry_token = set_retry_observer(notices.put)
+        stream_token = set_stream_delta_observer(stream_deltas.put)
+        cancellation_tokens = set_cancellation_context(
+            lambda: cancellation_token.is_cancelled,
+            cancellation_token.add_callback,
+        )
         try:
             return kernel.invoke_model(messages, tools)
         finally:
-            reset_retry_observer(token)
+            reset_cancellation_context(cancellation_tokens)
+            reset_stream_delta_observer(stream_token)
+            reset_retry_observer(retry_token)
 
     @staticmethod
     def _drain_retry_notices(
         notices: queue.SimpleQueue[RetryNotice],
     ) -> list[RetryNotice]:
         drained: list[RetryNotice] = []
+        while True:
+            try:
+                drained.append(notices.get_nowait())
+            except queue.Empty:
+                return drained
+
+    @staticmethod
+    def _drain_stream_deltas(
+        notices: queue.SimpleQueue[StreamDeltaNotice],
+    ) -> list[StreamDeltaNotice]:
+        drained: list[StreamDeltaNotice] = []
         while True:
             try:
                 drained.append(notices.get_nowait())
@@ -869,8 +934,6 @@ class Run:
     ) -> AsyncIterator[AnyEvent]:
         """Run one Runtime-owned tool phase and yield events as they happen."""
         from quenda.runtime.events import ToolPhaseStarted
-        from quenda.utils.interrupt import is_interrupted
-
         counters.tool_round_count += 1
 
         approved_calls, rejected_calls = self._select_tool_calls(
@@ -903,7 +966,7 @@ class Run:
         tool_results_map: dict[str, ToolResult] = {}
 
         for call in response.tool_calls:
-            if is_interrupted():
+            if self.cancellation_token.is_cancelled:
                 break
 
             if call.id in approved_by_id:
@@ -1478,7 +1541,7 @@ class Run:
             Tuple of (resolved_model, optional ModelRouted event).
             The event is None if no routing was needed (default model used).
         """
-        from quenda.runtime.routing import ModelRequirementResolver, ModelRouter, ModelRoutingResult
+        from quenda.runtime.routing import ModelRequirementResolver, ModelRouter
         from quenda.runtime.events import ModelRouted
 
         # If routing disabled or no vision model configured, use default
@@ -1760,6 +1823,12 @@ class Run:
         if response.usage.cached_input_tokens:
             current = self.session.usage.total_cached_input_tokens or 0
             self.session.usage.total_cached_input_tokens = current + response.usage.cached_input_tokens
+
+        if response.usage.cache_creation_input_tokens:
+            current = self.session.usage.total_cache_creation_input_tokens or 0
+            self.session.usage.total_cache_creation_input_tokens = (
+                current + response.usage.cache_creation_input_tokens
+            )
 
         if response.usage.reasoning_tokens:
             current = self.session.usage.total_reasoning_tokens or 0

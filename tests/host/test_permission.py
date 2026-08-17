@@ -2,17 +2,18 @@
 Tests for Host layer permission control.
 """
 
-import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from quenda.host import (
-    WorkspaceResolver,
+    CompositePolicy,
+    HostPermissionPolicy,
     Permission,
     PermissionDeniedError,
-    HostPermissionPolicy,
     PermissivePolicy,
-    CompositePolicy,
+    WorkspaceResolver,
     create_default_policy,
 )
 from quenda.host.permission_manager import PermissionManager
@@ -367,3 +368,79 @@ class TestPermissionManager:
         assert manager.decide(first).allowed is True
         assert manager.decide(second).allowed is True
         assert calls["count"] == 1
+
+    def test_non_cacheable_permission_prompts_for_each_decision(self) -> None:
+        """Semantic approvals can require one decision per proposed change."""
+        manager = PermissionManager()
+        calls = {"count": 0}
+
+        def prompt_handler(request: PermissionRequest) -> bool:
+            calls["count"] += 1
+            return True
+
+        manager.prompt_handler = prompt_handler
+        request = PermissionRequest(
+            kind=PermissionKind.AGENT_CONFIG_WRITE,
+            resource="/agent/config.yaml",
+            cacheable=False,
+        )
+
+        assert manager.decide(request).allowed is True
+        assert manager.decide(request).allowed is True
+        assert calls["count"] == 2
+
+    def test_host_managed_resource_grants_only_requested_capability(
+        self, tmp_path: Path
+    ) -> None:
+        """A trusted Skill read root must not imply write or execution access."""
+        skill_root = tmp_path / "skill"
+        nested = skill_root / "resources"
+        nested.mkdir(parents=True)
+        manager = PermissionManager()
+
+        decision = manager.grant_host_managed_resource(str(skill_root))
+
+        cached_read = manager.check_cached(
+            PermissionKind.FILESYSTEM_READ,
+            str(nested),
+            PermissionScope.DIRECTORY,
+        )
+        cached_write = manager.check_cached(
+            PermissionKind.FILESYSTEM_WRITE,
+            str(nested),
+            PermissionScope.DIRECTORY,
+        )
+        assert decision.request.source == "host_managed"
+        assert cached_read is not None and cached_read.allowed
+        assert cached_write is None
+
+    def test_session_restore_keeps_current_host_grants_without_persisting_them(
+        self, tmp_path: Path
+    ) -> None:
+        """Skill trust is recomputed locally and survives persisted-state merge."""
+        skill_root = tmp_path / "skill"
+        skill_root.mkdir()
+        manager = PermissionManager()
+        manager.grant_host_managed_resource(str(skill_root))
+
+        persisted_manager = PermissionManager()
+        persisted_manager.prompt_handler = lambda request: True
+        persisted_manager.decide(PermissionRequest(
+            kind=PermissionKind.NETWORK_ACCESS,
+            resource="https://example.com",
+            scope=PermissionScope.ALL,
+        ))
+
+        assert manager.to_state() == {"decisions": {}}
+        manager.load_state(persisted_manager.to_state())
+
+        assert manager.check_cached(
+            PermissionKind.FILESYSTEM_READ,
+            str(skill_root),
+            PermissionScope.DIRECTORY,
+        ) is not None
+        assert manager.check_cached(
+            PermissionKind.NETWORK_ACCESS,
+            "https://another.example",
+            PermissionScope.ALL,
+        ) is not None

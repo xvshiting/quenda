@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, cast, runtime_checkable
+
+PermissionSource = Literal["agent_initiated", "user_provided", "host_managed"]
 
 
 class PermissionKind(str, Enum):
@@ -29,6 +31,8 @@ class PermissionKind(str, Enum):
     FILESYSTEM_DELETE = "filesystem.delete"
     SHELL_EXECUTE = "shell.execute"
     NETWORK_ACCESS = "network.access"
+    AGENT_CONFIG_WRITE = "agent_config.write"
+    SKILL_EVOLUTION_WRITE = "skill_evolution.write"
 
 
 class PermissionScope(str, Enum):
@@ -74,7 +78,8 @@ class PermissionRequest:
     lifetime: PermissionLifetime = PermissionLifetime.SESSION
     tool_name: str = ""
     tool_args: dict[str, object] = field(default_factory=dict)
-    source: Literal["agent_initiated", "user_provided"] = "agent_initiated"
+    source: PermissionSource = "agent_initiated"
+    cacheable: bool = True
 
     def to_dict(self) -> dict[str, object]:
         """Serialize the request to a JSON-safe dictionary."""
@@ -87,11 +92,16 @@ class PermissionRequest:
             "tool_name": self.tool_name,
             "tool_args": self.tool_args,
             "source": self.source,
+            "cacheable": self.cacheable,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "PermissionRequest":
+    def from_dict(cls, data: dict[str, object]) -> PermissionRequest:
         """Deserialize a request from a dictionary."""
+        raw_source = str(data.get("source", "agent_initiated"))
+        if raw_source not in {"agent_initiated", "user_provided", "host_managed"}:
+            raw_source = "agent_initiated"
+        raw_tool_args = data.get("tool_args")
         return cls(
             kind=PermissionKind(str(data["kind"])),
             resource=str(data["resource"]),
@@ -99,8 +109,9 @@ class PermissionRequest:
             reason=str(data.get("reason", "")),
             lifetime=PermissionLifetime(str(data.get("lifetime", PermissionLifetime.SESSION.value))),
             tool_name=str(data.get("tool_name", "")),
-            tool_args=dict(data.get("tool_args", {}) or {}),
-            source=str(data.get("source", "agent_initiated")),
+            tool_args=dict(raw_tool_args) if isinstance(raw_tool_args, dict) else {},
+            source=cast(PermissionSource, raw_source),
+            cacheable=bool(data.get("cacheable", True)),
         )
 
     def to_interaction_prompt(self) -> str:
@@ -111,6 +122,8 @@ class PermissionRequest:
             PermissionKind.FILESYSTEM_DELETE: "delete",
             PermissionKind.SHELL_EXECUTE: "execute command in",
             PermissionKind.NETWORK_ACCESS: "access",
+            PermissionKind.AGENT_CONFIG_WRITE: "change Agent configuration at",
+            PermissionKind.SKILL_EVOLUTION_WRITE: "activate a Skill revision at",
         }.get(self.kind, "access")
 
         return (
@@ -180,9 +193,12 @@ class PermissionDecision:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "PermissionDecision":
+    def from_dict(cls, data: dict[str, object]) -> PermissionDecision:
         """Deserialize a decision from a dictionary."""
-        request = PermissionRequest.from_dict(dict(data["request"]))
+        raw_request = data.get("request")
+        if not isinstance(raw_request, dict):
+            raise ValueError("permission decision request must be a mapping")
+        request = PermissionRequest.from_dict(dict(raw_request))
         return cls(
             request=request,
             allowed=bool(data["allowed"]),
@@ -350,7 +366,7 @@ class PermissionCache:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "PermissionCache":
+    def from_dict(cls, data: dict[str, object]) -> PermissionCache:
         """Deserialize cached permissions from a dictionary."""
         cache = cls()
         decisions = data.get("decisions", {})
@@ -375,4 +391,5 @@ __all__ = [
     "PermissionPolicy",
     "DenyPermissionPolicy",
     "AllowPermissionPolicy",
+    "PermissionSource",
 ]

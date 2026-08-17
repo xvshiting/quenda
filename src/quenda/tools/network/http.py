@@ -9,8 +9,8 @@ from __future__ import annotations
 import importlib.util
 import ipaddress
 import json
-import re
 import socket
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, override
 from urllib.parse import urljoin, urlparse
@@ -71,17 +71,47 @@ BLOCKED_HEADERS: list[str] = [
 ]
 
 
-def _validate_url(url: str) -> str | None:
+def _url_origin(url: str) -> str | None:
+    """Return a normalized HTTP origin, including the effective port."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return f"{parsed.scheme.lower()}://{parsed.hostname.lower()}:{port}"
+    except ValueError:
+        return None
+
+
+def _normalize_origins(origins: Iterable[str]) -> frozenset[str]:
+    """Normalize configured endpoint URLs into exact trusted origins."""
+    return frozenset(
+        origin
+        for value in origins
+        if (origin := _url_origin(value)) is not None
+    )
+
+
+def _validate_url(
+    url: str,
+    allowed_private_origins: frozenset[str] = frozenset(),
+) -> str | None:
     """Validate URL for SSRF protection. Returns error message or None."""
     try:
         parsed = urlparse(url)
 
         if parsed.scheme not in ["http", "https"]:
-            return f"URL scheme must be http or https"
+            return "URL scheme must be http or https"
 
         hostname = parsed.hostname
         if not hostname:
             return "URL must have a hostname"
+
+        # A private endpoint explicitly declared by the Agent's provider config
+        # is trusted only at its exact scheme/host/port origin.  This exception
+        # does not open adjacent LAN hosts or ports.
+        if _url_origin(url) in allowed_private_origins:
+            return None
 
         # Check blocked domains
         hostname_lower = hostname.lower()
@@ -95,7 +125,7 @@ def _validate_url(url: str) -> str | None:
         # Resolve and check IP
         try:
             addr_info = socket.getaddrinfo(hostname, None)
-            for family, _, _, _, addr in addr_info:
+            for _family, _, _, _, addr in addr_info:
                 ip = ipaddress.ip_address(addr[0])
                 for cidr in BLOCKED_IP_RANGES:
                     try:
@@ -203,8 +233,11 @@ class HTTPRequestTool(Tool):
     def __init__(
         self,
         config: HTTPConfig | None = None,
+        *,
+        allowed_private_origins: Iterable[str] = (),
     ) -> None:
         self.config = config or HTTPConfig()
+        self.allowed_private_origins = _normalize_origins(allowed_private_origins)
         self._client: Any = None
 
     def _get_client(self) -> Any:
@@ -216,8 +249,10 @@ class HTTPRequestTool(Tool):
                     timeout=self.config.max_timeout,
                     follow_redirects=False,
                 )
-            except ImportError:
-                raise ImportError("httpx is required. Install with: pip install httpx")
+            except ImportError as error:
+                raise ImportError(
+                    "httpx is required. Install with: pip install httpx"
+                ) from error
         return self._client
 
     @property
@@ -281,7 +316,7 @@ class HTTPRequestTool(Tool):
             return ToolResult("", self.name, "Error: url must be a string", is_error=True)
 
         # Validate URL for SSRF
-        error = _validate_url(url)
+        error = _validate_url(url, self.allowed_private_origins)
         if error:
             return ToolResult("", self.name, f"Error: {error}", is_error=True)
 
@@ -318,7 +353,7 @@ class HTTPRequestTool(Tool):
                     break
 
                 next_url = urljoin(str(response.url), redirect_url)
-                error = _validate_url(next_url)
+                error = _validate_url(next_url, self.allowed_private_origins)
                 if error:
                     return ToolResult("", self.name, f"Error: Redirect blocked - {error}", is_error=True)
 

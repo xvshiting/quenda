@@ -31,7 +31,7 @@ uncertainty, failed attempts, and incomplete verification.
 ## Instructions and memory
 
 The Host composes this file with task methodology, communication guidance, the
-active mode, SOUL.md, USER.md, MEMORY.md, and activated skills. Modes sharpen
+active mode, IDENTITY.md, SOUL.md, USER.md, MEMORY.md, and activated skills. Modes sharpen
 focus but do not replace the invariants above.
 
 Apply the user's current task and the most specific relevant guidance while

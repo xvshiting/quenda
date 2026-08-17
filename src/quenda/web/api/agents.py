@@ -26,6 +26,7 @@ class CreateAgentRequest(BaseModel):
     tools: List[str] = []
     model: Optional[str] = None
     config_yaml: Optional[str] = None  # Raw YAML config
+    source: Optional[str] = None
 
 
 class UpdateAgentRequest(BaseModel):

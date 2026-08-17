@@ -1790,7 +1790,7 @@ class RebindCommand:
         """Show rebind information.
 
         Note: Full rebind requires session restart because it affects
-        model binding, tool grants, and sandbox configuration.
+        model binding, tool grants, and execution backend configuration.
         """
         # Get current binding info if available
         binding = context.host_binding
@@ -1803,7 +1803,7 @@ class RebindCommand:
                     "Rebind refreshes capability-level configuration:\n"
                     "  • Model/provider binding\n"
                     "  • Tool grants (bundles and includes)\n"
-                    "  • Sandbox configuration\n"
+                    "  • Execution backend and trust requirements\n"
                     "  • Policy bindings\n\n"
                     "**Note:** Full rebind requires restarting the session.\n"
                     "Exit the REPL and start a new session to pick up config changes.\n\n"
@@ -1817,7 +1817,10 @@ class RebindCommand:
         lines.append(f"  Provider: `{binding.provider_name}`")
         lines.append(f"  Model: `{binding.model_name}`")
         lines.append(f"  Tools: {len(binding.tools)} granted")
-        lines.append(f"  Sandbox: {len(binding.sandbox_config.allowed_modules)} allowed modules")
+        lines.append(
+            f"  Execution: `{binding.execution.backend}` "
+            f"(isolated={binding.execution.isolated})"
+        )
         lines.append(f"  Active skills: {len(binding.active_skill_names)}")
 
         lines.append("\n**To Rebind:**")

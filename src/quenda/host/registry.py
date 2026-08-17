@@ -12,13 +12,14 @@ This is a Host concern, not Runtime or Kernel.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from quenda.kernel.tool import Tool
     from quenda.host.skill.resources import ResourceResolver
+    from quenda.kernel.tool import Tool
 
 
 @dataclass
@@ -28,13 +29,13 @@ class NamedToolSpec:
 
     Attributes:
         name: Unique tool name.
-        source: Where the tool came from (builtin, agent_local, skill).
+        source: Where the tool came from (framework, builtin, agent_local, skill).
         tool: The Tool instance (if already instantiated).
         factory: Optional factory function to create the tool with context.
     """
 
     name: str
-    source: str  # "builtin", "agent_local", "skill"
+    source: str  # "framework", "builtin", "agent_local", "skill"
     tool: Tool | None = None
     factory: Callable[[], Tool] | Callable[[Path], Tool] | None = None
 
@@ -188,9 +189,9 @@ class ToolRegistryBuilder:
             ValueError: If any tool name is already registered.
         """
         from quenda.tools.skill_resources import (
-            ReadSkillResourceTool,
-            ListSkillResourcesTool,
             ExecuteSkillAssetTool,
+            ListSkillResourcesTool,
+            ReadSkillResourceTool,
         )
 
         self.register(

@@ -24,7 +24,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
-    sourcemap: true,
+    outDir: '../src/quenda/web/static',
+    emptyOutDir: true,
+    sourcemap: false,
   },
 })

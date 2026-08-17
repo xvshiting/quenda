@@ -6,22 +6,24 @@ ADR-032: Host Service as Interface-neutral Control Interface
 
 from __future__ import annotations
 
-import pytest
 import asyncio
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
-from quenda.host.service import HostService, ActiveRun, ActiveSession
+import pytest
+
+from quenda.host.service import ActiveRun, ActiveSession, HostService
 from quenda.host.service_types import (
     CreateSessionRequest,
-    RequestContext,
-    RunStatus,
-    StartRunRequest,
-    SessionInfo,
-    RunHandle,
     EventEnvelope,
     InterruptRequest,
+    RequestContext,
+    RunHandle,
+    RunStatus,
+    SessionInfo,
+    StartRunRequest,
 )
+from quenda.runtime.events import PromptCacheObserved
 
 
 class TestHostServiceSessionManagement:
@@ -177,6 +179,15 @@ class TestHostServiceRunManagement:
 
         # Verify run completed
         assert handle.status in (RunStatus.COMPLETED, RunStatus.FAILED)
+        cache_event = next(
+            envelope.event
+            for envelope in events
+            if isinstance(envelope.event, PromptCacheObserved)
+        )
+        assert cache_event.assembly_digest
+        assert cache_event.stable_prefix_digest
+        assert cache_event.first_changed_source_id is None
+        assert cache_event.estimated_prompt_tokens > 0
         
         # Should have at least some events (RunStarted, etc.)
         # Note: This may fail if no model is configured, which is expected

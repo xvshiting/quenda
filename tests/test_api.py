@@ -262,10 +262,9 @@ class TestConvenienceAPI:
 
         assert result == "Vision response"
         assert model.last_messages is not None
-        assert len(model.last_messages) == 2
+        assert len(model.last_messages) == 1
         content = model.last_messages[0].content
         assert model.last_messages[0].role == "user"
-        assert model.last_messages[1].role == "assistant"
         assert isinstance(content, list)
         assert isinstance(content[0], TextContent)
         assert isinstance(content[1], ImageContent)
@@ -310,5 +309,6 @@ class TestConvenienceAPI:
         assert called.timeout_seconds == 5.0
         assert called.max_attempts == 2
         assert (retrying.attempt, retrying.max_attempts) == (2, 2)
+        assert retrying.error_message == "Request timed out"
         assert error.model_id == "slow-model"
         assert error.duration_ms >= 0

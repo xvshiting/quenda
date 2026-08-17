@@ -76,6 +76,7 @@ class ModelRetrying(Event):
     max_attempts: int = 1
     delay_seconds: float = 0.0
     error_type: str = ""
+    error_message: str = ""
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,19 @@ class ModelResponded(Event):
     tool_arguments: list[dict[str, Any]] = field(default_factory=list)
     stop_reason: str = ""
     duration_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class ModelResponseDelta(Event):
+    """Incremental visible text from the current model invocation."""
+
+    type: Literal["model_response_delta"] = "model_response_delta"
+    content: str = ""
 
 
 @dataclass(frozen=True)
@@ -306,10 +320,50 @@ class ModelRouted(Event):
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class PromptCacheObserved(Event):
+    """Estimated prompt-prefix reuse for one Host-prepared Run snapshot."""
+
+    type: Literal["prompt_cache_observed"] = "prompt_cache_observed"
+    assembly_digest: str = ""
+    stable_prefix_digest: str = ""
+    segment_count: int = 0
+    stable_prefix_segment_count: int = 0
+    reused_prefix_segment_count: int = 0
+    estimated_prompt_tokens: int = 0
+    estimated_stable_prefix_tokens: int = 0
+    estimated_reused_prefix_tokens: int = 0
+    first_changed_source_id: str | None = None
+    change_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class EvolutionCompleted(Event):
+    """Reports one isolated post-Run evolution evaluation."""
+
+    type: Literal["evolution_completed"] = "evolution_completed"
+    triggered: bool = False
+    write_mode: str = "disabled"
+    proposal_count: int = 0
+    committed_count: int = 0
+    staged_count: int = 0
+    rejected_count: int = 0
+
+
+@dataclass(frozen=True)
+class EvolutionFailed(Event):
+    """Reports an isolated evolution failure without failing the completed Run."""
+
+    type: Literal["evolution_failed"] = "evolution_failed"
+    error_type: str = ""
+    error_message: str = ""
+
+
 # Union type for all events
 AnyEvent = (
-    RunStarted | RunCompleted | ModelCalled | ModelRetrying | ModelResponded |
+    RunStarted | RunCompleted | ModelCalled | ModelRetrying | ModelResponseDelta | ModelResponded |
     ToolPhaseStarted | ToolExecuted | PermissionRequested | PermissionDecided |
     ErrorOccurred | RunInterrupted | InteractionRequested | RunPaused | RunTerminated |
     CompressionStarted | CompressionCompleted | ModelRouted
+    | PromptCacheObserved | EvolutionCompleted | EvolutionFailed
 )

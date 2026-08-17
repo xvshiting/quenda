@@ -30,6 +30,8 @@ _SCAFFOLD_DIRS = (
     "workspace",
 )
 _RUNTIME_STATE_NAMES = frozenset({"agent.yaml", "artifacts", "memory", "sessions", "workspace"})
+_IDENTITY_START = "<!-- quenda:managed-agent-identity:start -->"
+_IDENTITY_END = "<!-- quenda:managed-agent-identity:end -->"
 _CopyIgnore = Callable[[str, list[str]], set[str]]
 
 
@@ -86,6 +88,13 @@ class AgentHomeManager:
             raise
         return AgentHome(name=name, path=target, created_from=source_label)
 
+    def ensure(self, name: str, *, source: str | Path) -> AgentHome:
+        """Return an installed Agent Home, copying the source on first use."""
+        existing = self.get(name)
+        if existing is not None:
+            return existing
+        return self.create(name, source=source)
+
     def get(self, name: str) -> AgentHome | None:
         """Return one valid Agent Home by name."""
         path = self.home_path(name)
@@ -97,6 +106,24 @@ class AgentHomeManager:
             path=path,
             created_from=metadata.get("created_from"),
         )
+
+    def prepare(self, name: str) -> AgentHome | None:
+        """Resolve an Agent Home and synchronize its canonical prompt identity.
+
+        Existing homes may predate managed identity metadata or may have been
+        copied from a package whose body still names the source agent. This
+        operation is intentionally called at the launch seam, not during list
+        or discovery, so read-only management remains side-effect free.
+        """
+        home = self.get(name)
+        if home is None:
+            return None
+        agent_md = home.path / "AGENT.md"
+        content = agent_md.read_text(encoding="utf-8")
+        updated = self._with_agent_name(content, name)
+        if updated != content:
+            agent_md.write_text(updated, encoding="utf-8")
+        return home
 
     def list(self) -> list[AgentHome]:
         """Discover valid Agent Homes from the filesystem."""
@@ -123,6 +150,13 @@ class AgentHomeManager:
             if not resolved.is_dir() or not (resolved / "AGENT.md").is_file():
                 raise ValueError(f"Agent source must contain AGENT.md: {source}")
             return resolved
+
+        try:
+            installed = self.get(raw)
+        except ValueError:
+            installed = None
+        if installed is not None:
+            return installed.path.resolve()
 
         builtin = find_builtin_agent(raw)
         if builtin is not None:
@@ -176,6 +210,10 @@ memory stored in your Agent Home.
             )
 
         defaults = {
+            "IDENTITY.md": (
+                "# Identity\n\nDescribe this agent's role, responsibilities, "
+                "and operating scope here.\n"
+            ),
             "SOUL.md": "# Soul\n\nDescribe this agent's personality and values here.\n",
             "USER.md": "# User\n\nRecord stable user preferences here.\n",
             "MEMORY.md": "# Memory\n\nStore concise, durable memories here.\n",
@@ -190,22 +228,42 @@ memory stored in your Agent Home.
     def _with_agent_name(content: str, name: str) -> str:
         """Return AGENT.md content with a canonical frontmatter name."""
         if not content.startswith("---"):
-            return f"---\nname: {name}\n---\n\n{content}"
+            frontmatter = f"name: {name}"
+            body = content
+        else:
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                raise ValueError("Source AGENT.md has unclosed frontmatter")
+            frontmatter = parts[1].strip()
+            if re.search(r"(?m)^name:\s*.*$", frontmatter):
+                frontmatter = re.sub(
+                    r"(?m)^name:\s*.*$",
+                    f"name: {name}",
+                    frontmatter,
+                    count=1,
+                )
+            else:
+                frontmatter = f"name: {name}\n{frontmatter}" if frontmatter else f"name: {name}"
+            body = parts[2].lstrip("\n")
 
-        parts = content.split("---", 2)
-        if len(parts) < 3:
-            raise ValueError("Source AGENT.md has unclosed frontmatter")
-        frontmatter = parts[1].strip()
-        if re.search(r"(?m)^name:\s*.*$", frontmatter):
-            frontmatter = re.sub(
-                r"(?m)^name:\s*.*$",
-                f"name: {name}",
-                frontmatter,
+        identity = (
+            f"{_IDENTITY_START}\n"
+            "## Canonical Agent Identity\n\n"
+            f"Your canonical Agent name is **`{name}`** and this Agent Home is "
+            f"named **`agent-{name}`**. Any other Agent name in copied source "
+            "content describes its origin, not your current identity.\n"
+            f"{_IDENTITY_END}"
+        )
+        if _IDENTITY_START in body and _IDENTITY_END in body:
+            body = re.sub(
+                rf"{re.escape(_IDENTITY_START)}.*?{re.escape(_IDENTITY_END)}",
+                identity,
+                body,
                 count=1,
+                flags=re.DOTALL,
             )
         else:
-            frontmatter = f"name: {name}\n{frontmatter}" if frontmatter else f"name: {name}"
-        body = parts[2].lstrip("\n")
+            body = f"{identity}\n\n{body}"
         return f"---\n{frontmatter}\n---\n\n{body}"
 
     @staticmethod

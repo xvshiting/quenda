@@ -77,7 +77,27 @@ Skills are discovered in this priority order:
 | 2 | `<workspace>/.quenda/skills/` | workspace | Project-shared skills |
 | 3 | `<workspace>/.agents/skills/` | workspace | Cross-client project skills |
 | 4 | `<agent-package>/skills/` | agent_package | Bundled with agent |
-| 5 (lowest) | `~/.quenda/skills/` | user | Shared across workspaces |
+| 5 | `~/.agents/skills/` | user | Cross-client user skills |
+| 6 (lowest) | `${QUENDA_HOME:-~/.quenda}/skills/` | user | Quenda-specific skills shared across workspaces |
+
+Every skills root is searched recursively. Both of these layouts are valid:
+
+```text
+skills/code-review/SKILL.md
+skills/engineering/review/code-review/SKILL.md
+```
+
+Category directories can be nested to any depth. The `name` in `SKILL.md`
+frontmatter, rather than the category path, is the Skill's lookup and activation
+identity. Once discovery finds a directory containing `SKILL.md`, that directory
+is treated as a package boundary and discovery does not search its resources for
+additional Skills. A symlink directly to a Skill package is supported; symlinked
+category trees are not recursively followed.
+
+Discovered local Skill packages are registered by the Host as session-scoped
+read-only roots. Reading `SKILL.md` or files below that package does not prompt
+again even when the package lives outside the project workspace. This never
+grants write, delete, shell execution, or network access.
 
 ### User-Workspace Skills
 
@@ -144,12 +164,50 @@ skills:
 - Removed when agent is uninstalled
 - No pollution of user/workspace environment
 
+Quenda Code bundles `quenda-framework-authoring` under the nested
+`skills/framework/` category. It teaches the Agent how to select a configuration
+or extension seam, while `quenda capabilities --json` remains the live source
+of framework facts. Keeping those responsibilities separate prevents a static
+Skill from drifting as the framework changes. After editing, the Skill calls
+the read-only `validate_agent_package` framework Tool; shell workflows use
+`quenda agent validate <target> --json` through the same validation module.
+Chat-driven configuration uses the separate `apply_agent_config_patch`
+framework Tool: preview and validate first, then commit the same revision only
+after Host-mediated user approval.
+The authoring workflow first calls `explain_agent_config` for a normalized,
+credential-free view instead of teaching the model to infer effective state
+from raw YAML.
+
+## Skill Evolution Revisions
+
+`quenda.evolution.SkillEvolutionStore` is the framework seam for changing an
+installed Skill. A caller supplies the active Skill directory and a dedicated
+state directory outside every configured Skill discovery root. `stage()` copies
+the package into quarantine, applies package-relative text replacements, and
+records static validation results without touching the active revision.
+`commit()` requires an explicit approver and rejects stale base revisions;
+`rollback()` activates a content-addressed historical snapshot as a new audited
+revision. `proposals()` and `history()` make both queues inspectable after a
+restart.
+
+Executable changes receive an explicit review flag. Python files are compiled
+for syntax only and are never imported or run during static validation. Running
+candidate scripts or tests is intentionally deferred to an isolated execution
+backend; local Python or shell policy checks are not presented as a sandbox.
+
+Active Host bindings use an explicit Skill activation epoch. Normal prompt
+refresh may update the catalog but continues rendering and resolving resources
+from the content-addressed snapshots pinned at that epoch. Call
+`advance_skill_activation_epoch(binding, names)` (or explicitly request Skill
+activation through the running Agent) to opt the binding into current on-disk
+revisions. A new/rebound Session pins current revisions automatically.
+
 ### User Skills
 
 Shared skills in user's home directory:
 
 ```
-~/.quenda/skills/<skill-name>/SKILL.md
+${QUENDA_HOME:-~/.quenda}/skills/<skill-name>/SKILL.md
 ```
 
 These are shared across all workspaces for this user.
@@ -160,14 +218,18 @@ Skills are defined in `SKILL.md` files within a skill directory:
 
 ```
 .quenda/skills/
-└── code-review/
-    ├── SKILL.md
-    ├── references/
-    │   └── style-guide.md
-    ├── templates/
-    │   └── review-report.md
-    └── scripts/
-        └── analyze.py
+└── engineering/              # Optional category directories
+    └── review/
+        └── code-review/
+            ├── SKILL.md
+            ├── references/
+            │   └── style-guide.md
+            ├── resources/              # Generic read-only supporting files
+            │   └── setup-guide.md
+            ├── templates/
+            │   └── review-report.md
+            └── scripts/
+                └── analyze.py
 ```
 
 ### SKILL.md Schema

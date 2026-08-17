@@ -2,7 +2,9 @@
 Tests for Runtime layer.
 """
 
+import asyncio
 import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,15 +19,17 @@ from quenda.runtime.compression import (
 )
 from quenda.runtime import (
     AgentConfig,
+    CancellationToken,
     ErrorOccurred,
     InteractionRequested,
     JsonlTraceSink,
     NullTraceSink,
     Run,
     RunCompleted,
+    RunInterrupted,
+    RunPaused,
     RunStarted,
     RunStatus,
-    RunPaused,
     RunTerminated,
     SessionState,
     ToolExecuted,
@@ -330,6 +334,36 @@ class TestRun:
         # Should have started and completed
         assert any(isinstance(e, RunStarted) for e in events)
         assert any(isinstance(e, RunCompleted) for e in events)
+
+    @pytest.mark.asyncio
+    async def test_cancelling_one_run_does_not_interrupt_another_run(self) -> None:
+        """Cancellation belongs to one Run rather than the whole process."""
+        agent = AgentConfig(name="test")
+        first_token = CancellationToken()
+        second_token = CancellationToken()
+        first = Run.create(
+            agent,
+            SessionState.create("test"),
+            FakeModel([ModelResponse(content="first", stop_reason="end_turn")]),
+            cancellation_token=first_token,
+        )
+        second = Run.create(
+            agent,
+            SessionState.create("test"),
+            FakeModel([ModelResponse(content="second", stop_reason="end_turn")]),
+            cancellation_token=second_token,
+        )
+
+        first_token.cancel()
+        first_events = await first.execute_to_completion("first request")
+        second_events = await second.execute_to_completion("second request")
+
+        assert (
+            any(isinstance(event, RunInterrupted) for event in first_events),
+            first.status,
+            any(isinstance(event, RunCompleted) for event in second_events),
+            second.status,
+        ) == (True, RunStatus.INTERRUPTED, True, RunStatus.COMPLETED)
 
     @pytest.mark.asyncio
     async def test_run_with_tool_call(self) -> None:
@@ -2029,6 +2063,61 @@ class TestSessionPolicyBinding:
         assert session.tool_selection_policy is selection_policy
         assert session.tool_result_processing_policy is result_policy
         assert session.termination_policy is termination_policy
+
+    @pytest.mark.asyncio
+    async def test_session_passes_its_run_cancellation_token(self) -> None:
+        """Callers can cancel one Session send without process-global state."""
+        from quenda.runtime.agent import Agent
+
+        agent = Agent(
+            name="test",
+            model=FakeModel([ModelResponse(content="unused", stop_reason="end_turn")]),
+        )
+        session = agent.open_session()
+        token = CancellationToken()
+        token.cancel()
+        events: list[object] = []
+
+        result = await session.send(
+            "cancelled request",
+            cancellation_token=token,
+            on_event=events.append,
+        )
+
+        assert (result, any(isinstance(event, RunInterrupted) for event in events)) == (
+            "",
+            True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_session_rejects_concurrent_sends(self) -> None:
+        """Direct Runtime callers cannot create two writers for one Session."""
+        from quenda.runtime.agent import Agent
+
+        class FirstCallBlockingModel:
+            def __init__(self) -> None:
+                self.started = threading.Event()
+                self.release = threading.Event()
+                self.calls = 0
+
+            def invoke(self, messages, *, tools):  # type: ignore[no-untyped-def]
+                self.calls += 1
+                if self.calls == 1:
+                    self.started.set()
+                    self.release.wait(timeout=2)
+                return ModelResponse(content="done", stop_reason="end_turn")
+
+        model = FirstCallBlockingModel()
+        session = Agent(name="test", model=model).open_session()  # type: ignore[arg-type]
+        first = asyncio.create_task(session.send("first"))
+        await asyncio.to_thread(model.started.wait, 1)
+
+        try:
+            with pytest.raises(RuntimeError, match="already has an active Run"):
+                await session.send("second")
+        finally:
+            model.release.set()
+            await first
 
     @pytest.mark.asyncio
     async def test_session_policies_flow_to_run(self) -> None:

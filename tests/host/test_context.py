@@ -25,6 +25,35 @@ class MutableClock:
 class TestContextRebuilder:
     """Tests for ContextRebuilder."""
 
+    def test_rebuild_always_identifies_agent_home_and_workspace(
+        self, tmp_path: Path
+    ) -> None:
+        agent_home = tmp_path / "agent-codertest"
+        workspace = agent_home / "workspace"
+        agent_home.mkdir()
+        workspace.mkdir()
+
+        rebuilder = ContextRebuilder(
+            agent_name="codertest",
+            agent_version="0.1.0",
+            agent_md_content="You are a coding agent.",
+            agent_instructions=[],
+            agent_package_path=agent_home,
+            workspace_path=workspace,
+            workspace_id="ws_codertest",
+            user=User(id="test-user"),
+        )
+
+        result = rebuilder.rebuild(
+            provider="jdcloud", model="GLM-5", session_id="ses_test"
+        )
+
+        assert "Current Agent Identity" in result
+        assert "Agent name: codertest" in result
+        assert f"Agent home: {agent_home.resolve()}" in result
+        assert f"Current workspace: {workspace.resolve()}" in result
+        assert "Do not infer another Agent Home" in result
+
     def test_rebuild_refreshes_date_across_midnight(self) -> None:
         clock = MutableClock(
             datetime(2026, 7, 25, 23, 59, tzinfo=ZoneInfo("Asia/Shanghai"))

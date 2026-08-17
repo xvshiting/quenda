@@ -14,10 +14,13 @@ that these are capability interfaces that Runtime depends on, not just any proto
 Key principle: Host decides, Runtime executes, Kernel is unaware.
 """
 
-from quenda.runtime.ports.storage import Storage
+from quenda.runtime.ports.after_run import AfterRunContext, AfterRunHandler
 from quenda.runtime.ports.compression import CompressionPolicy
+from quenda.runtime.ports.storage import Storage
 
 __all__ = [
+    "AfterRunContext",
+    "AfterRunHandler",
     "Storage",
     "CompressionPolicy",
 ]

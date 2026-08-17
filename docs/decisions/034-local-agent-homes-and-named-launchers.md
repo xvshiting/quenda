@@ -64,10 +64,15 @@ quenda <name>
 quenda agent run <name>
 ```
 
-Without `--workspace`, execution uses the home-local `workspace/`. With an
-explicit workspace, identity and capabilities still come from the Agent Home
-while tools operate in the selected existing project. Quenda does not silently
-create a misspelled external workspace path.
+For local CLI launches, execution uses the process's current directory unless
+`--workspace` explicitly selects another existing directory. Identity and
+capabilities still come from the Agent Home while tools operate in that project.
+Quenda does not silently create a misspelled external workspace path.
+
+The home-local `workspace/` remains the Agent's default resource when an
+interface has no ambient project directory. For example, Web may use it when a
+session does not select a registered workspace. This is a fallback resource,
+not permission for the CLI to discard its current working directory.
 
 `QUENDA_HOME` may replace `~/.quenda` for tests and alternate Host setups.
 Server Hosts may map the same logical Agent Home interface to another store;

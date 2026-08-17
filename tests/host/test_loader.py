@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from quenda.host import load_agent_from_markdown
-from quenda.host.loader import CompressionConfig
+from quenda.host.loader import CompressionConfig, EvolutionConfig
 
 
 def test_compression_config_coerces_yaml_numeric_strings() -> None:
@@ -31,6 +31,26 @@ def test_compression_config_parses_microcompaction_budget() -> None:
 
     assert config.microcompact_trigger_tokens == 42_000
     assert config.microcompact_keep_last_tool_results == 6
+
+
+def test_evolution_config_parses_trigger_and_write_policy() -> None:
+    config = EvolutionConfig.from_dict(
+        {
+            "enabled": "true",
+            "write_mode": "review",
+            "every_n_user_turns": "3",
+            "on_explicit_signal": "false",
+            "min_confidence": "0.9",
+            "max_proposals": "1",
+        }
+    )
+
+    assert config.enabled is True
+    assert config.write_mode == "review"
+    assert config.every_n_user_turns == 3
+    assert config.on_explicit_signal is False
+    assert config.min_confidence == 0.9
+    assert config.max_proposals == 1
 from quenda.runtime import AgentConfig
 
 

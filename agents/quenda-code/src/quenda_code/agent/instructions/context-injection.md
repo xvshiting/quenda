@@ -8,7 +8,7 @@ current prompt or can be found in the workspace.
 
 - Quenda's framework contract and current temporal context.
 - This agent's `AGENT.md` and the instruction files declared in `config.yaml`.
-- For a named Agent Home, non-empty `SOUL.md`, `USER.md`, and `MEMORY.md` beside
+- For a named Agent Home, non-empty `IDENTITY.md`, `SOUL.md`, `USER.md`, and `MEMORY.md` beside
   `agent.yaml`.
 - User and project instruction files configured by `instruction_files`. The
   default filename is `QUENDA.md`; a project copy may live at the workspace root

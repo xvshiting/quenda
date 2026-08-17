@@ -2,7 +2,6 @@
 Tests for instruction layer (ADR-007).
 """
 
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,8 +14,10 @@ from quenda.host.instructions import (
     TemplateContext,
     InstructionComposer,
     resolve_instruction_sources,
+    resolve_identity_files,
+    resolve_prompt_sources,
 )
-from quenda.host.loader import AgentPackage, AgentConfigYaml, load_agent_package
+from quenda.host.loader import AgentConfigYaml, load_agent_package
 from quenda.host.identity import User
 from quenda.runtime.temporal import TemporalContext
 
@@ -57,8 +58,69 @@ class TestInstructionSource:
 def test_framework_contract_is_runtime_guidance_not_embedded_documentation() -> None:
     assert "user-workspace skills" in FRAMEWORK_CONTRACT
     assert "loaded on demand" in FRAMEWORK_CONTRACT
+    assert "providers:" in FRAMEWORK_CONTRACT
+    assert "type: llama-server" in FRAMEWORK_CONTRACT
+    assert "models.default" in FRAMEWORK_CONTRACT
+    assert "apply_agent_config_patch" in FRAMEWORK_CONTRACT
+    assert "explain_agent_config" in FRAMEWORK_CONTRACT
+    assert "exact scheme/host/port" in FRAMEWORK_CONTRACT
+    assert "any number of category directories" in FRAMEWORK_CONTRACT
     assert "SKILL.md Schema" not in FRAMEWORK_CONTRACT
-    assert len(FRAMEWORK_CONTRACT) < 1_800
+    assert len(FRAMEWORK_CONTRACT) < 2_400
+
+
+def test_prompt_source_resolution_orders_mode_and_deduplicates_extensions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    agent_home = tmp_path / "agent"
+    instruction_dir = agent_home / "instructions"
+    instruction_dir.mkdir(parents=True)
+    (instruction_dir / "mode-code.md").write_text(
+        "Code mode.", encoding="utf-8"
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    project_instruction = workspace / "QUENDA.md"
+    project_instruction.write_text("Project source.", encoding="utf-8")
+
+    sources = resolve_prompt_sources(
+        agent_package_path=agent_home,
+        agent_name="test-agent",
+        agent_md_content="Agent source.",
+        agent_instructions=[],
+        workspace_path=workspace,
+        user=User(id="test-user"),
+        workspace_id="ws-test",
+        mode="code",
+        additional_sources=[
+            InstructionSource(
+                scope=InstructionScope.WORKSPACE_AGENT,
+                content="Duplicate supplied by an extension.",
+                path=project_instruction,
+            )
+        ],
+    )
+
+    contents = [source.content for source in sources]
+    assert contents.index("Code mode.") < contents.index("Project source.")
+    assert "Duplicate supplied by an extension." not in contents
+    assert [source.scope for source in sources] == sorted(
+        source.scope for source in sources
+    )
+
+
+def test_identity_and_soul_are_independent_sources(
+    tmp_path: Path,
+) -> None:
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("legacy", encoding="utf-8")
+    assert resolve_identity_files(tmp_path) == (soul,)
+
+    identity = tmp_path / "IDENTITY.md"
+    identity.write_text("preferred", encoding="utf-8")
+    assert resolve_identity_files(tmp_path) == (identity, soul)
 
 
 class TestTemplateContext:
@@ -271,13 +333,15 @@ class TestResolveInstructionSources:
             user=user,
         )
 
-        # Should have FRAMEWORK + AGENT.md + workspace INSTRUCTIONS.md
-        assert len(sources) == 3
-        assert sources[0].scope == InstructionScope.FRAMEWORK
-        assert sources[1].scope == InstructionScope.AGENT_PACKAGE
-        assert sources[1].content == "Base prompt."
-        assert sources[2].scope == InstructionScope.WORKSPACE
-        assert sources[2].content == "Workspace-specific rules."
+        assert [source.scope for source in sources] == [
+            InstructionScope.FRAMEWORK,
+            InstructionScope.FRAMEWORK,
+            InstructionScope.AGENT_PACKAGE,
+            InstructionScope.WORKSPACE,
+        ]
+        assert "Current Agent Identity" in sources[1].content
+        assert sources[2].content == "Base prompt."
+        assert sources[3].content == "Workspace-specific rules."
 
     def test_default_quenda_md_loads_from_all_three_user_scopes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -313,7 +377,17 @@ class TestResolveInstructionSources:
             user=User(id="user_123"),
         )
 
-        assert [source.content for source in sources[2:]] == [
+        scoped_contents = [
+            source.content
+            for source in sources
+            if source.scope
+            in {
+                InstructionScope.USER_GLOBAL,
+                InstructionScope.WORKSPACE,
+                InstructionScope.USER_WORKSPACE,
+            }
+        ]
+        assert scoped_contents == [
             "User rules.",
             "Project rules.",
             "Project .quenda rules.",
@@ -343,7 +417,11 @@ class TestResolveInstructionSources:
             instruction_files=["TEAM.md", "AGENTS.md"],
         )
 
-        assert [source.content for source in sources[2:]] == ["TEAM.md", "AGENTS.md"]
+        assert [
+            source.content
+            for source in sources
+            if source.scope is InstructionScope.WORKSPACE
+        ] == ["TEAM.md", "AGENTS.md"]
 
     def test_resolve_without_workspace_instructions(self, tmp_path: Path) -> None:
         """Resolve without workspace instructions (file doesn't exist)."""
@@ -362,10 +440,11 @@ class TestResolveInstructionSources:
             user=user,
         )
 
-        # Should have FRAMEWORK + AGENT.md
-        assert len(sources) == 2
-        assert sources[0].scope == InstructionScope.FRAMEWORK
-        assert sources[1].scope == InstructionScope.AGENT_PACKAGE
+        assert [source.scope for source in sources] == [
+            InstructionScope.FRAMEWORK,
+            InstructionScope.FRAMEWORK,
+            InstructionScope.AGENT_PACKAGE,
+        ]
 
     def test_skill_catalog_not_injected_by_default(self, tmp_path: Path) -> None:
         """Discovered skills stay host-side unless explicitly requested."""

@@ -1,5 +1,6 @@
 """Integration tests for Quenda Code's context and memory extensions."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from quenda.host.extensions import (
@@ -55,6 +56,7 @@ def test_profile_provider_loads_soul_user_and_core_memory(tmp_path: Path) -> Non
 
     assert loaded == 1
     assert [source.path.name for source in sources if source.path] == [
+        "IDENTITY.md",
         "SOUL.md",
         "USER.md",
         "MEMORY.md",
@@ -104,7 +106,35 @@ def test_profile_provider_skips_missing_private_files(tmp_path: Path) -> None:
 
     sources = registry.provide(ContextProviderRequest(extension=context))
 
-    assert [source.path.name for source in sources if source.path] == ["SOUL.md"]
+    assert [source.path.name for source in sources if source.path] == [
+        "IDENTITY.md",
+        "SOUL.md",
+    ]
+
+
+def test_profile_provider_loads_identity_and_soul_independently(tmp_path: Path) -> None:
+    context = extension_context(tmp_path)
+    registry = ContextProviderRegistry()
+    load_agent_context_providers(context.agent_package_path, registry)
+    package = tmp_path / "identity-package"
+    package.mkdir()
+    (package / "SOUL.md").write_text("Legacy soul.", encoding="utf-8")
+    (package / "IDENTITY.md").write_text(
+        "Preferred identity.", encoding="utf-8"
+    )
+
+    sources = registry.provide(
+        ContextProviderRequest(
+            extension=replace(context, agent_package_path=package)
+        )
+    )
+
+    assert [source.path.name for source in sources if source.path] == [
+        "IDENTITY.md",
+        "SOUL.md",
+    ]
+    assert "Preferred identity." in sources[0].content
+    assert "Legacy soul." in sources[1].content
 
 
 def test_memory_tools_search_and_get_without_index(tmp_path: Path) -> None:

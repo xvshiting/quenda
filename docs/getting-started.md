@@ -107,8 +107,24 @@ model = registry.get_model("dashscope", "qwen-max")
 | `openrouter` | `anthropic/claude-3.5-sonnet`, `openai/gpt-4o` | `OPENROUTER_API_KEY` |
 | `ollama` | `llama3`, `mistral`, `qwen2` | local |
 
-For a custom provider that uses an OpenAI-compatible or Anthropic-compatible
-API, the simplest path is to register a `ProviderSpec`:
+For an Agent package, the simplest path is declarative `config.yaml`:
+
+```yaml
+providers:
+  local-llama:
+    type: llama-server
+    url: http://127.0.0.1:8080/v1
+    models:
+      - id: "qwen3.5:9b"
+        name: Local Qwen
+
+models:
+  default: local-llama/qwen3.5:9b
+```
+
+Custom OpenAI-compatible providers use `type: custom`, plus `url`, optional
+`key` (a direct value or `${ENV_VAR}`), and a model list. For programmatic
+registration, use `ProviderSpec`:
 
 ```python
 from quenda.providers import ProviderSpec, ModelSpec, get_provider_registry
@@ -306,7 +322,7 @@ from quenda.tools import PythonExecutionTool
 agent = Agent(
     name="code-assistant",
     tools=[
-        PythonExecutionTool(),  # workspace is optional; sandboxed execution
+        PythonExecutionTool(),  # workspace is optional; trusted local process
     ],
     model=your_model,
 )

@@ -252,17 +252,11 @@ class ModelRouted(Event):
 ```yaml
 # config.yaml
 models:
-  default:
-    provider: openrouter
-    model: deepseek/deepseek-v3.2
-
-  vision:
-    provider: dashscope
-    model: qwen3-vl-plus
-
-routing:
-  capability_routing: true
-  missing_capability: error  # error | warn | ignore
+  default: openrouter/deepseek/deepseek-v3.2
+  vision: dashscope/qwen3-vl-plus
+  routing:
+    capability_routing: true
+    missing_capability: error  # error | warn | ignore
 ```
 
 ### Routing Behavior

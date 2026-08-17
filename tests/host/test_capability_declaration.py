@@ -4,25 +4,28 @@ Tests for agent capability declaration in config.yaml.
 Tests the MVP for agents requesting tools and execution capabilities.
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from quenda.host.loader import (
     AgentConfigYaml,
+    ExecutionConfig,
     PoliciesConfig,
     PolicySpecConfig,
-    ToolsConfig,
-    ExecutionConfig,
     PythonExecutionConfig,
-    load_agent_policies,
+    ToolsConfig,
     load_agent_package,
+    load_agent_policies,
 )
-from quenda.host.policy_registry import PolicyRegistryBuilder
 from quenda.host.permission_manager import PermissionManager
+from quenda.host.policy_registry import PolicyRegistryBuilder
 from quenda.host.runner import (
+    ExecutionBinding,
+    _resolve_execution_binding,
     _resolve_policy_bindings,
-    _resolve_tools,
     _resolve_sandbox_config,
+    _resolve_tools,
 )
 
 
@@ -57,6 +60,8 @@ class TestExecutionConfig:
     def test_empty_execution_config(self) -> None:
         """Test empty execution config."""
         config = ExecutionConfig.from_dict({})
+        assert config.backend == "local-trusted"
+        assert config.requires_isolation is False
         assert config.python.allowed_modules == []
 
     def test_python_allowed_modules(self) -> None:
@@ -67,6 +72,43 @@ class TestExecutionConfig:
             },
         })
         assert config.python.allowed_modules == ["requests", "httpx"]
+
+    def test_backend_and_isolation_requirement(self) -> None:
+        config = ExecutionConfig.from_dict({
+            "backend": "docker",
+            "requires_isolation": True,
+        })
+
+        assert config.backend == "docker"
+        assert config.requires_isolation is True
+
+
+class TestExecutionBinding:
+    """Execution requests fail closed when their security claim is unavailable."""
+
+    def test_default_is_explicitly_local_and_trusted(self) -> None:
+        assert _resolve_execution_binding(None) == ExecutionBinding(
+            backend="local-trusted",
+            isolated=False,
+            trusted_only=True,
+        )
+
+    def test_local_backend_rejects_isolation_requirement(self) -> None:
+        config = AgentConfigYaml(
+            execution=ExecutionConfig(
+                backend="local-trusted",
+                requires_isolation=True,
+            )
+        )
+
+        with pytest.raises(ValueError, match="does not provide strong isolation"):
+            _resolve_execution_binding(config)
+
+    def test_unavailable_backend_is_rejected_at_binding(self) -> None:
+        config = AgentConfigYaml(execution=ExecutionConfig(backend="docker"))
+
+        with pytest.raises(ValueError, match="Execution backend 'docker' is unavailable"):
+            _resolve_execution_binding(config)
 
 
 class TestPoliciesConfig:
@@ -287,6 +329,21 @@ class TestResolveTools:
         assert "web_fetch" in tool_names
         assert "web_search" not in tool_names
 
+    def test_agent_validation_tool_is_bound_for_real_agent_setup(
+        self, workspace: Path
+    ) -> None:
+        """The current Agent package validator is framework-visible."""
+        tools = _resolve_tools(
+            workspace,
+            AgentConfigYaml(tools=ToolsConfig(bundles=["network"])),
+            agent_package_path=workspace,
+        )
+
+        names = {tool.name for tool in tools}
+        assert "validate_agent_package" in names
+        assert "apply_agent_config_patch" in names
+        assert "explain_agent_config" in names
+
     def test_custom_sandbox_ignored(self, workspace: Path) -> None:
         """Test that custom sandbox config is accepted but ignored.
 
@@ -388,7 +445,7 @@ class TestAgentConfigYamlIntegration:
         assert package.config is not None
         assert package.config.policies.termination is not None
         assert package.config.policies.termination.type == "max_steps"
-        assert package.config.policies.termination.config["max_steps"] == "7"
+        assert package.config.policies.termination.config["max_steps"] == 7
         assert package.config.policies.tool_selection is not None
         assert package.config.policies.tool_selection.config["allowed"] == ["read_file", "search_text"]
 

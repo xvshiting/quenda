@@ -6,9 +6,10 @@ Converts HTML to readable text and extracts main content.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
-import importlib.util
+from collections.abc import Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import override
@@ -16,7 +17,7 @@ from urllib.parse import urljoin
 
 from quenda.kernel.tool import Tool
 from quenda.kernel.types import ToolResult
-from quenda.tools.network.http import _validate_url
+from quenda.tools.network.http import _normalize_origins, _validate_url
 
 
 @dataclass
@@ -256,8 +257,11 @@ class WebFetchTool(Tool):
     def __init__(
         self,
         config: WebFetchConfig | None = None,
+        *,
+        allowed_private_origins: Iterable[str] = (),
     ) -> None:
         self.config = config or WebFetchConfig()
+        self.allowed_private_origins = _normalize_origins(allowed_private_origins)
 
     @property
     @override
@@ -302,7 +306,7 @@ class WebFetchTool(Tool):
         if not isinstance(url, str):
             return ToolResult("", self.name, "Error: url must be a string", is_error=True)
 
-        error = _validate_url(url)
+        error = _validate_url(url, self.allowed_private_origins)
         if error:
             return ToolResult("", self.name, f"Error: {error}", is_error=True)
 
@@ -332,7 +336,7 @@ class WebFetchTool(Tool):
                         break
 
                     next_url = urljoin(str(response.url), redirect_url)
-                    error = _validate_url(next_url)
+                    error = _validate_url(next_url, self.allowed_private_origins)
                     if error:
                         return ToolResult("", self.name, f"Error: Redirect blocked - {error}", is_error=True)
 

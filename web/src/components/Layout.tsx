@@ -6,6 +6,7 @@ export default function Layout() {
     { to: '/agents', icon: Bot, label: 'Agents' },
     { to: '/workspaces', icon: FolderOpen, label: 'Workspaces' },
     { to: '/sessions', icon: MessageSquare, label: 'Sessions' },
+    { to: '/settings', icon: Settings, label: 'Settings' },
   ]
 
   return (
@@ -43,12 +44,8 @@ export default function Layout() {
             ))}
           </nav>
 
-          {/* Footer */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <button className="flex items-center gap-3 w-full px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-              <Settings className="w-5 h-5" />
-              <span>Settings</span>
-            </button>
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500">
+            Gateway-connected
           </div>
         </div>
       </aside>

@@ -34,6 +34,7 @@ from quenda.host.runner import refresh_run_context
 from quenda.kernel.types import ImageContent, ImageRef, ImageSource, TextContent
 
 if TYPE_CHECKING:
+    from quenda.host.prompt import PromptAssembly, PromptCacheObservation
     from quenda.runtime.agent import Agent
     from quenda.runtime.session import Session
     from quenda.runtime.compressor import Compressor
@@ -143,6 +144,7 @@ class ReplRuntime:
         skill_discovery: SkillDiscovery | None = None,
         skill_activator: SkillActivator | None = None,
         workspace_path: Path | None = None,
+        prompt_assembly: PromptAssembly | None = None,
     ) -> None:
         """
         Initialize REPL runtime.
@@ -171,6 +173,7 @@ class ReplRuntime:
         self._skill_discovery = skill_discovery
         self._skill_activator = skill_activator
         self._workspace_path = workspace_path
+        self._prompt_assembly = prompt_assembly
         self._host_binding = None  # For /rebind command (ADR-026)
         self._register_skill_commands()
 
@@ -391,7 +394,7 @@ class ReplRuntime:
             elif key == "skills" and self._host_binding is not None:
                 self._host_binding.active_skill_names = list(value)
 
-    def _rebuild_context(self) -> None:
+    def _rebuild_context(self) -> PromptCacheObservation | None:
         """
         Rebuild the system prompt with current state.
 
@@ -408,6 +411,7 @@ class ReplRuntime:
                 mode=self._session.mode,
             )
             new_prompt = snapshot.composed_prompt
+            prompt_assembly = snapshot.prompt_assembly
 
             # Keep the in-memory skill managers aligned with the fresh snapshot.
             if self._skill_activator is not None:
@@ -417,22 +421,45 @@ class ReplRuntime:
                 )
         else:
             # Fallback to the older context builder path when no host binding exists.
-            new_prompt = self._context_builder.rebuild(
-                provider=self._provider_name,
-                model=self._model_name,
-                session_id=self._session.id,
-                mode=self._session.mode,
+            rebuild_assembly = getattr(
+                self._context_builder,
+                "rebuild_assembly",
+                None,
             )
+            if callable(rebuild_assembly):
+                prompt_assembly = rebuild_assembly(
+                    provider=self._provider_name,
+                    model=self._model_name,
+                    session_id=self._session.id,
+                    mode=self._session.mode,
+                )
+                new_prompt = prompt_assembly.composed_prompt
+            else:
+                prompt_assembly = None
+                new_prompt = self._context_builder.rebuild(
+                    provider=self._provider_name,
+                    model=self._model_name,
+                    session_id=self._session.id,
+                    mode=self._session.mode,
+                )
+
+        observation = (
+            prompt_assembly.observe(self._prompt_assembly)
+            if prompt_assembly is not None
+            else None
+        )
+        self._prompt_assembly = prompt_assembly
 
         # Apply to session (session stores it)
         self._session.set_system_prompt(new_prompt)
 
         # Also apply to agent for consistency
         self._agent.set_system_prompt(new_prompt)
+        return observation
 
-    def refresh_context(self) -> None:
+    def refresh_context(self) -> PromptCacheObservation | None:
         """Refresh dynamic system context before a model run."""
-        self._rebuild_context()
+        return self._rebuild_context()
 
     def activate_skills(self, skill_names: list[str], *, transient: bool = True) -> list[str]:
         """

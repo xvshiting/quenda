@@ -70,8 +70,8 @@ quenda reviewer --workspace ~/Workspace/my-project
 ### Features
 
 - **Code-aware** — Reads and understands your codebase structure
-- **Workspace-scoped** — All file operations stay within your project directory
-- **Safe execution** — Shell commands filtered, Python code sandboxed
+- **Workspace-aware** — File tools resolve paths against the selected project; local execution follows explicit permissions and trust policy
+- **Explicit execution trust** — Local shell/Python run as `local-trusted`; strong isolation must use a future isolated backend
 - **Session persistence** — Conversations saved and resumable
 - **Interactive mode switching** — Switch between `code`, `architect`, and `chat` modes
 - **Skills on demand** — Activate capability packages as needed
@@ -177,9 +177,9 @@ pip install quenda
 
 - **Minimal API.** `Agent`, `Session`, `@tool`, and you're done.
 - **26 model providers.** OpenAI, Anthropic, DeepSeek, DashScope, and more — one registry, one API.
-- **9 core tools.** Filesystem, shell, Python sandbox, and user interaction — all workspace-scoped.
+- **Core tools.** Filesystem, local-trusted shell/Python, and user interaction.
 - **Skills framework.** Composable capability packages with instructions and resources.
-- **Security by code.** SSRF protection, command filtering, import restrictions, workspace isolation.
+- **Explicit security contracts.** SSRF protection, command filtering, permissions, and fail-closed isolation requirements.
 - **Observable by default.** Every run emits structured events for streaming and debugging.
 - **Context compression.** Automatic summarization when context grows large.
 

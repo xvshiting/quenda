@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import uuid4
 
 from quenda.kernel.types import ImageContent, ImageRef, Message, TextContent
+from quenda.runtime.cancellation import CancellationToken
 
 if TYPE_CHECKING:
     from quenda.kernel.model import Model
@@ -23,10 +25,12 @@ if TYPE_CHECKING:
     from quenda.runtime.agent import AgentConfig
     from quenda.runtime.compressor import Compressor
     from quenda.runtime.events import AnyEvent
+    from quenda.runtime.ports.after_run import AfterRunHandler
     from quenda.runtime.ports.compression import CompressionPolicy
     from quenda.runtime.ports.storage import Storage
-    from quenda.runtime.tool_policy import ToolSelectionPolicy, ToolResultProcessingPolicy
+    from quenda.runtime.run import SkillActivationHandler
     from quenda.runtime.termination import TerminationPolicy
+    from quenda.runtime.tool_policy import ToolResultProcessingPolicy, ToolSelectionPolicy
     from quenda.runtime.trace import TraceSink
 
 
@@ -46,6 +50,7 @@ class SessionUsage:
     total_output_tokens: int = 0
     total_tokens: int = 0
     total_cached_input_tokens: int | None = None
+    total_cache_creation_input_tokens: int | None = None
     total_reasoning_tokens: int | None = None
     compression_count: int = 0
     last_compressed_at: datetime | None = None
@@ -160,6 +165,7 @@ class Session:
         capability_routing: bool = True,
         microcompact_trigger_tokens: int = 50_000,
         microcompact_keep_last_tool_results: int = 8,
+        after_run_handler: AfterRunHandler | None = None,
     ) -> None:
         self._state = state
         self._agent = agent
@@ -175,8 +181,10 @@ class Session:
         self._capability_routing = capability_routing
         self._microcompact_trigger_tokens = microcompact_trigger_tokens
         self._microcompact_keep_last_tool_results = microcompact_keep_last_tool_results
+        self._after_run_handler = after_run_handler
         # Persistent event loop for MCP connections
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._send_lock = threading.Lock()
 
     @property
     def id(self) -> str:
@@ -206,7 +214,8 @@ class Session:
     @property
     def mode(self) -> str:
         """Get the current interaction mode."""
-        return self._state.metadata.get("mode", "chat")
+        value = self._state.metadata.get("mode", "chat")
+        return value if isinstance(value, str) else "chat"
 
     @mode.setter
     def mode(self, value: str) -> None:
@@ -280,6 +289,7 @@ class Session:
         trace_sink: TraceSink | None = None,
         microcompact_trigger_tokens: int = 50_000,
         microcompact_keep_last_tool_results: int = 8,
+        after_run_handler: AfterRunHandler | None = None,
     ) -> Session | None:
         """
         Load a session from storage.
@@ -315,6 +325,7 @@ class Session:
             trace_sink=trace_sink,
             microcompact_trigger_tokens=microcompact_trigger_tokens,
             microcompact_keep_last_tool_results=microcompact_keep_last_tool_results,
+            after_run_handler=after_run_handler,
         )
 
     async def send(
@@ -323,7 +334,8 @@ class Session:
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
-        skill_activation_handler: Callable[[list[str]], str | None] | None = None,
+        skill_activation_handler: SkillActivationHandler | None = None,
+        cancellation_token: CancellationToken | None = None,
     ) -> str:
         """
         Send a message in this session.
@@ -333,50 +345,101 @@ class Session:
             model: Optional model override.
             on_event: Optional callback for events.
             skill_activation_handler: Optional handler for skill activation (ADR-027).
+            cancellation_token: Optional cancellation state for this Run only.
 
         Returns:
             The agent's response text.
 
         Raises:
             ValueError: If no model is configured.
+            RuntimeError: If another Run is already writing this Session.
         """
-        from quenda.runtime import Run, RunCompleted
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError(f"Session {self.id} already has an active Run")
 
-        active_model = model or self._model
-        if active_model is None:
-            raise ValueError("No model configured. Pass model to Agent, Session, or send().")
+        try:
+            from quenda.runtime import Run, RunCompleted
 
-        run = Run.create(
-            self._agent,
-            self._state,
-            active_model,
-            storage=self._storage,
-            trace_sink=self._trace_sink,
-            termination_policy=self._termination_policy,
-            tool_selection_policy=self._tool_selection_policy,
-            tool_result_processing_policy=self._tool_result_processing_policy,
-            vision_model=self._vision_model,
-            capability_routing=self._capability_routing,
-            microcompact_trigger_tokens=self._microcompact_trigger_tokens,
-            microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
-        )
+            active_model = model or self._model
+            if active_model is None:
+                raise ValueError("No model configured. Pass model to Agent, Session, or send().")
 
-        # ADR-015: Inject compression components
-        run.compression_policy = self._compression_policy
-        run.compressor = self._compressor
+            run = Run.create(
+                self._agent,
+                self._state,
+                active_model,
+                storage=self._storage,
+                trace_sink=self._trace_sink,
+                termination_policy=self._termination_policy,
+                tool_selection_policy=self._tool_selection_policy,
+                tool_result_processing_policy=self._tool_result_processing_policy,
+                vision_model=self._vision_model,
+                capability_routing=self._capability_routing,
+                microcompact_trigger_tokens=self._microcompact_trigger_tokens,
+                microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
+                cancellation_token=cancellation_token,
+            )
 
-        # ADR-027: Inject skill activation handler
-        run.skill_activation_handler = skill_activation_handler
+            # ADR-015: Inject compression components
+            run.compression_policy = self._compression_policy
+            run.compressor = self._compressor
 
-        if on_event:
-            run.on_event(on_event)
+            # ADR-027: Inject skill activation handler
+            run.skill_activation_handler = skill_activation_handler
 
-        final_content: str | None = None
-        async for event in run.execute(message):
-            if isinstance(event, RunCompleted):
-                final_content = event.final_content
+            if on_event:
+                run.on_event(on_event)
 
-        return final_content or ""
+            final_content: str | None = None
+            completed_event: RunCompleted | None = None
+            async for event in run.execute(message):
+                if isinstance(event, RunCompleted):
+                    final_content = event.final_content
+
+                    completed_event = event
+
+            if completed_event is not None and self._after_run_handler is not None:
+                from quenda.runtime.events import EvolutionFailed
+                from quenda.runtime.ports.after_run import AfterRunContext
+
+                try:
+                    maintenance_events = await self._after_run_handler.process(
+                        AfterRunContext(
+                            session_id=self._state.id,
+                            agent_name=self._state.agent_name,
+                            messages=tuple(self._state.messages),
+                            completed=completed_event,
+                        )
+                    )
+                except Exception as exc:
+                    maintenance_events = [
+                        EvolutionFailed(
+                            run_id=completed_event.run_id,
+                            error_type=type(exc).__name__,
+                            error_message=str(exc),
+                        )
+                    ]
+                for maintenance_event in maintenance_events:
+                    if not maintenance_event.run_id:
+                        object.__setattr__(
+                            maintenance_event,
+                            "run_id",
+                            completed_event.run_id,
+                        )
+                    if on_event is not None:
+                        try:
+                            on_event(maintenance_event)
+                        except Exception:
+                            pass
+                    if self._trace_sink is not None:
+                        try:
+                            self._trace_sink.record(maintenance_event)
+                        except Exception:
+                            pass
+
+            return final_content or ""
+        finally:
+            self._send_lock.release()
 
     async def send_collecting(
         self,
@@ -384,7 +447,8 @@ class Session:
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
-        skill_activation_handler: Callable[[list[str]], str | None] | None = None,
+        skill_activation_handler: SkillActivationHandler | None = None,
+        cancellation_token: CancellationToken | None = None,
     ) -> tuple[str, list[AnyEvent]]:
         """
         Send a message and collect the emitted runtime events.
@@ -403,6 +467,7 @@ class Session:
         final_content = await self.send(
             message, model=model, on_event=collect,
             skill_activation_handler=skill_activation_handler,
+            cancellation_token=cancellation_token,
         )
         return final_content, events
 
@@ -412,13 +477,20 @@ class Session:
             self._loop = asyncio.new_event_loop()
         return self._loop
 
-    def _run_sync(self, awaitable: Coroutine[Any, Any, _T]) -> _T:
+    def _run_sync(
+        self,
+        awaitable: Coroutine[Any, Any, _T],
+        *,
+        cancellation_token: CancellationToken | None = None,
+    ) -> _T:
         """Run an awaitable and ensure Ctrl+C cannot leave a task pending."""
         loop = self._get_or_create_loop()
         task = loop.create_task(awaitable)
         try:
             return loop.run_until_complete(task)
         except KeyboardInterrupt:
+            if cancellation_token is not None:
+                cancellation_token.cancel()
             # run_until_complete stops the loop but does not cancel its task.
             # Drain the cancellation so a later send cannot resume the old run.
             task.cancel()
@@ -434,14 +506,17 @@ class Session:
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
-        skill_activation_handler: Callable[[list[str]], str | None] | None = None,
+        skill_activation_handler: SkillActivationHandler | None = None,
     ) -> str:
         """Synchronous send using persistent event loop."""
+        cancellation_token = CancellationToken()
         return self._run_sync(
             self.send(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,
-            )
+                cancellation_token=cancellation_token,
+            ),
+            cancellation_token=cancellation_token,
         )
 
     def send_collecting_sync(
@@ -450,14 +525,17 @@ class Session:
         *,
         model: Model | None = None,
         on_event: Callable[[AnyEvent], None] | None = None,
-        skill_activation_handler: Callable[[list[str]], str | None] | None = None,
+        skill_activation_handler: SkillActivationHandler | None = None,
     ) -> tuple[str, list[AnyEvent]]:
         """Synchronous variant of send_collecting() using persistent event loop."""
+        cancellation_token = CancellationToken()
         return self._run_sync(
             self.send_collecting(
                 message, model=model, on_event=on_event,
                 skill_activation_handler=skill_activation_handler,
-            )
+                cancellation_token=cancellation_token,
+            ),
+            cancellation_token=cancellation_token,
         )
 
     def close(self) -> None:

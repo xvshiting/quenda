@@ -13,6 +13,7 @@ from quenda.interface.console import ConsoleRenderer
 from quenda.interface.status import StatusBarManager
 from quenda.runtime.events import (
     ModelCalled,
+    ModelResponseDelta,
     ModelResponded,
     ModelRetrying,
     ModelRouted,
@@ -94,6 +95,26 @@ def test_streaming_handler_shows_compact_model_and_retry_status() -> None:
 
     assert "GLM-5" in indicator.messages
     assert "retrying 2/4 in 2s" in output.getvalue()
+
+
+def test_streaming_handler_prints_deltas_without_repeating_final_content() -> None:
+    indicator = FakeIndicator(running=True)
+    output = StringIO()
+    handler = StreamingEventHandler(
+        renderer=ConsoleRenderer(),
+        indicator=indicator,
+        theme=InterfaceTheme(),
+        output=output,
+    )
+
+    handler.on_event(ModelCalled(model_id="local-model"))
+    handler.on_event(ModelResponseDelta(content="hello "))
+    handler.on_event(ModelResponseDelta(content="world"))
+    assert output.getvalue() == "hello world"
+    handler.on_event(ModelResponded(content="hello world"))
+
+    assert output.getvalue().count("hello world") == 1
+    assert indicator.is_running is False
 
 
 def test_progress_event_handler_renders_tool_progress_without_run_headers() -> None:

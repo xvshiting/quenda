@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from quenda.runtime.compressor import Compressor
     from quenda.runtime.events import AnyEvent
     from quenda.runtime.ports.compression import CompressionPolicy
+    from quenda.runtime.ports.after_run import AfterRunHandler
     from quenda.runtime.ports.storage import Storage
     from quenda.runtime.tool_policy import ToolSelectionPolicy, ToolResultProcessingPolicy
     from quenda.runtime.termination import TerminationPolicy
@@ -119,6 +120,7 @@ class Agent:
         capability_routing: bool = True,
         microcompact_trigger_tokens: int = 50_000,
         microcompact_keep_last_tool_results: int = 8,
+        after_run_handler: AfterRunHandler | None = None,
     ) -> None:
         """
         Create an agent.
@@ -155,6 +157,7 @@ class Agent:
         self._capability_routing = capability_routing
         self._microcompact_trigger_tokens = microcompact_trigger_tokens
         self._microcompact_keep_last_tool_results = microcompact_keep_last_tool_results
+        self._after_run_handler = after_run_handler
     @property
     def name(self) -> str:
         """The agent name."""
@@ -265,6 +268,7 @@ class Agent:
             capability_routing=self._capability_routing,
             microcompact_trigger_tokens=self._microcompact_trigger_tokens,
             microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
+            after_run_handler=self._after_run_handler,
         )
 
     def load_session(self, session_id: str) -> Session | None:
@@ -295,6 +299,7 @@ class Agent:
             trace_sink=self._trace_sink,
             microcompact_trigger_tokens=self._microcompact_trigger_tokens,
             microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
+            after_run_handler=self._after_run_handler,
         )
 
     def list_sessions(self) -> list[SessionState]:
@@ -342,6 +347,7 @@ class Agent:
             model=model or self._model,
             microcompact_trigger_tokens=self._microcompact_trigger_tokens,
             microcompact_keep_last_tool_results=self._microcompact_keep_last_tool_results,
+            after_run_handler=self._after_run_handler,
         )
 
         if image_paths:

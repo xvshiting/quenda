@@ -10,10 +10,10 @@ differences from OpenAI's API:
 
 from __future__ import annotations
 
-import json
 from collections.abc import Generator
 from typing import TYPE_CHECKING, override
 
+from quenda.kernel.tool import Tool
 from quenda.kernel.types import (
     ImageContent,
     Message,
@@ -22,9 +22,7 @@ from quenda.kernel.types import (
     TextContent,
     ToolCall,
     ToolResult,
-    UsageStats,
 )
-from quenda.kernel.tool import Tool
 from quenda.providers.api.base import Api
 from quenda.providers.errors import (
     APIError,
@@ -32,7 +30,9 @@ from quenda.providers.errors import (
     NetworkError,
     RateLimitError,
 )
+from quenda.providers.observability import register_cancellation_callback
 from quenda.providers.retry import retry_with_backoff
+from quenda.providers.usage import normalize_anthropic_usage
 
 if TYPE_CHECKING:
     pass
@@ -77,7 +77,7 @@ class AnthropicMessagesApi(Api):
             client = anthropic.Anthropic(
                 api_key=api_key,
                 base_url=base_url if base_url != "https://api.anthropic.com/v1" else None,
-                timeout=timeout or 30.0,
+                timeout=timeout if timeout is not None else 30.0,
                 default_headers=headers if headers else None,
             )
 
@@ -152,7 +152,7 @@ class AnthropicMessagesApi(Api):
         client = anthropic.Anthropic(
             api_key=api_key,
             base_url=base_url if base_url != "https://api.anthropic.com/v1" else None,
-            timeout=timeout or 30.0,
+            timeout=timeout if timeout is not None else 30.0,
             default_headers=headers if headers else None,
         )
 
@@ -175,17 +175,41 @@ class AnthropicMessagesApi(Api):
 
         try:
             with client.messages.stream(**request_kwargs) as stream:
-                for text in stream.text_stream:
-                    yield StreamChunk(content=text, is_final=False)
+                close_stream = getattr(stream, "close", lambda: None)
+                unregister_cancel = register_cancellation_callback(close_stream)
+                try:
+                    for text in stream.text_stream:
+                        yield StreamChunk(content=text, is_final=False)
 
-                # Get final message for tool calls
-                final_message = stream.get_final_message()
-                tool_calls = self._extract_tool_calls(final_message)
+                    # Get final message for tool calls
+                    final_message = stream.get_final_message()
+                    tool_calls = self._extract_tool_calls(final_message)
+                    usage = (
+                        normalize_anthropic_usage(final_message.usage)
+                        if getattr(final_message, "usage", None)
+                        else None
+                    )
 
-                if tool_calls:
-                    yield StreamChunk(tool_calls=tool_calls, is_final=True)
-                else:
-                    yield StreamChunk(is_final=True)
+                    if tool_calls:
+                        yield StreamChunk(
+                            tool_calls=tool_calls,
+                            is_final=True,
+                            stop_reason="tool_use",
+                            usage=usage,
+                        )
+                    else:
+                        stop_reason = (
+                            "max_tokens"
+                            if getattr(final_message, "stop_reason", None) == "max_tokens"
+                            else "end_turn"
+                        )
+                        yield StreamChunk(
+                            is_final=True,
+                            stop_reason=stop_reason,
+                            usage=usage,
+                        )
+                finally:
+                    unregister_cancel()
 
         except anthropic.RateLimitError as e:
             raise RateLimitError(str(e))
@@ -218,13 +242,13 @@ class AnthropicMessagesApi(Api):
             Tuple of (anthropic_messages, system_prompt)
         """
         anthropic_messages = []
-        system_prompt = None
+        system_blocks: list[str] = []
 
         for msg in messages:
             if msg.role == "system":
                 # System message goes as separate parameter
                 if isinstance(msg.content, str):
-                    system_prompt = msg.content
+                    system_blocks.append(msg.content)
                 continue
 
             if isinstance(msg.content, str):
@@ -255,17 +279,6 @@ class AnthropicMessagesApi(Api):
                         "role": "assistant",
                         "content": content_blocks,
                     })
-
-                    # Add tool result placeholders
-                    for tc in items:
-                        anthropic_messages.append({
-                            "role": "user",
-                            "content": [{
-                                "type": "tool_result",
-                                "tool_use_id": tc.id,
-                                "content": "",
-                            }],
-                        })
 
                 elif isinstance(first_item, ToolResult):
                     # Tool results
@@ -370,6 +383,7 @@ class AnthropicMessagesApi(Api):
                         "content": content_blocks,
                     })
 
+        system_prompt = "\n\n".join(system_blocks) if system_blocks else None
         return anthropic_messages, system_prompt
 
     def _convert_tools(self, tools: list[Tool]) -> list[dict]:
@@ -423,12 +437,7 @@ class AnthropicMessagesApi(Api):
         # Extract usage statistics
         usage = None
         if hasattr(response, 'usage') and response.usage:
-            usage = UsageStats(
-                input_tokens=getattr(response.usage, 'input_tokens', 0) or 0,
-                output_tokens=getattr(response.usage, 'output_tokens', 0) or 0,
-                cached_input_tokens=getattr(response.usage, 'cache_read_input_tokens', None),
-                reasoning_tokens=None,  # Anthropic doesn't expose this directly
-            )
+            usage = normalize_anthropic_usage(response.usage)
 
         return ModelResponse(
             content=content,

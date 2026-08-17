@@ -1,13 +1,27 @@
 models:
   default:
-    provider: jdcloud
-    model: GLM-5
+    provider: volcengine-coding
+    model: deepseek-v4-flash
   vision:
-    provider: jdcloud
-    model: Kimi-K2.5
+    provider: volcengine-coding
+    model: doubao-seed-2.1-turbo
   routing:
       capability_routing: true
       missing_capability: error
+
+# Optional declarative providers. Built-ins only need credential overrides;
+# custom and llama-server providers also declare URL and models.
+# providers:
+#   jdcloud:
+#     api_key: "${JDCLOUD_API_KEY}"
+#   local-llama:
+#     type: llama-server
+#     url: http://127.0.0.1:8080/v1
+#     models:
+#       - id: "qwen3.5:9b"
+#         name: Local Qwen 3.5 9B
+#         context_window: 32768
+#         tool_calling: true
 
 # Instructions to include (relative to agent package)
 instructions:
@@ -36,6 +50,14 @@ compression:
   archive_raw_messages: true
   microcompact_trigger_tokens: 50000
   microcompact_keep_last_tool_results: 8
+
+evolution:
+  enabled: true
+  write_mode: automatic
+  every_n_user_turns: 5
+  on_explicit_signal: true
+  min_confidence: 0.8
+  max_proposals: 2
 
 policies:
   tool_result_processing:

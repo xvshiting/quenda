@@ -162,6 +162,60 @@ description: Skill {i}
         names = {s.name for s in test_skills}
         assert names == {"skill-0", "skill-1", "skill-2"}
 
+    def test_discovers_skills_below_nested_category_directories(
+        self, tmp_path: Path
+    ) -> None:
+        """Category directories may nest to any depth above a skill package."""
+        skills_root = tmp_path / "skills"
+        skill_dirs = [
+            skills_root / "direct-skill",
+            skills_root / "documents" / "office" / "nested-skill",
+        ]
+        for skill_dir in skill_dirs:
+            skill_dir.mkdir(parents=True)
+            name = skill_dir.name
+            (skill_dir / "SKILL.md").write_text(f"""---
+name: {name}
+description: {name} description
+---
+# {name}
+""")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=skills_root)
+        discovered = {skill.name: skill for skill in discovery.discover_skills()}
+
+        assert discovered["direct-skill"].path == skills_root / "direct-skill"
+        assert discovered["nested-skill"].path == (
+            skills_root / "documents" / "office" / "nested-skill"
+        )
+
+    def test_skill_package_is_a_recursive_discovery_boundary(
+        self, tmp_path: Path
+    ) -> None:
+        """A SKILL.md below an existing package is a resource, not another skill."""
+        skills_root = tmp_path / "skills"
+        outer = skills_root / "outer-skill"
+        nested_resource = outer / "references" / "example"
+        nested_resource.mkdir(parents=True)
+        (outer / "SKILL.md").write_text("""---
+name: outer-skill
+description: Outer skill
+---
+# Outer
+""")
+        (nested_resource / "SKILL.md").write_text("""---
+name: resource-lookalike
+description: This file belongs to the outer skill
+---
+# Resource
+""")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=skills_root)
+        names = {skill.name for skill in discovery.discover_skills()}
+
+        assert "outer-skill" in names
+        assert "resource-lookalike" not in names
+
     def test_discovers_project_quenda_skills(self, tmp_path: Path) -> None:
         """Project-level .quenda/skills are discovered from workspace_path."""
         workspace = tmp_path / "workspace"
@@ -181,6 +235,26 @@ description: Project skill
         skill = next((s for s in skills if s.name == "project-skill"), None)
         assert skill is not None
         assert skill.source == "workspace"
+
+    def test_user_agents_skill_has_user_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cross-client Skills under ~/.agents/skills are user-level Skills."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        skill_dir = tmp_path / ".agents" / "skills" / "home" / "speaker"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("""---
+name: home-speaker
+description: Control a home speaker
+---
+# Home speaker
+""")
+
+        discovery = SkillDiscovery()
+        skill = discovery.get_skill("home-speaker")
+
+        assert skill is not None
+        assert skill.source == "user"
 
     def test_project_quenda_skill_overrides_agents_and_bundled(self, tmp_path: Path) -> None:
         """Project .quenda/skills take priority over .agents and bundled skills."""
@@ -241,7 +315,9 @@ description: {title}
         assert skill.source == "user_workspace"
         assert "User Workspace" in skill.instructions
 
-    def test_priority_order_user_workspace_over_user(self, tmp_path: Path) -> None:
+    def test_priority_order_user_workspace_over_user(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         """Test that user-workspace skills override user skills."""
         # Create user-workspace skill
         ws_skill_dir = tmp_path / "ws-skills" / "override-test"
@@ -252,7 +328,9 @@ description: User-workspace version
 ---""")
 
         # Create user skill with same name
-        user_skill_dir = Path.home() / ".quenda" / "skills" / "override-test"
+        quenda_home = tmp_path / "quenda-home"
+        monkeypatch.setenv("QUENDA_HOME", str(quenda_home))
+        user_skill_dir = quenda_home / "skills" / "override-test"
         user_skill_dir.mkdir(parents=True, exist_ok=True)
         user_skill = user_skill_dir / "SKILL.md"
         user_skill.write_text("""---

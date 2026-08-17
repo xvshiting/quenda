@@ -14,10 +14,10 @@ Implements:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from quenda.host.context import ContextRebuilder
 from quenda.host.extensions import (
@@ -28,44 +28,41 @@ from quenda.host.extensions import (
 )
 from quenda.host.identity import DefaultUserResolver, User
 from quenda.host.instructions import (
-    InstructionComposer,
     InstructionSource,
     TemplateContext,
-    resolve_instruction_sources,
-    resolve_mode_instruction_source,
+    resolve_prompt_sources,
 )
 from quenda.host.loader import (
     AgentConfigYaml,
     AgentPackage,
     ExecutionConfig,
-    load_agent_package,
     load_agent_context_providers,
     load_agent_initializers,
+    load_agent_package,
     load_agent_policies,
-    load_agent_tools,
     load_agent_providers,
+    load_agent_tools,
 )
 from quenda.host.mcp import MCPClientManager
 from quenda.host.policy_registry import LoadedPolicyCatalog, NamedPolicySpec, PolicyRegistryBuilder
+from quenda.host.prompt import PromptAssembler, PromptAssembly
 from quenda.host.registry import LoadedToolCatalog, NamedToolSpec, ToolRegistryBuilder
-from quenda.host.skill import SkillDiscovery, SkillActivator, ResourceResolver
+from quenda.host.skill import ResourceResolver, SkillActivator, SkillDiscovery
 from quenda.host.storage import FileStorage, FileStorageConfig
 from quenda.host.workspace import WorkspaceResolver
 
 if TYPE_CHECKING:
-    from quenda.host.commands import CommandRegistry
-    from quenda.host.interactions import InteractionRegistry
     from quenda.host.skill import SkillPackage
     from quenda.kernel.model import Model
+    from quenda.kernel.types import ImageContent, TextContent
+    from quenda.providers import ProviderRegistry
     from quenda.runtime.agent import Agent
     from quenda.runtime.compressor import Compressor
-    from quenda.kernel.types import ImageContent, TextContent
     from quenda.runtime.events import AnyEvent
+    from quenda.runtime.permission import PermissionPolicy
     from quenda.runtime.ports.compression import CompressionPolicy
     from quenda.runtime.session import Session
     from quenda.runtime.temporal import Clock
-    from quenda.runtime.permission import PermissionPolicy
-    from quenda.providers import ProviderRegistry
     from quenda.tools import Tool
     from quenda.tools.execution import SandboxConfig
 
@@ -79,6 +76,15 @@ ToolBundleFactory = Callable[
 # =============================================================================
 # Data Structures for Two-Path Model (ADR-026)
 # =============================================================================
+
+
+@dataclass(frozen=True)
+class ExecutionBinding:
+    """Execution capability and trust guarantee granted by the Host."""
+
+    backend: str
+    isolated: bool
+    trusted_only: bool
 
 
 @dataclass
@@ -100,6 +106,7 @@ class StableHostBinding:
         vision_model_instance: Optional vision model for capability routing (ADR-028).
         capability_routing: Whether capability-based routing is enabled.
         tools: Granted tool set.
+        execution: Resolved execution capability and trust declaration.
         sandbox_config: Python sandbox configuration.
         compression_policy: Compression policy if enabled.
         compressor: Compressor instance if enabled.
@@ -121,6 +128,13 @@ class StableHostBinding:
     model_instance: Model
     tools: list[Tool]
     sandbox_config: SandboxConfig
+    execution: ExecutionBinding = field(
+        default_factory=lambda: ExecutionBinding(
+            backend="local-trusted",
+            isolated=False,
+            trusted_only=True,
+        )
+    )
     vision_model_instance: Model | None = None
     capability_routing: bool = True
     compression_policy: CompressionPolicy | None = None
@@ -136,9 +150,111 @@ class StableHostBinding:
     tool_result_processing_policy: Any | None = None
     termination_policy: Any | None = None
     extension_context: AgentExtensionContext | None = None
-    context_providers: ContextProviderRegistry = field(
-        default_factory=ContextProviderRegistry
+    context_providers: ContextProviderRegistry = field(default_factory=ContextProviderRegistry)
+    permission_policy: PermissionPolicy | None = None
+    skill_evolution_state_root: Path | None = None
+
+
+def _advance_skill_activation_epoch(
+    activator: SkillActivator,
+    state_root: Path,
+    skill_names: Sequence[str],
+) -> int:
+    """Pin selected active Skills to immutable snapshots as one epoch."""
+    from quenda.evolution import SkillEvolutionStore
+
+    packages: list[tuple[SkillPackage, str]] = []
+    for name in skill_names:
+        source = activator.discovery.get_skill(name)
+        if source is None:
+            continue
+        store = SkillEvolutionStore(source.path, state_root / name)
+        revision, snapshot_path = store.pin_current()
+        pinned = activator.discovery.load_package(
+            snapshot_path,
+            source=source.source,
+        )
+        packages.append((pinned, revision))
+    return activator.advance_epoch(packages)
+
+
+def advance_skill_activation_epoch(
+    binding: StableHostBinding,
+    skill_names: Sequence[str] | None = None,
+) -> int:
+    """Explicitly pin current on-disk Skill revisions into a new Host epoch."""
+    if binding.skill_activator is None or binding.skill_evolution_state_root is None:
+        raise RuntimeError("Skill activation epochs are unavailable for this binding")
+    names = list(skill_names) if skill_names is not None else binding.skill_activator.list_active()
+    return _advance_skill_activation_epoch(
+        binding.skill_activator,
+        binding.skill_evolution_state_root,
+        names,
     )
+
+
+def _grant_discovered_skill_read_permissions(
+    discovered_skills: Sequence[SkillPackage],
+    permission_policy: PermissionPolicy | None,
+) -> None:
+    """Trust discovered Skill package contents for read-only file access."""
+    if permission_policy is None:
+        return
+
+    from quenda.runtime.permission import (
+        PermissionKind,
+        PermissionLifetime,
+        PermissionScope,
+    )
+
+    grant = getattr(permission_policy, "grant_host_managed_resource", None)
+    if not callable(grant):
+        return
+
+    for skill in discovered_skills:
+        grant(
+            str(skill.path),
+            kind=PermissionKind.FILESYSTEM_READ,
+            scope=PermissionScope.DIRECTORY,
+            lifetime=PermissionLifetime.SESSION,
+            reason=f"Host-discovered Skill package: {skill.name}",
+        )
+
+
+def _grant_agent_managed_path_permissions(
+    agent_package_path: Path,
+    user_agent_path: Path,
+    permission_policy: PermissionPolicy | None,
+) -> None:
+    """Grant the narrow filesystem roots owned and resolved by the Host."""
+    if permission_policy is None:
+        return
+
+    from quenda.runtime.permission import (
+        PermissionKind,
+        PermissionLifetime,
+        PermissionScope,
+    )
+
+    grant = getattr(permission_policy, "grant_host_managed_resource", None)
+    if not callable(grant):
+        return
+
+    grant(
+        str(agent_package_path),
+        kind=PermissionKind.FILESYSTEM_READ,
+        scope=PermissionScope.DIRECTORY,
+        lifetime=PermissionLifetime.SESSION,
+        reason="Host-resolved Agent package",
+    )
+    for kind in (PermissionKind.FILESYSTEM_READ, PermissionKind.FILESYSTEM_WRITE):
+        grant(
+            str(user_agent_path),
+            kind=kind,
+            scope=PermissionScope.DIRECTORY,
+            lifetime=PermissionLifetime.SESSION,
+            reason="Host-resolved user Agent Home",
+        )
 
 
 @dataclass
@@ -147,7 +263,8 @@ class RunContextSnapshot:
     Text-level context rebuilt before each run.
 
     These are re-read at each turn boundary. Editing AGENT.md,
-    instructions, or skill files should affect the next run.
+    or instructions should affect the next run. Active Skill content remains
+    pinned until ``advance_skill_activation_epoch()`` or capability rebind.
 
     Attributes:
         agent_md_content: Re-read AGENT.md content.
@@ -156,6 +273,7 @@ class RunContextSnapshot:
         discovered_skills: Freshly discovered skill catalog.
         resolved_active_skills: SkillPackage objects for active skills.
         template_context: Template variables for prompt composition.
+        prompt_assembly: Structured prompt manifest for cache observability.
     """
 
     agent_md_content: str
@@ -164,6 +282,7 @@ class RunContextSnapshot:
     discovered_skills: list[SkillPackage] = field(default_factory=list)
     resolved_active_skills: list[SkillPackage] = field(default_factory=list)
     template_context: TemplateContext | None = None
+    prompt_assembly: PromptAssembly | None = None
 
 
 def _builtin_tool_bundle_factories() -> dict[str, ToolBundleFactory]:
@@ -177,7 +296,7 @@ def _builtin_tool_bundle_factories() -> dict[str, ToolBundleFactory]:
 def _core_tool_bundle(
     workspace: Path,
     config: AgentConfigYaml | None,
-    permission_policy: "PermissionPolicy | None",
+    permission_policy: PermissionPolicy | None,
 ) -> list[Tool]:
     """Build the core local-execution bundle."""
     from quenda.tools import (
@@ -213,16 +332,21 @@ def _core_tool_bundle(
 def _network_tool_bundle(
     workspace: Path,
     config: AgentConfigYaml | None,
-    permission_policy: "PermissionPolicy | None",
+    permission_policy: PermissionPolicy | None,
 ) -> list[Tool]:
     """Build the network access bundle."""
-    del workspace, config, permission_policy
+    del workspace, permission_policy
 
     from quenda.tools.network import HTTPRequestTool, WebFetchTool
 
+    provider_endpoints = tuple(
+        provider.base_url
+        for provider in (config.providers if config is not None else ())
+        if provider.base_url is not None
+    )
     return [
-        HTTPRequestTool(),
-        WebFetchTool(),
+        HTTPRequestTool(allowed_private_origins=provider_endpoints),
+        WebFetchTool(allowed_private_origins=provider_endpoints),
     ]
 
 
@@ -231,7 +355,11 @@ def _resolve_tools(
     config: AgentConfigYaml | None,
     loaded_tool_catalog: LoadedToolCatalog | None = None,
     skill_resource_resolver: ResourceResolver | None = None,
-    permission_policy: "PermissionPolicy" | None = None,
+    permission_policy: PermissionPolicy | None = None,
+    *,
+    agent_package_path: Path | None = None,
+    skill_discovery: SkillDiscovery | None = None,
+    skill_evolution_state_root: Path | None = None,
 ) -> list[Tool]:
     """
     Resolve tools based on agent capability declaration.
@@ -239,7 +367,7 @@ def _resolve_tools(
     Implements ADR-014 and ADR-024 capability declaration:
     - tools.bundles: ["core", "network"]
     - tools.include: ["my_custom_tool"]
-    - execution.python.allowed_modules: extend sandbox allowlist
+    - execution.python.allowed_modules: accepted legacy no-op
 
     **Available Bundles:**
 
@@ -307,6 +435,60 @@ def _resolve_tools(
     # Build a unified catalog with built-in tools
     builder = ToolRegistryBuilder()
 
+    # Framework inspection is read-only and remains visible independently of
+    # optional capability bundles. It validates only the current Agent package
+    # or packages below the current workspace.
+    if agent_package_path is not None:
+        from quenda.tools.agent_config import (
+            ApplyAgentConfigPatchTool,
+            ExplainAgentConfigTool,
+        )
+        from quenda.tools.agent_validation import ValidateAgentPackageTool
+
+        builder.register(
+            ApplyAgentConfigPatchTool(
+                workspace=workspace,
+                agent_package_path=agent_package_path,
+                permission_policy=permission_policy,
+            ),
+            source="framework",
+        )
+        builder.register(
+            ExplainAgentConfigTool(
+                workspace=workspace,
+                agent_package_path=agent_package_path,
+            ),
+            source="framework",
+        )
+        builder.register(
+            ValidateAgentPackageTool(
+                workspace=workspace,
+                agent_package_path=agent_package_path,
+            ),
+            source="framework",
+        )
+
+        if skill_discovery is not None and skill_evolution_state_root is not None:
+            from quenda.host.skill_evolution import SkillEvolutionManager
+            from quenda.tools.skill_evolution import (
+                ApplySkillEvolutionTool,
+                InspectSkillEvolutionTool,
+            )
+
+            skill_evolution = SkillEvolutionManager(
+                skill_discovery,
+                state_root=skill_evolution_state_root,
+                permission_policy=permission_policy,
+            )
+            builder.register(
+                InspectSkillEvolutionTool(skill_evolution),
+                source="framework",
+            )
+            builder.register(
+                ApplySkillEvolutionTool(skill_evolution),
+                source="framework",
+            )
+
     # Register built-in bundle tools (for reference and deduplication).
     for bundle_name in requested_bundles:
         for tool in builtin_bundle_factories[bundle_name](workspace, config, permission_policy):
@@ -318,7 +500,7 @@ def _resolve_tools(
             # Check for duplicate names (built-in vs custom)
             if builder._catalog.has(spec.name):
                 existing = builder._catalog.get(spec.name)
-                if existing.source == "builtin":
+                if existing.source in {"framework", "builtin"}:
                     raise ValueError(
                         f"Agent-local tool '{spec.name}' conflicts with built-in tool. "
                         f"Custom tools cannot override built-in tool names."
@@ -335,8 +517,8 @@ def _resolve_tools(
 
     # Add all registered tools (builtin + skill_resource + agent_local)
     # Note: skill_resource tools are always available when skills are configured
-    for name, spec in builder._catalog.tools.items():
-        if spec.source in ("builtin", "skill_resource"):
+    for _name, spec in builder._catalog.tools.items():
+        if spec.source in ("framework", "builtin", "skill_resource"):
             tool = _instantiate_tool(spec, workspace)
             _apply_permission_policy(tool, permission_policy)
             if tool.name not in seen_names:
@@ -388,7 +570,7 @@ def _instantiate_tool(spec: NamedToolSpec, workspace: Path) -> Tool:
     raise ValueError(f"Tool spec '{spec.name}' has neither tool nor factory")
 
 
-def _apply_permission_policy(tool: Tool, permission_policy: "PermissionPolicy" | None) -> None:
+def _apply_permission_policy(tool: Tool, permission_policy: PermissionPolicy | None) -> None:
     """Attach the active permission policy to tools that support it."""
     if permission_policy is None:
         return
@@ -396,7 +578,7 @@ def _apply_permission_policy(tool: Tool, permission_policy: "PermissionPolicy" |
     try:
         current_policy = getattr(tool, "permission_policy", None)
         if current_policy is None:
-            setattr(tool, "permission_policy", permission_policy)
+            tool.permission_policy = permission_policy
     except Exception:
         pass
 
@@ -445,7 +627,9 @@ def _resolve_policy_bindings(
     policies = config.policies
     return (
         _resolve_tool_selection_policy(policies.tool_selection, loaded_policy_catalog),
-        _resolve_tool_result_processing_policy(policies.tool_result_processing, loaded_policy_catalog),
+        _resolve_tool_result_processing_policy(
+            policies.tool_result_processing, loaded_policy_catalog
+        ),
         _resolve_termination_policy(policies.termination, loaded_policy_catalog),
     )
 
@@ -604,6 +788,71 @@ def _resolve_sandbox_config(config: AgentConfigYaml | None) -> SandboxConfig:
     return SandboxConfig()
 
 
+def _resolve_execution_binding(
+    config: AgentConfigYaml | None,
+) -> ExecutionBinding:
+    """Resolve execution security claims before executable Tools are bound."""
+    requested = config.execution if config is not None else ExecutionConfig()
+    backend = requested.backend.strip() or "local-trusted"
+    if backend != "local-trusted":
+        raise ValueError(
+            f"Execution backend {backend!r} is unavailable; "
+            "this Host currently provides only 'local-trusted'"
+        )
+    if requested.requires_isolation:
+        raise ValueError("Execution backend 'local-trusted' does not provide strong isolation")
+    return ExecutionBinding(
+        backend="local-trusted",
+        isolated=False,
+        trusted_only=True,
+    )
+
+
+def _resolve_evolution_handler(
+    config: AgentConfigYaml | None,
+    *,
+    agent_home: Path,
+    model: Model,
+) -> object | None:
+    """Build the official post-Run evolution implementation when enabled."""
+    if config is None or not config.evolution.enabled:
+        return None
+
+    from quenda.evolution import (
+        DefaultEvolutionTriggerPolicy,
+        EvolutionTriggerConfig,
+        MemoryEvolutionCoordinator,
+        MemoryEvolutionPolicy,
+        MemoryEvolutionStore,
+        MemoryWriteMode,
+        ModelMemoryProposalGenerator,
+    )
+
+    evolution = config.evolution
+    store = MemoryEvolutionStore(
+        agent_home,
+        policy=MemoryEvolutionPolicy(
+            write_mode=MemoryWriteMode(evolution.write_mode),
+        ),
+    )
+    generator = ModelMemoryProposalGenerator(
+        model,
+        store,
+        max_proposals=evolution.max_proposals,
+    )
+    return MemoryEvolutionCoordinator(
+        store,
+        generator,
+        trigger=DefaultEvolutionTriggerPolicy(
+            EvolutionTriggerConfig(
+                every_n_user_turns=evolution.every_n_user_turns,
+                on_explicit_signal=evolution.on_explicit_signal,
+            )
+        ),
+        min_confidence=evolution.min_confidence,
+    )
+
+
 # =============================================================================
 # Path A: Capability Binding (runs once at setup or explicit rebind)
 # =============================================================================
@@ -615,9 +864,9 @@ def setup_host_binding(
     *,
     provider: str | None = None,
     model: str | None = None,
-    provider_registry: "ProviderRegistry | None" = None,
+    provider_registry: ProviderRegistry | None = None,
     tools: list[Tool] | None = None,
-    permission_policy: "PermissionPolicy" | None = None,
+    permission_policy: PermissionPolicy | None = None,
 ) -> StableHostBinding | None:
     """
     Capability binding path - runs once at setup or explicit rebind.
@@ -650,6 +899,10 @@ def setup_host_binding(
         if not workspace.exists():
             return None
 
+        from quenda.host.permission_manager import with_host_managed_permissions
+
+        permission_policy = with_host_managed_permissions(permission_policy)
+
         # 2. Determine if path is AGENT.md or directory
         if agent_path.is_file() and agent_path.name == "AGENT.md":
             agent_dir = agent_path.parent
@@ -679,12 +932,28 @@ def setup_host_binding(
             workspace_path=workspace,
             workspace_id=workspace_id,
         )
+        _grant_agent_managed_path_permissions(
+            agent_dir,
+            user_agent_path,
+            permission_policy,
+        )
         initializers = AgentInitializerRegistry()
         load_agent_initializers(agent_dir, initializers)
         initializers.initialize(extension_context)
 
-        # 6. Load agent-local custom providers (before resolving provider/model)
-        load_agent_providers(agent_dir)
+        # 6. Load provider declarations into this binding's selected registry.
+        if provider_registry is None:
+            from quenda.providers import get_provider_registry
+
+            provider_registry = get_provider_registry()
+        load_agent_providers(agent_dir, provider_registry)
+        if agent_package.config and agent_package.config.providers:
+            from quenda.providers import register_configured_providers
+
+            register_configured_providers(
+                agent_package.config.providers,
+                provider_registry,
+            )
         context_providers = ContextProviderRegistry()
         load_agent_context_providers(agent_dir, context_providers)
 
@@ -697,22 +966,22 @@ def setup_host_binding(
 
         # Determine default model
         if models_config and models_config.default:
-            provider_name = models_config.default.provider
-            model_name = models_config.default.model
+            provider_name = provider or models_config.default.provider
+            model_name = model or models_config.default.model
         else:
             # Legacy or override
-            provider_name = provider or (
-                agent_package.config.model_provider if agent_package.config else None
-            ) or "deepseek"
-            model_name = model or (
-                agent_package.config.model_name if agent_package.config else None
-            ) or "deepseek-v4-flash"
+            provider_name = (
+                provider
+                or (agent_package.config.model_provider if agent_package.config else None)
+                or "deepseek"
+            )
+            model_name = (
+                model
+                or (agent_package.config.model_name if agent_package.config else None)
+                or "deepseek-v4-flash"
+            )
 
         # 8. Get model instances
-        if provider_registry is None:
-            from quenda.providers import get_provider_registry
-
-            provider_registry = get_provider_registry()
         try:
             model_instance = provider_registry.get_model(provider_name, model_name)
         except KeyError:
@@ -733,13 +1002,15 @@ def setup_host_binding(
                 pass
 
         # 9. Setup skill discovery and activator
-        user_workspace_skills_path = resolver.get_user_workspace_skills_path(
-            user, binding
-        )
+        user_workspace_skills_path = resolver.get_user_workspace_skills_path(user, binding)
         skill_discovery = SkillDiscovery(
             user_workspace_skills_path=user_workspace_skills_path,
             workspace_path=workspace,
             agent_package_path=agent_dir,
+        )
+        _grant_discovered_skill_read_permissions(
+            skill_discovery.discover_skills(),
+            permission_policy,
         )
         skill_activator = SkillActivator(discovery=skill_discovery)
 
@@ -747,6 +1018,13 @@ def setup_host_binding(
         if agent_package.config and agent_package.config.skills:
             for skill_name in agent_package.config.skills:
                 skill_activator.activate_skill(skill_name, transient=False)
+
+        skill_evolution_state_root = user_agent_path / ".quenda" / "evolution" / "skills"
+        _advance_skill_activation_epoch(
+            skill_activator,
+            skill_evolution_state_root,
+            skill_activator.list_active(),
+        )
 
         # 11. Create resource resolver for skill resource tools
         skill_resource_resolver = ResourceResolver.from_activator(skill_activator)
@@ -766,7 +1044,10 @@ def setup_host_binding(
             termination_policy,
         ) = _resolve_policy_bindings(agent_package.config, loaded_policy_catalog)
 
-        # 14. Resolve tools (capability grant)
+        # 14. Resolve execution trust before granting executable Tools.
+        execution_binding = _resolve_execution_binding(agent_package.config)
+
+        # 15. Resolve tools (capability grant)
         if tools is None:
             tools = _resolve_tools(
                 workspace,
@@ -774,32 +1055,20 @@ def setup_host_binding(
                 loaded_tool_catalog,
                 skill_resource_resolver,
                 permission_policy,
+                agent_package_path=agent_dir,
+                skill_discovery=skill_discovery,
+                skill_evolution_state_root=(skill_evolution_state_root),
             )
         else:
             for tool in tools:
                 _apply_permission_policy(tool, permission_policy)
 
-        # 15. Resolve sandbox config
+        # 16. Resolve legacy local execution limits.
         sandbox_config = _resolve_sandbox_config(agent_package.config)
 
-        # 16. Setup storage
+        # 17. Setup storage
         storage_path = resolver.get_user_workspace_path(user, agent_package.name, binding)
         storage = FileStorage(config=FileStorageConfig(base_dir=storage_path))
-
-        # 16.1 Pre-grant permissions for Host-managed user directories
-        # These are trusted directories that agents should be able to write to without prompting
-        # Grant access to entire ~/.quenda/users/<user_id>/ directory
-        if permission_policy is not None:
-            from quenda.host.permission_manager import PermissionManager
-            from quenda.runtime.permission import PermissionKind, PermissionScope, PermissionLifetime
-            if isinstance(permission_policy, PermissionManager):
-                user_root_path = resolver.get_user_root_path(user)
-                permission_policy.grant_user_provided_resource(
-                    str(user_root_path),
-                    kind=PermissionKind.FILESYSTEM_WRITE,
-                    scope=PermissionScope.DIRECTORY,
-                    lifetime=PermissionLifetime.SESSION,
-                )
 
         # 17. Setup compression (if configured)
         compression_policy = None
@@ -823,7 +1092,9 @@ def setup_host_binding(
 
             if compression_config.compression_model:
                 try:
-                    summary_model = provider_registry.get_model(provider_name, compression_config.compression_model)
+                    summary_model = provider_registry.get_model(
+                        provider_name, compression_config.compression_model
+                    )
                 except KeyError:
                     summary_model = model_instance
             else:
@@ -847,6 +1118,7 @@ def setup_host_binding(
             vision_model_instance=vision_model_instance,
             capability_routing=capability_routing,
             tools=tools,
+            execution=execution_binding,
             sandbox_config=sandbox_config,
             compression_policy=compression_policy,
             compressor=compressor,
@@ -862,6 +1134,8 @@ def setup_host_binding(
             termination_policy=termination_policy,
             extension_context=extension_context,
             context_providers=context_providers,
+            permission_policy=permission_policy,
+            skill_evolution_state_root=skill_evolution_state_root,
         )
 
     except Exception:
@@ -919,7 +1193,7 @@ def refresh_run_context(
     session_id: str = "",
     *,
     mode: str = "chat",
-    clock: "Clock | None" = None,
+    clock: Clock | None = None,
 ) -> RunContextSnapshot:
     """
     Text refresh path - runs before each new run.
@@ -956,13 +1230,28 @@ def refresh_run_context(
         agent_package_path=binding.agent_package_path,
     )
     discovered_skills = skill_discovery.discover_skills()
+    _grant_discovered_skill_read_permissions(
+        discovered_skills,
+        binding.permission_policy,
+    )
 
-    # 3. Re-resolve active skills by name
+    # 3. Resolve active Skills from the binding's immutable activation epoch.
     resolved_active_skills: list[SkillPackage] = []
-    for skill_name in binding.active_skill_names + binding.transient_skill_names:
-        skill = skill_discovery.get_skill(skill_name)
-        if skill:
-            resolved_active_skills.append(skill)
+    if binding.skill_activator is not None:
+        binding.skill_activator.discovery = skill_discovery
+        active_names = binding.active_skill_names + binding.transient_skill_names
+        missing_pins = [
+            name
+            for name in active_names
+            if name not in binding.skill_activator.pinned_skill_packages
+        ]
+        if missing_pins and binding.skill_evolution_state_root is not None:
+            _advance_skill_activation_epoch(
+                binding.skill_activator,
+                binding.skill_evolution_state_root,
+                missing_pins,
+            )
+        resolved_active_skills = binding.skill_activator.active_skills
 
     from quenda.runtime.temporal import SystemClock, TemporalContext
 
@@ -983,7 +1272,16 @@ def refresh_run_context(
     )
 
     # 5. Resolve instruction sources (includes discovered + active skills)
-    instruction_sources = resolve_instruction_sources(
+    additional_sources: list[InstructionSource] = []
+    if binding.extension_context is not None:
+        additional_sources = binding.context_providers.provide(
+            ContextProviderRequest(
+                extension=binding.extension_context,
+                session_id=session_id,
+            )
+        )
+
+    instruction_sources = resolve_prompt_sources(
         agent_package_path=binding.agent_package_path,
         agent_name=agent_package.name,
         agent_md_content=agent_package.agent_md,
@@ -992,8 +1290,7 @@ def refresh_run_context(
         user=binding.user,
         workspace_id=binding.workspace_id,
         instruction_files=(
-            agent_package.config.instruction_files
-            if agent_package.config else None
+            agent_package.config.instruction_files if agent_package.config else None
         ),
         discovered_skills=discovered_skills,
         active_skills=resolved_active_skills,
@@ -1001,36 +1298,16 @@ def refresh_run_context(
             agent_package.config and agent_package.config.include_skill_catalog
         ),
         temporal_context=temporal_context,
+        mode=mode,
+        additional_sources=additional_sources,
     )
-    instruction_sources.extend(
-        resolve_mode_instruction_source(binding.agent_package_path, mode)
+
+    # 6. Compose prompt through the canonical pure assembly seam.
+    prompt_assembly = PromptAssembler().assemble(
+        instruction_sources,
+        template_context,
     )
-    if binding.extension_context is not None:
-        instruction_sources.extend(binding.context_providers.provide(
-            ContextProviderRequest(
-                extension=binding.extension_context,
-                session_id=session_id,
-            )
-        ))
-        instruction_sources.sort(key=lambda source: source.scope)
-
-    # An Agent Home may expose a core file directly and through an inherited
-    # context provider. Preserve the first resolved source instead of injecting
-    # duplicate prompt content.
-    deduplicated_sources: list[InstructionSource] = []
-    seen_paths: set[Path] = set()
-    for source in instruction_sources:
-        if source.path is not None:
-            resolved_path = source.path.resolve()
-            if resolved_path in seen_paths:
-                continue
-            seen_paths.add(resolved_path)
-        deduplicated_sources.append(source)
-    instruction_sources = deduplicated_sources
-
-    # 6. Compose prompt
-    composer = InstructionComposer(template_context)
-    composed_prompt = composer.compose(instruction_sources)
+    composed_prompt = prompt_assembly.composed_prompt
 
     return RunContextSnapshot(
         agent_md_content=agent_package.agent_md,
@@ -1039,6 +1316,7 @@ def refresh_run_context(
         discovered_skills=discovered_skills,
         resolved_active_skills=resolved_active_skills,
         template_context=template_context,
+        prompt_assembly=prompt_assembly,
     )
 
 
@@ -1092,9 +1370,9 @@ def setup_agent(
     *,
     provider: str | None = None,
     model: str | None = None,
-    provider_registry: "ProviderRegistry | None" = None,
+    provider_registry: ProviderRegistry | None = None,
     tools: list[Tool] | None = None,
-    permission_policy: "PermissionPolicy" | None = None,
+    permission_policy: PermissionPolicy | None = None,
 ) -> AgentSetup | None:
     """
     Setup an agent from AGENT.md path.
@@ -1152,17 +1430,25 @@ def setup_agent(
         mcp_tools = _connect_mcp_servers_sync(binding)
         if mcp_tools:
             existing_names = {tool.name for tool in binding.tools}
-            binding.tools.extend(
-                tool for tool in mcp_tools
-                if tool.name not in existing_names
-            )
+            binding.tools.extend(tool for tool in mcp_tools if tool.name not in existing_names)
 
         # =====================================================================
         # Create Runtime Components
         # =====================================================================
 
+        evolution_handler = _resolve_evolution_handler(
+            binding.agent_package.config if binding.agent_package else None,
+            agent_home=(
+                binding.extension_context.user_agent_path
+                if binding.extension_context is not None
+                else binding.agent_package_path
+            ),
+            model=binding.model_instance,
+        )
+
         # Create Agent (public API)
         from quenda.runtime import Agent
+
         agent = Agent(
             name=binding.agent_package.name if binding.agent_package else "agent",
             system_prompt=context_snapshot.composed_prompt,
@@ -1178,12 +1464,15 @@ def setup_agent(
             capability_routing=binding.capability_routing,
             microcompact_trigger_tokens=(
                 binding.agent_package.config.compression.microcompact_trigger_tokens
-                if binding.agent_package.config else 50_000
+                if binding.agent_package.config
+                else 50_000
             ),
             microcompact_keep_last_tool_results=(
                 binding.agent_package.config.compression.microcompact_keep_last_tool_results
-                if binding.agent_package.config else 8
+                if binding.agent_package.config
+                else 8
             ),
+            after_run_handler=evolution_handler,
         )
 
         # Create ContextRebuilder for runtime context rebuilding
@@ -1198,7 +1487,8 @@ def setup_agent(
             user=binding.user,
             instruction_files=(
                 binding.agent_package.config.instruction_files
-                if binding.agent_package and binding.agent_package.config else None
+                if binding.agent_package and binding.agent_package.config
+                else None
             ),
         )
 
@@ -1235,18 +1525,21 @@ def setup_agent(
 
 def create_skill_activation_handler(
     setup: AgentSetup,
-    session: "Session",
+    session: Session,
 ) -> Callable[[list[str]], str | None]:
     """Create the in-run skill activation callback for a prepared agent setup."""
+
     def skill_activation_handler(skill_names: list[str]) -> str | None:
         if not skill_names or setup.skill_activator is None:
             return None
 
         activated: list[str] = []
         for name in skill_names:
-            if setup.skill_activator.is_active(name):
-                continue
-            skill = setup.skill_activator.activate_skill(name, transient=True)
+            skill = (
+                setup.skill_activator.discovery.get_skill(name)
+                if setup.skill_activator.is_active(name)
+                else setup.skill_activator.activate_skill(name, transient=True)
+            )
             if skill is not None:
                 activated.append(name)
 
@@ -1255,6 +1548,13 @@ def create_skill_activation_handler(
 
         setup.binding.active_skill_names = setup.skill_activator.list_persistent()
         setup.binding.transient_skill_names = setup.skill_activator.list_transient()
+        state_root = getattr(setup.binding, "skill_evolution_state_root", None)
+        if isinstance(state_root, Path):
+            _advance_skill_activation_epoch(
+                setup.skill_activator,
+                state_root,
+                activated,
+            )
         snapshot = refresh_run_context(
             setup.binding,
             session_id=session.id,
@@ -1273,14 +1573,14 @@ def create_skill_activation_handler(
 def run_agent_once(
     agent_path: Path,
     workspace: Path,
-    user_message: "str | Sequence[TextContent | ImageContent]",
+    user_message: str | Sequence[TextContent | ImageContent],
     *,
     provider: str | None = None,
     model: str | None = None,
-    provider_registry: "ProviderRegistry | None" = None,
+    provider_registry: ProviderRegistry | None = None,
     session_id: str | None = None,
-    on_event: "Callable[[AnyEvent], None] | None" = None,
-    on_setup: Callable[[AgentSetup, "Session"], None] | None = None,
+    on_event: Callable[[AnyEvent], None] | None = None,
+    on_setup: Callable[[AgentSetup, Session], None] | None = None,
 ) -> bool:
     """
     Run an agent with a single message.
@@ -1342,7 +1642,9 @@ def _connect_mcp_servers_sync(binding: StableHostBinding) -> list[Tool]:
 
 
 __all__ = [
+    "advance_skill_activation_epoch",
     # Two-path model (ADR-026)
+    "ExecutionBinding",
     "StableHostBinding",
     "RunContextSnapshot",
     "setup_host_binding",

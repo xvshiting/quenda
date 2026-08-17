@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from quenda.host.instructions import (
-    InstructionComposer,
     InstructionSource,
     TemplateContext,
-    resolve_instruction_sources,
-    resolve_mode_instruction_source,
+    resolve_prompt_sources,
 )
+from quenda.host.prompt import PromptAssembler, PromptAssembly
 from quenda.runtime.temporal import Clock, SystemClock, TemporalContext
 
 if TYPE_CHECKING:
@@ -118,9 +117,25 @@ class ContextRebuilder:
         Returns:
             The newly composed system prompt text.
         """
+        return self.rebuild_assembly(
+            provider=provider,
+            model=model,
+            session_id=session_id,
+            mode=mode,
+        ).composed_prompt
+
+    def rebuild_assembly(
+        self,
+        *,
+        provider: str,
+        model: str,
+        session_id: str,
+        mode: str = "chat",
+    ) -> PromptAssembly:
+        """Rebuild and return the structured canonical prompt assembly."""
         # 1. Re-resolve instruction sources (picks up file changes)
         temporal_context = TemporalContext.capture(self._clock)
-        sources = resolve_instruction_sources(
+        sources = resolve_prompt_sources(
             agent_package_path=self._agent_package_path,
             agent_name=self._agent_name,
             agent_md_content=self._agent_md_content,
@@ -130,13 +145,10 @@ class ContextRebuilder:
             workspace_id=self._workspace_id,
             instruction_files=self._instruction_files,
             temporal_context=temporal_context,
+            mode=mode,
         )
 
-        # 2. Resolve mode-specific instructions from agent package
-        mode_instructions = self._resolve_mode_instructions(mode)
-        sources.extend(mode_instructions)
-
-        # 3. Build fresh template context with current state
+        # 2. Build fresh template context with current state
         context = TemplateContext(
             agent_name=self._agent_name,
             agent_version=self._agent_version,
@@ -150,23 +162,8 @@ class ContextRebuilder:
             mode=mode,
         )
 
-        # 4. Re-compose
-        composer = InstructionComposer(context)
-        return composer.compose(sources)
-
-    def _resolve_mode_instructions(self, mode: str) -> list[InstructionSource]:
-        """
-        Resolve mode-specific instructions from the agent package.
-
-        Looks for <agent_package>/instructions/mode-<mode>.md files.
-
-        Args:
-            mode: The current mode name.
-
-        Returns:
-            List of instruction sources for the mode, or empty list.
-        """
-        return resolve_mode_instruction_source(self._agent_package_path, mode)
+        # 3. Re-compose through the same canonical seam used by run refresh.
+        return PromptAssembler().assemble(sources, context)
 
     def apply(
         self,

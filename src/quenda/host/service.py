@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from quenda.host.permission_manager import PermissionManager
+from quenda.host.prompt import build_prompt_cache_event
 from quenda.host.runner import (
     AgentSetup,
     create_skill_activation_handler,
@@ -43,9 +44,15 @@ from quenda.host.service_types import (
     StartRunRequest,
 )
 from quenda.kernel.types import ImageContent, TextContent
-from quenda.runtime.events import AnyEvent, InteractionRequested, PermissionRequested
+from quenda.runtime.cancellation import CancellationToken
+from quenda.runtime.events import (
+    AnyEvent,
+    InteractionRequested,
+    PermissionRequested,
+)
 
 if TYPE_CHECKING:
+    from quenda.host.prompt import PromptAssembly
     from quenda.runtime.agent import Agent
     from quenda.runtime.session import Session
 
@@ -63,6 +70,7 @@ class ActiveRun:
     interaction_futures: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     permission_futures: dict[str, asyncio.Future[str]] = field(default_factory=dict)
     interrupt_requested: bool = False
+    cancellation_token: CancellationToken = field(default_factory=CancellationToken)
 
 
 @dataclass
@@ -73,6 +81,7 @@ class ActiveSession:
     setup: AgentSetup
     session: Session
     permission_manager: PermissionManager
+    last_prompt_assembly: PromptAssembly | None = None
 
 
 class HostService:
@@ -168,6 +177,11 @@ class HostService:
             setup=setup,
             session=session,
             permission_manager=permission_manager,
+            last_prompt_assembly=getattr(
+                setup.context_snapshot,
+                "prompt_assembly",
+                None,
+            ),
         )
 
         return SessionInfo(
@@ -290,6 +304,26 @@ class HostService:
         if request.session_id not in self._active_sessions:
             raise ValueError(f"Session {request.session_id} not found")
 
+        active_statuses = {
+            RunStatus.PENDING,
+            RunStatus.RUNNING,
+            RunStatus.PAUSED,
+        }
+        conflicting_run = next(
+            (
+                run
+                for run in self._active_runs.values()
+                if run.handle.session_id == request.session_id
+                and run.handle.status in active_statuses
+            ),
+            None,
+        )
+        if conflicting_run is not None:
+            raise ValueError(
+                f"Session {request.session_id} already has active run "
+                f"{conflicting_run.handle.id}"
+            )
+
         active_session = self._active_sessions[request.session_id]
 
         snapshot = refresh_run_context(
@@ -303,6 +337,14 @@ class HostService:
         set_agent_prompt = getattr(active_session.agent, "set_system_prompt", None)
         if callable(set_agent_prompt):
             set_agent_prompt(snapshot.composed_prompt)
+
+        prompt_assembly = getattr(snapshot, "prompt_assembly", None)
+        prompt_observation = (
+            prompt_assembly.observe(active_session.last_prompt_assembly)
+            if prompt_assembly is not None
+            else None
+        )
+        active_session.last_prompt_assembly = prompt_assembly
 
         # Create run handle
         run_id = f"run_{uuid4().hex[:8]}"
@@ -322,6 +364,11 @@ class HostService:
         )
 
         self._active_runs[run_id] = active_run
+
+        if prompt_observation is not None:
+            active_run.event_queue.put_nowait(
+                build_prompt_cache_event(prompt_observation, run_id=run_id)
+            )
 
         # Start the run task
         active_run.task = asyncio.create_task(
@@ -509,6 +556,7 @@ class HostService:
 
         # Set interrupt flag
         active_run.interrupt_requested = True
+        active_run.cancellation_token.cancel()
 
         # Cancel the task if it exists
         if active_run.task:
@@ -739,6 +787,7 @@ class HostService:
                     next_message,
                     on_event=on_event,
                     skill_activation_handler=skill_handler,
+                    cancellation_token=active_run.cancellation_token,
                 )
                 if active_run.handle.status != RunStatus.PAUSED:
                     break

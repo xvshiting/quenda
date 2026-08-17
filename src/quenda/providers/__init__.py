@@ -94,6 +94,7 @@ registry.register(ProviderSpec(
 from quenda.providers.model import Model, ModelCost, ModelSpec, capabilities_of
 from quenda.providers.provider import Provider, ProviderSpec
 from quenda.providers.auth import AuthResolver, EnvAuthResolver
+from quenda.providers.config import ProviderConfig, register_configured_providers
 from quenda.providers.registry import (
     ProviderRegistry,
     build_default_provider_registry,
@@ -164,6 +165,8 @@ __all__ = [
     "capabilities_of",
     "Provider",
     "ProviderSpec",
+    "ProviderConfig",
+    "register_configured_providers",
     # Auth
     "AuthResolver",
     "EnvAuthResolver",

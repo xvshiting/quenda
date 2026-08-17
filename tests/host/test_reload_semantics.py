@@ -7,16 +7,16 @@ These tests verify:
 3. Tool/model/sandbox bindings remain stable until explicit rebind
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
+
 from quenda.host.runner import (
-    StableHostBinding,
-    RunContextSnapshot,
-    setup_host_binding,
+    advance_skill_activation_epoch,
     refresh_run_context,
     setup_agent,
+    setup_host_binding,
 )
-from quenda.host.workspace import WorkspaceResolver
 from quenda.host.skill import SkillDiscovery
 
 
@@ -55,9 +55,7 @@ model_name: deepseek-v4-flash
 
         return agent_dir, workspace
 
-    def test_agent_md_changes_picked_up(
-        self, agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_agent_md_changes_picked_up(self, agent_setup: tuple[Path, Path]) -> None:
         """AGENT.md changes should be visible in next refresh_run_context."""
         agent_dir, workspace = agent_setup
 
@@ -88,9 +86,7 @@ You are a test agent.
         assert "UPDATED" in snapshot2.agent_md_content
         assert "INITIAL" not in snapshot2.agent_md_content
 
-    def test_instruction_changes_picked_up(
-        self, agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_instruction_changes_picked_up(self, agent_setup: tuple[Path, Path]) -> None:
         """Instruction file changes should be visible in next refresh_run_context.
 
         Note: This test verifies that AGENT.md changes are picked up.
@@ -218,7 +214,7 @@ model_name: deepseek-v4-flash
         assert binding is not None
 
         # First refresh - no skills from user-workspace
-        from quenda.host.skill import SkillDiscovery
+
         discovery1 = SkillDiscovery(user_workspace_skills_path=skills_dir)
         skills1 = discovery1.discover_skills()
         # Verify no skills from user_workspace source
@@ -266,13 +262,67 @@ description: A test skill
         binding.active_skill_names.append("test-skill")
 
         # Refresh should resolve the skill
-        from quenda.host.skill import SkillDiscovery
+
         discovery = SkillDiscovery(user_workspace_skills_path=skills_dir)
-        snapshot = refresh_run_context(binding)
+        refresh_run_context(binding)
 
         # Check resolved skills
         resolved = [s for s in discovery.discover_skills() if s.name == "test-skill"]
         assert len(resolved) == 1
+
+    def test_active_skill_content_changes_only_at_explicit_epoch(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Disk commits must not silently replace an active Skill revision."""
+        monkeypatch.setenv("QUENDA_HOME", str(tmp_path / "quenda-home"))
+        agent_dir = tmp_path / "agent"
+        skill_dir = agent_dir / "skills" / "pinned-skill"
+        skill_dir.mkdir(parents=True)
+        (agent_dir / "AGENT.md").write_text(
+            "---\nname: epoch-agent\n---\nAgent.\n",
+            encoding="utf-8",
+        )
+        (agent_dir / "config.yaml").write_text(
+            "skills:\n  - pinned-skill\n",
+            encoding="utf-8",
+        )
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: pinned-skill\ndescription: Epoch test.\n---\n\nVERSION ONE\n",
+            encoding="utf-8",
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        class ProviderRegistry:
+            def get_model(self, provider: str, model: str) -> object:
+                del provider, model
+                return object()
+
+        binding = setup_host_binding(
+            agent_dir,
+            workspace,
+            provider_registry=ProviderRegistry(),  # type: ignore[arg-type]
+        )
+        assert binding is not None
+        first = refresh_run_context(binding)
+        epoch = binding.skill_activator.activation_epoch if binding.skill_activator else 0
+
+        skill_md.write_text(
+            "---\nname: pinned-skill\ndescription: Epoch test.\n---\n\nVERSION TWO\n",
+            encoding="utf-8",
+        )
+        still_pinned = refresh_run_context(binding)
+        new_epoch = advance_skill_activation_epoch(binding, ["pinned-skill"])
+        refreshed = refresh_run_context(binding)
+
+        assert "VERSION ONE" in first.composed_prompt
+        assert "VERSION ONE" in still_pinned.composed_prompt
+        assert "VERSION TWO" not in still_pinned.composed_prompt
+        assert new_epoch == epoch + 1
+        assert "VERSION TWO" in refreshed.composed_prompt
 
 
 class TestCapabilityBindingStability:
@@ -304,9 +354,7 @@ tools:
 
         return agent_dir, workspace
 
-    def test_model_binding_stable_across_refresh(
-        self, agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_model_binding_stable_across_refresh(self, agent_setup: tuple[Path, Path]) -> None:
         """Model binding should not change across text refresh."""
         agent_dir, workspace = agent_setup
 
@@ -332,9 +380,7 @@ tools:
         assert binding.model_name == original_model
         assert binding.provider_name == original_provider
 
-    def test_tool_binding_stable_across_refresh(
-        self, agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_tool_binding_stable_across_refresh(self, agent_setup: tuple[Path, Path]) -> None:
         """Tool grants should not change across text refresh."""
         agent_dir, workspace = agent_setup
 
@@ -397,9 +443,7 @@ instructions_include:
 
         return agent_dir, workspace
 
-    def test_setup_agent_uses_two_paths(
-        self, full_agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_setup_agent_uses_two_paths(self, full_agent_setup: tuple[Path, Path]) -> None:
         """setup_agent should use both paths correctly."""
         agent_dir, workspace = full_agent_setup
 
@@ -414,9 +458,7 @@ instructions_include:
         assert setup.context_snapshot is not None
         assert "Base instruction content" in setup.context_snapshot.composed_prompt
 
-    def test_text_refresh_independent_of_binding(
-        self, full_agent_setup: tuple[Path, Path]
-    ) -> None:
+    def test_text_refresh_independent_of_binding(self, full_agent_setup: tuple[Path, Path]) -> None:
         """Text refresh should be independent of capability binding."""
         agent_dir, workspace = full_agent_setup
 
@@ -429,6 +471,10 @@ instructions_include:
 
         # Both should have same composed prompt
         assert snapshot1.composed_prompt == snapshot2.composed_prompt
+        assert snapshot1.prompt_assembly is not None
+        assert snapshot2.prompt_assembly is not None
+        assert snapshot1.prompt_assembly.composed_prompt == snapshot1.composed_prompt
+        assert snapshot1.prompt_assembly.digest == snapshot2.prompt_assembly.digest
 
         # Edit AGENT.md (this is always loaded)
         (agent_dir / "AGENT.md").write_text("""---

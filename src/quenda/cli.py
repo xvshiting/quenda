@@ -11,12 +11,15 @@ Provides commands to run agents:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from quenda.capabilities import build_framework_capability_manifest
+from quenda.gateway import GatewayManager
 from quenda.host import (
     AgentHome,
     AgentHomeManager,
@@ -33,6 +36,7 @@ from quenda.host import (
     setup_agent,
 )
 from quenda.host.permission_manager import PermissionManager, format_permission_prompt
+from quenda.host.validation import ValidationReport, validate_agent_package
 from quenda.interface import (
     ActivityEventHandler,
     CollectingEventHandler,
@@ -59,7 +63,28 @@ from quenda.runtime.multimodal import build_user_message, load_images
 from quenda.runtime.permission import PermissionRequest
 
 _DOUBLE_CTRL_C_WINDOW_SECONDS = 1.5
-_BUILTIN_COMMANDS = frozenset({"run", "agent", "code"})
+_BUILTIN_COMMANDS = frozenset(
+    {"run", "agent", "code", "web", "gateway", "capabilities"}
+)
+
+
+def _run_web_server(*, host: str, port: int, reload: bool) -> int:
+    """Start the optional Web UI without making it a core dependency."""
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            'Error: Web UI dependencies are not installed. Run: pip install "quenda[web]"',
+            file=sys.stderr,
+        )
+        return 1
+    uvicorn.run(
+        "quenda.web.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+    return 0
 
 
 def _register_exit_interrupt(
@@ -469,6 +494,7 @@ def run_repl(
         skill_discovery=setup.skill_discovery,
         skill_activator=setup.skill_activator,
         workspace_path=setup.workspace_path,
+        prompt_assembly=setup.context_snapshot.prompt_assembly,
     )
 
     # Set host binding for /rebind command (ADR-026)
@@ -827,7 +853,7 @@ def _add_agent_run_arguments(parser: argparse.ArgumentParser) -> None:
         "--workspace",
         type=Path,
         default=None,
-        help="Workspace directory (default: the Agent Home workspace)",
+        help="Workspace directory (default: current directory)",
     )
     parser.add_argument("--provider", help="Model provider override")
     parser.add_argument("--model", help="Model name override")
@@ -853,8 +879,7 @@ def _launch_agent_home(home: AgentHome, args: argparse.Namespace) -> int:
             print(f"Error: Workspace directory not found: {workspace}", file=sys.stderr)
             return 1
     else:
-        workspace = home.workspace
-        workspace.mkdir(parents=True, exist_ok=True)
+        workspace = Path.cwd()
     if args.message:
         return run_agent(
             agent_path=home.path,
@@ -879,12 +904,52 @@ def _run_agent_shortcut(
     manager: AgentHomeManager,
 ) -> int | None:
     """Run ``quenda <name>`` when name resolves to an Agent Home."""
-    home = manager.get(name)
+    home = manager.prepare(name)
     if home is None:
         return None
     parser = argparse.ArgumentParser(prog=f"quenda {name}")
     _add_agent_run_arguments(parser)
     return _launch_agent_home(home, parser.parse_args(list(argv)))
+
+
+def _resolve_agent_validation_target(
+    target: str,
+    manager: AgentHomeManager,
+) -> Path:
+    """Resolve a validation target without installing or mutating an Agent Home."""
+    candidate = Path(target).expanduser()
+    if candidate.exists() or target in {".", ".."}:
+        return candidate
+    try:
+        home = manager.get(target)
+    except ValueError:
+        home = None
+    if home is not None:
+        return home.path
+    builtin = find_builtin_agent(target)
+    return builtin if builtin is not None else candidate
+
+
+def _print_validation_report(report: ValidationReport, *, as_json: bool) -> None:
+    """Write validation's primary result to stdout."""
+    if as_json:
+        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        return
+
+    state = "valid" if report.valid else "invalid"
+    name = report.agent_name or "unknown"
+    print(f"Agent {name}: {state}")
+    print(f"Path: {report.path}")
+    for diagnostic in report.diagnostics:
+        location = f" ({diagnostic.path})" if diagnostic.path else ""
+        print(
+            f"{diagnostic.severity.upper()} {diagnostic.code}: "
+            f"{diagnostic.message}{location}"
+        )
+    print(
+        f"Summary: {report.error_count} error(s), "
+        f"{report.warning_count} warning(s)"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -902,6 +967,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    capabilities_parser = subparsers.add_parser(
+        "capabilities", help="Inspect Quenda's public capability manifest"
+    )
+    capabilities_parser.add_argument(
+        "--json", action="store_true", help="Write machine-readable JSON to stdout"
+    )
+    capabilities_parser.add_argument(
+        "--section",
+        choices=(
+            "framework",
+            "interfaces",
+            "configuration",
+            "registries",
+            "lifecycle",
+            "extension_points",
+        ),
+        help="Return only one top-level manifest section",
+    )
+
     agent_parser = subparsers.add_parser("agent", help="Create and manage local agents")
     agent_subparsers = agent_parser.add_subparsers(dest="agent_command", required=True)
 
@@ -914,6 +998,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     agent_subparsers.add_parser("list", help="List local Agent Homes")
+
+    validate_parser = agent_subparsers.add_parser(
+        "validate", help="Validate an Agent package without running it"
+    )
+    validate_parser.add_argument(
+        "target",
+        nargs="?",
+        default=".",
+        help="Agent Home name, Agent directory, or AGENT.md path (default: current directory)",
+    )
+    validate_parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=Path.cwd(),
+        help="Workspace used for project Skill discovery (default: current directory)",
+    )
+    validate_parser.add_argument(
+        "--json", action="store_true", help="Write machine-readable JSON to stdout"
+    )
 
     agent_run_parser = agent_subparsers.add_parser("run", help="Run a local Agent Home")
     agent_run_parser.add_argument("name", help="Agent name")
@@ -963,7 +1066,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--workspace",
         type=Path,
         default=None,
-        help="Workspace directory (local Agent Home default, otherwise current directory)",
+        help="Workspace directory (default: current directory)",
     )
     code_parser.add_argument(
         "--provider",
@@ -989,7 +1092,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Task or question for the agent (omit for REPL mode)",
     )
 
+    web_parser = subparsers.add_parser("web", help="Start the Quenda Web UI")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Address to bind")
+    web_parser.add_argument("--port", type=int, default=8000, help="Port to bind")
+    web_parser.add_argument("--reload", action="store_true", help="Reload on source changes")
+
+    gateway_parser = subparsers.add_parser("gateway", help="Manage the Web UI gateway")
+    gateway_subparsers = gateway_parser.add_subparsers(
+        dest="gateway_command", required=True
+    )
+    gateway_start = gateway_subparsers.add_parser("start", help="Start in background")
+    gateway_start.add_argument("--host", default="127.0.0.1", help="Address to bind")
+    gateway_start.add_argument("--port", type=int, default=8000, help="Port to bind")
+    gateway_subparsers.add_parser("stop", help="Stop the background gateway")
+    gateway_restart = gateway_subparsers.add_parser("restart", help="Restart the gateway")
+    gateway_restart.add_argument("--host", default=None, help="Override address")
+    gateway_restart.add_argument("--port", type=int, default=None, help="Override port")
+    gateway_subparsers.add_parser("status", help="Show gateway status")
+    gateway_logs = gateway_subparsers.add_parser("logs", help="Show recent logs")
+    gateway_logs.add_argument("--lines", type=int, default=50, help="Number of lines")
+
     args = parser.parse_args(cli_args)
+
+    if args.command == "capabilities":
+        manifest = build_framework_capability_manifest()
+        if args.section:
+            manifest = {args.section: manifest[args.section]}
+        if args.json:
+            print(json.dumps(manifest, indent=2, sort_keys=True))
+        else:
+            framework = manifest.get("framework", {})
+            if framework:
+                print(f"{framework['name']} {framework['version']}")
+            registries = manifest.get("registries", {})
+            if registries:
+                print("Provider APIs: " + ", ".join(registries["provider_apis"]))
+                print(f"Providers: {len(registries['providers'])}")
+            extension_points = manifest.get("extension_points", [])
+            if extension_points:
+                print("Extension points:")
+                for point in extension_points:
+                    print(f"  {point['id']}\t{point['contract']}")
+            if args.section and not (framework or registries or extension_points):
+                print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
 
     if args.command == "agent":
         if args.agent_command == "create":
@@ -1020,12 +1166,50 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{home.name}\t{home.path}{source}")
             return 0
 
+        if args.agent_command == "validate":
+            target = _resolve_agent_validation_target(args.target, agent_manager)
+            report = validate_agent_package(target, workspace_path=args.workspace)
+            _print_validation_report(report, as_json=args.json)
+            return 0 if report.valid else 1
+
         if args.agent_command == "run":
-            home = agent_manager.get(args.name)
+            home = agent_manager.prepare(args.name)
             if home is None:
                 print(f'Error: Agent "{args.name}" not found', file=sys.stderr)
                 return 1
             return _launch_agent_home(home, args)
+
+    if args.command == "gateway":
+        gateway = GatewayManager()
+        try:
+            if args.gateway_command == "start":
+                status = gateway.start(host=args.host, port=args.port)
+                print(f"Gateway started: http://{status.host}:{status.port} (PID {status.pid})")
+                print(f"Logs: {gateway.log_file}")
+                return 0
+            if args.gateway_command == "stop":
+                if gateway.stop():
+                    print("Gateway stopped")
+                else:
+                    print("Gateway is not running")
+                return 0
+            if args.gateway_command == "restart":
+                status = gateway.restart(host=args.host, port=args.port)
+                print(f"Gateway restarted: http://{status.host}:{status.port} (PID {status.pid})")
+                return 0
+            if args.gateway_command == "status":
+                status = gateway.status()
+                if status.running:
+                    print(f"Gateway is running: http://{status.host}:{status.port} (PID {status.pid})")
+                    return 0
+                print("Gateway is not running")
+                return 1
+            if args.gateway_command == "logs":
+                print(gateway.tail_logs(args.lines))
+                return 0
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
     if args.command == "run":
         agent_path = args.agent
@@ -1048,36 +1232,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 session_id=args.session,
             )
 
-    elif args.command == "code":
-        local_code = agent_manager.get("code")
-        if local_code is not None:
-            return _launch_agent_home(local_code, args)
+    elif args.command == "web":
+        return _run_web_server(host=args.host, port=args.port, reload=args.reload)
 
-        agent_dir = find_builtin_agent("quenda-code")
-        if agent_dir is None:
+    elif args.command == "code":
+        try:
+            local_code = agent_manager.ensure("quenda-code", source="quenda-code")
+        except FileNotFoundError:
             print("Error: Quenda Code Agent not found", file=sys.stderr)
             print("Install it:  pip install quenda quenda-code", file=sys.stderr)
             print("Or:          pip install quenda[code]", file=sys.stderr)
             return 1
-
-        if args.message:
-            user_message = _build_cli_user_message(args.message, args.images)
-            return run_agent(
-                agent_path=agent_dir,
-                workspace=args.workspace or Path.cwd(),
-                user_message=user_message,
-                provider=args.provider,
-                model=args.model,
-                session_id=args.session,
-            )
-        else:
-            return run_repl(
-                agent_path=agent_dir,
-                workspace=args.workspace or Path.cwd(),
-                provider=args.provider,
-                model=args.model,
-                session_id=args.session,
-            )
+        prepared_code = agent_manager.prepare(local_code.name) or local_code
+        return _launch_agent_home(prepared_code, args)
 
     return 0
 

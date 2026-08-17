@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quenda Framework Authoring"
+  short_description: "Configure and extend Quenda agents safely"
+  default_prompt: "Use $quenda-framework-authoring to configure or extend this Quenda agent."

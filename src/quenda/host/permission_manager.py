@@ -8,21 +8,69 @@ through a consistent user experience.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
 
 from quenda.runtime.permission import (
+    DenyPermissionPolicy,
     PermissionCache,
     PermissionDecision,
     PermissionKind,
     PermissionLifetime,
+    PermissionPolicy,
     PermissionRequest,
     PermissionScope,
+    PermissionSource,
 )
 
-if TYPE_CHECKING:
-    from quenda.host.interactions import InteractionRegistry
+
+@dataclass
+class HostManagedPermissionPolicy:
+    """Allow Host-declared resources, then defer every other decision."""
+
+    delegate: PermissionPolicy = field(default_factory=DenyPermissionPolicy)
+    grants: PermissionManager = field(default_factory=lambda: PermissionManager())
+
+    def grant_host_managed_resource(
+        self,
+        resource: str,
+        *,
+        kind: PermissionKind = PermissionKind.FILESYSTEM_READ,
+        scope: PermissionScope = PermissionScope.DIRECTORY,
+        lifetime: PermissionLifetime = PermissionLifetime.SESSION,
+        tool_name: str = "",
+        reason: str = "Host-managed trusted resource",
+    ) -> PermissionDecision:
+        """Register one non-interactive Host trust root."""
+        return self.grants.grant_host_managed_resource(
+            resource,
+            kind=kind,
+            scope=scope,
+            lifetime=lifetime,
+            tool_name=tool_name,
+            reason=reason,
+        )
+
+    def decide(self, request: PermissionRequest) -> PermissionDecision:
+        """Resolve Host grants before consulting the caller's policy."""
+        cached = self.grants.check_cached(
+            request.kind,
+            request.resource,
+            request.scope,
+        )
+        if cached is not None:
+            return cached
+        return self.delegate.decide(request)
+
+
+def with_host_managed_permissions(
+    policy: PermissionPolicy | None,
+) -> PermissionPolicy:
+    """Return a policy capable of carrying non-interactive Host grants."""
+    if isinstance(policy, (PermissionManager, HostManagedPermissionPolicy)):
+        return policy
+    return HostManagedPermissionPolicy(delegate=policy or DenyPermissionPolicy())
 
 
 @dataclass
@@ -97,9 +145,10 @@ class PermissionManager:
             The permission decision.
         """
         # Check cache first
-        cached = self.cache.check(request.kind, request.resource, request.scope)
-        if cached:
-            return cached
+        if request.cacheable:
+            cached = self.cache.check(request.kind, request.resource, request.scope)
+            if cached:
+                return cached
 
         # No cached permission, need to prompt
         if self.prompt_handler is None:
@@ -122,7 +171,7 @@ class PermissionManager:
         )
 
         # Cache if allowed
-        if allowed:
+        if allowed and request.cacheable:
             self.cache.grant(decision)
 
         return decision
@@ -142,6 +191,49 @@ class PermissionManager:
         This is an explicit grant, not a prompt-driven approval. It is used
         for paths the user directly supplied in REPL input.
         """
+        return self._grant_resource(
+            resource,
+            kind=kind,
+            scope=scope,
+            lifetime=lifetime,
+            tool_name=tool_name,
+            reason="User provided resource",
+            source="user_provided",
+        )
+
+    def grant_host_managed_resource(
+        self,
+        resource: str,
+        *,
+        kind: PermissionKind = PermissionKind.FILESYSTEM_READ,
+        scope: PermissionScope = PermissionScope.DIRECTORY,
+        lifetime: PermissionLifetime = PermissionLifetime.SESSION,
+        tool_name: str = "",
+        reason: str = "Host-managed trusted resource",
+    ) -> PermissionDecision:
+        """Grant narrowly scoped access to a resource trusted by the Host."""
+        return self._grant_resource(
+            resource,
+            kind=kind,
+            scope=scope,
+            lifetime=lifetime,
+            tool_name=tool_name,
+            reason=reason,
+            source="host_managed",
+        )
+
+    def _grant_resource(
+        self,
+        resource: str,
+        *,
+        kind: PermissionKind,
+        scope: PermissionScope,
+        lifetime: PermissionLifetime,
+        tool_name: str,
+        reason: str,
+        source: PermissionSource,
+    ) -> PermissionDecision:
+        """Create and cache an explicit non-interactive permission grant."""
         normalized_resource = resource
         if scope == PermissionScope.DIRECTORY:
             try:
@@ -159,17 +251,17 @@ class PermissionManager:
             kind=kind,
             resource=normalized_resource,
             scope=scope,
-            reason="User provided resource",
+            reason=reason,
             lifetime=lifetime,
             tool_name=tool_name,
-            source="user_provided",
+            source=source,
         )
         decision = PermissionDecision(
             request=request,
             allowed=True,
             scope=scope,
             lifetime=lifetime,
-            reason="User provided resource",
+            reason=reason,
         )
         self.cache.grant(decision)
         return decision
@@ -183,14 +275,27 @@ class PermissionManager:
         self.cache.clear()
 
     def to_state(self) -> dict[str, object]:
-        """Serialize the permission cache for session persistence."""
-        return self.cache.to_dict()
+        """Serialize user decisions, excluding recomputable Host-managed grants."""
+        state = self.cache.to_dict()
+        decisions = state.get("decisions")
+        if isinstance(decisions, dict):
+            state["decisions"] = {
+                key: value
+                for key, value in decisions.items()
+                if not (
+                    isinstance(value, dict)
+                    and isinstance(value.get("request"), dict)
+                    and value["request"].get("source") == "host_managed"
+                )
+            }
+        return state
 
     def load_state(self, state: dict[str, object] | None) -> None:
-        """Load cached permissions from session state."""
+        """Merge persisted user decisions with current Host-managed grants."""
         if not state:
             return
-        self.cache = PermissionCache.from_dict(state)
+        restored = PermissionCache.from_dict(state)
+        self.cache.decisions.update(restored.decisions)
 
 
 def format_permission_prompt(request: PermissionRequest) -> str:
@@ -211,6 +316,8 @@ def format_permission_prompt(request: PermissionRequest) -> str:
         PermissionKind.FILESYSTEM_DELETE: "delete file",
         PermissionKind.SHELL_EXECUTE: "execute shell command",
         PermissionKind.NETWORK_ACCESS: "access network",
+        PermissionKind.AGENT_CONFIG_WRITE: "change Agent configuration",
+        PermissionKind.SKILL_EVOLUTION_WRITE: "activate Skill revision",
     }.get(request.kind, "access")
 
     lines = [

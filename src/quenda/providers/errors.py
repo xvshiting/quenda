@@ -89,6 +89,12 @@ class NetworkError(APIError):
     pass
 
 
+class RequestCancelledError(ProviderError):
+    """The caller cancelled an in-flight provider request."""
+
+    pass
+
+
 class ToolCallDecodeError(APIError):
     """
     Provider returned a tool call whose arguments could not be decoded.

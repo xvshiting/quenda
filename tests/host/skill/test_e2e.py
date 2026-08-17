@@ -384,7 +384,7 @@ Test agent.
         system_prompt = setup.agent.system_prompt
         assert "skills/" in system_prompt
         assert "SKILL.md" in system_prompt
-        assert "User-workspace skills" in system_prompt
+        assert "user-workspace skills" in system_prompt
 
     def test_framework_contract_available_as_constant(self) -> None:
         """Test that FRAMEWORK_CONTRACT constant is accessible."""

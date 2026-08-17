@@ -10,6 +10,7 @@ Core model:
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -197,7 +198,8 @@ class WorkspaceResolver:
             user_storage_root: Root directory for user storage.
                 Defaults to ~/.quenda/
         """
-        self.user_storage_root = user_storage_root or Path.home() / ".quenda"
+        configured_root = Path(os.environ["QUENDA_HOME"]) if "QUENDA_HOME" in os.environ else None
+        self.user_storage_root = (user_storage_root or configured_root or Path.home() / ".quenda").expanduser()
 
     def resolve(self, workspace_path: Path, auto_create: bool = True) -> WorkspaceBinding:
         """

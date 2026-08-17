@@ -50,8 +50,12 @@ network = [
     "httpx[socks]>=0.25.0",
     "brotli>=1.1.0",
 ]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
 all = [
-    "quenda[dev,code,openai,anthropic,network]",
+    "quenda[dev,code,openai,anthropic,network,web]",
 ]
 
 [project.scripts]

@@ -3,6 +3,7 @@ Tests for skill resource management.
 
 Resources are auto-discovered from directory structure:
 - references/ → reference resources
+- resources/ → generic reference resources
 - templates/ → template resources
 - assets/ → asset resources
 - scripts/ → executable scripts (.py files only)
@@ -184,6 +185,34 @@ description: Testing skill
         assert loaded.resource_name == "style-guide.md"
         assert "Style Guide" in loaded.content
         assert "4 spaces" in loaded.content
+
+    def test_generic_resources_directory_is_available_by_skill_uri(
+        self, tmp_path: Path
+    ) -> None:
+        """Ecosystem Skills may place read-only supporting files in resources/."""
+        skill_dir = tmp_path / "skills" / "speaker-announce"
+        resource_dir = skill_dir / "resources"
+        resource_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("""---
+name: speaker-announce
+description: Announce results
+---
+# Speaker announce
+""")
+        (resource_dir / "setup-guide.md").write_text("# Setup guide")
+
+        discovery = SkillDiscovery(user_workspace_skills_path=tmp_path / "skills")
+        skill = discovery.get_skill("speaker-announce")
+
+        assert skill is not None
+        resolver = ResourceResolver([skill])
+        loaded = resolver.resolve_uri(
+            "skill://speaker-announce/resources/setup-guide.md"
+        )
+        assert loaded is not None
+        assert loaded.resource_type == "reference"
+        assert loaded.executable is False
+        assert loaded.content == "# Setup guide"
 
     def test_load_nonexistent_resource(self, skill_with_resources: Path) -> None:
         """Test loading a resource that doesn't exist."""

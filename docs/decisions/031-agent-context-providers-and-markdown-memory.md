@@ -94,9 +94,10 @@ The implementation has no SQLite or vector index. It rejects path traversal,
 limits result counts and output size, and keeps all detailed memory outside the
 prompt until requested.
 
-Persistent indexing, embeddings, automatic writes, forgetting, and memory
-promotion are deferred. They can be added later as alternative adapters behind
-the same extension seams.
+Persistent indexing, embeddings, forgetting, and memory promotion remain
+deferred. Revisioned automatic writes are now available through
+`MemoryEvolutionStore`; end-of-Run proposal generation remains a separate
+lifecycle policy rather than part of the read-only retrieval tools.
 
 ### Dynamic module identity
 

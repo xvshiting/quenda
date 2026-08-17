@@ -16,8 +16,8 @@ import json
 from collections.abc import Generator
 from typing import TYPE_CHECKING, override
 
-from quenda.kernel.types import Message, ModelResponse, StreamChunk, ToolCall, UsageStats
 from quenda.kernel.tool import Tool
+from quenda.kernel.types import Message, ModelResponse, StreamChunk, ToolCall
 from quenda.providers.api.base import Api
 from quenda.providers.api.converters import (
     convert_messages_to_openai,
@@ -30,7 +30,9 @@ from quenda.providers.errors import (
     RateLimitError,
     ToolCallDecodeError,
 )
+from quenda.providers.observability import register_cancellation_callback
 from quenda.providers.retry import retry_with_backoff
+from quenda.providers.usage import normalize_openai_usage
 
 if TYPE_CHECKING:
     pass
@@ -75,7 +77,11 @@ class OpenAICompletionsApi(Api):
             client = openai.OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                timeout=timeout or 30.0,
+                timeout=timeout if timeout is not None else 30.0,
+                # Quenda owns retry policy and emits an observable event for
+                # each attempt. Hidden SDK retries multiply timeout latency
+                # and make the activity timeline misleading.
+                max_retries=0,
                 default_headers=headers if headers else None,
             )
 
@@ -85,11 +91,15 @@ class OpenAICompletionsApi(Api):
 
             try:
                 # Make request
+                request = {
+                    "model": model,
+                    "messages": openai_messages,
+                }
+                if openai_tools is not None:
+                    request["tools"] = openai_tools
+                    request["tool_choice"] = "auto"
                 response = client.chat.completions.create(
-                    model=model,
-                    messages=openai_messages,
-                    tools=openai_tools,
-                    tool_choice="auto" if openai_tools else None,
+                    **request,
                 )
 
                 # Convert response
@@ -153,7 +163,8 @@ class OpenAICompletionsApi(Api):
         client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=timeout or 30.0,
+            timeout=timeout if timeout is not None else 30.0,
+            max_retries=0,
             default_headers=headers if headers else None,
         )
 
@@ -161,21 +172,38 @@ class OpenAICompletionsApi(Api):
         openai_messages = convert_messages_to_openai(messages)
         openai_tools = convert_tools_to_openai(tools) if tools else None
 
+        unregister_cancel = lambda: None
+        close_stream = lambda: None
         try:
-            # Make streaming request
-            stream = client.chat.completions.create(
-                model=model,
-                messages=openai_messages,
-                tools=openai_tools,
-                tool_choice="auto" if openai_tools else None,
-                stream=True,
-            )
+            # Make streaming request. Omit unsupported optional fields rather
+            # than sending JSON null to strict OpenAI-compatible servers.
+            request = {
+                "model": model,
+                "messages": openai_messages,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            if openai_tools is not None:
+                request["tools"] = openai_tools
+                request["tool_choice"] = "auto"
+            stream = client.chat.completions.create(**request)
+            candidate_close = getattr(stream, "close", None)
+            if callable(candidate_close):
+                close_stream = candidate_close
+                unregister_cancel = register_cancellation_callback(close_stream)
 
             # Track tool calls across chunks
             tool_calls_buffer: dict[int, dict] = {}
 
             for chunk in stream:
+                usage = (
+                    normalize_openai_usage(chunk.usage)
+                    if getattr(chunk, "usage", None)
+                    else None
+                )
                 if not chunk.choices:
+                    if usage is not None:
+                        yield StreamChunk(usage=usage)
                     continue
 
                 delta = chunk.choices[0].delta
@@ -227,9 +255,22 @@ class OpenAICompletionsApi(Api):
                                     arguments=args,
                                 )
                             )
-                        yield StreamChunk(tool_calls=final_tool_calls, is_final=True)
+                        yield StreamChunk(
+                            tool_calls=final_tool_calls,
+                            is_final=True,
+                            stop_reason="tool_use",
+                            usage=usage,
+                        )
                     else:
-                        yield StreamChunk(is_final=True)
+                        finish_reason = chunk.choices[0].finish_reason
+                        stop_reason = (
+                            "max_tokens" if finish_reason == "length" else "end_turn"
+                        )
+                        yield StreamChunk(
+                            is_final=True,
+                            stop_reason=stop_reason,
+                            usage=usage,
+                        )
 
         except openai.RateLimitError as e:
             retry_after = None
@@ -258,6 +299,9 @@ class OpenAICompletionsApi(Api):
 
         except openai.APIError as e:
             raise APIError(f"OpenAI API error: {e}")
+        finally:
+            unregister_cancel()
+            close_stream()
 
     def _convert_response(self, response) -> ModelResponse:
         """Convert OpenAI response to Quenda format."""
@@ -288,13 +332,7 @@ class OpenAICompletionsApi(Api):
         # Extract usage statistics
         usage = None
         if hasattr(response, 'usage') and response.usage:
-            usage = UsageStats(
-                input_tokens=getattr(response.usage, 'prompt_tokens', 0) or 0,
-                output_tokens=getattr(response.usage, 'completion_tokens', 0) or 0,
-                cached_input_tokens=None,  # OpenAI doesn't expose this
-                reasoning_tokens=getattr(response.usage, 'completion_tokens_details', None) and
-                    getattr(response.usage.completion_tokens_details, 'reasoning_tokens', None),
-            )
+            usage = normalize_openai_usage(response.usage)
 
         return ModelResponse(
             content=content,

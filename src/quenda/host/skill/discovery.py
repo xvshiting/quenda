@@ -6,10 +6,12 @@ Skills are discovered in priority order:
 2. Project skills: <workspace>/.quenda/skills/
 3. Project ecosystem skills: <workspace>/.agents/skills/
 4. Agent-package bundled: <agent_package>/skills/
-5. User-level: ~/.quenda/skills/
+5. User-level cross-client: ~/.agents/skills/
+6. User-level Quenda: ${QUENDA_HOME:-~/.quenda}/skills/
 
 Resources are auto-discovered from directory structure:
 - references/ → reference resources
+- resources/ → generic reference resources
 - templates/ → template resources
 - assets/ → asset resources
 - scripts/ → executable Python scripts at any depth under the directory
@@ -19,10 +21,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from quenda.host.skill.models import SkillFrontmatter
 from quenda.host.skill.package import (
@@ -49,7 +53,8 @@ class SkillDiscovery:
     - User-workspace: ~/.quenda/users/<user>/workspaces/<ws_id>/skills/
       (user-specific skills for a workspace, highest priority)
     - Agent package: <agent_package>/skills/ (bundled with agent)
-    - User: ~/.quenda/skills/ (shared across workspaces, lowest priority)
+    - User: ${QUENDA_HOME:-~/.quenda}/skills/
+      (shared across workspaces, lowest priority)
     """
 
     def __init__(
@@ -86,20 +91,43 @@ class SkillDiscovery:
             if not skill_path.exists():
                 continue
 
-            for skill_dir in sorted(skill_path.iterdir(), key=lambda p: p.name):
-                if not skill_dir.is_dir():
-                    continue
-
-                skill_file = skill_dir / "SKILL.md"
-                if not skill_file.exists():
-                    continue
-
+            for skill_dir, skill_file in self._find_skill_packages(skill_path):
                 skill = self._parse_skill(skill_dir, skill_file)
                 if skill is not None and skill.name not in skills:
                     # First discovery wins (priority order)
                     skills[skill.name] = skill
 
         return list(skills.values())
+
+    def _find_skill_packages(self, skills_root: Path) -> Iterator[tuple[Path, Path]]:
+        """Yield Skill package directories below a root in stable path order.
+
+        Directories without ``SKILL.md`` are category containers and are walked
+        recursively. A directory containing ``SKILL.md`` is a package boundary,
+        so its resource directories are never searched for additional Skills.
+        Symlinked Skill packages are supported, while symlinked category trees
+        are not followed to avoid cycles and unbounded traversal outside the
+        configured root.
+        """
+        try:
+            children = sorted(skills_root.iterdir(), key=lambda path: path.name)
+        except OSError as error:
+            logger.warning("Failed to scan skills directory %s: %s", skills_root, error)
+            return
+
+        for child in children:
+            try:
+                if not child.is_dir():
+                    continue
+                skill_file = child / "SKILL.md"
+                if skill_file.is_file():
+                    yield child, skill_file
+                    continue
+                if child.is_symlink():
+                    continue
+                yield from self._find_skill_packages(child)
+            except OSError as error:
+                logger.warning("Failed to inspect skill path %s: %s", child, error)
 
     def get_skill(self, name: str) -> SkillPackage | None:
         """
@@ -117,6 +145,22 @@ class SkillDiscovery:
 
         return None
 
+    def load_package(
+        self,
+        skill_dir: Path,
+        *,
+        source: Literal["user_workspace", "workspace", "agent_package", "user", "system"]
+        | None = None,
+    ) -> SkillPackage:
+        """Load one explicitly selected package, including immutable snapshots."""
+        resolved = skill_dir.expanduser().resolve()
+        package = self._parse_skill(resolved, resolved / "SKILL.md")
+        if package is None:
+            raise ValueError(f"Invalid Skill package: {resolved}")
+        if source is not None:
+            package.source = source
+        return package
+
     def _skill_directories(self) -> list[Path]:
         """Get skill directories in priority order.
 
@@ -126,7 +170,8 @@ class SkillDiscovery:
         3. Project-level .agents/skills/ (cross-client interoperability)
         4. Agent package: <agent_package>/skills/ (bundled skills)
         5. User-level ~/.agents/skills/ (cross-client interoperability)
-        6. User-level ~/.quenda/skills/ (client-specific, lowest priority)
+        6. User-level ${QUENDA_HOME:-~/.quenda}/skills/
+           (client-specific, lowest priority)
         """
         dirs: list[Path] = []
 
@@ -158,8 +203,9 @@ class SkillDiscovery:
         if user_agents_skills.exists():
             dirs.append(user_agents_skills)
 
-        # User-level ~/.quenda/skills/ (client-specific, lowest priority)
-        dirs.append(Path.home() / ".quenda" / "skills")
+        # User-level ${QUENDA_HOME}/skills/ (client-specific, lowest priority)
+        quenda_home = Path(os.environ.get("QUENDA_HOME", Path.home() / ".quenda")).expanduser()
+        dirs.append(quenda_home / "skills")
 
         return dirs
 
@@ -248,10 +294,10 @@ class SkillDiscovery:
         repaired_lines: list[str] = []
         for line in frontmatter.splitlines(keepends=True):
             stripped = line.rstrip("\r\n")
-            newline = line[len(stripped):]
+            newline = line[len(stripped) :]
             prefix = "argument-hint:"
             if stripped.startswith(prefix):
-                value = stripped[len(prefix):].strip()
+                value = stripped[len(prefix) :].strip()
                 if value and not value.startswith(('"', "'", "|", ">")) and ": " in value:
                     line = f"{prefix} {json.dumps(value, ensure_ascii=False)}{newline}"
             repaired_lines.append(line)
@@ -263,6 +309,7 @@ class SkillDiscovery:
 
         Resource directories:
         - references/ → reference resources (read-only)
+        - resources/ → generic reference resources (read-only)
         - templates/ → template resources (read-only)
         - assets/ → asset resources (read-only)
         - scripts/ → executable Python scripts at any depth under the directory
@@ -283,15 +330,19 @@ class SkillDiscovery:
                 # Every .py file anywhere under the top-level scripts/ tree is executable.
                 executable = is_executable_dir and file_path.suffix == ".py"
 
-                resources.append(SkillResource(
-                    path=file_path,
-                    type=resource_type,  # type: ignore
-                    executable=executable,
-                ))
+                resources.append(
+                    SkillResource(
+                        path=file_path,
+                        type=resource_type,  # type: ignore
+                        executable=executable,
+                    )
+                )
 
         return resources
 
-    def _determine_source(self, skill_dir: Path) -> Literal["user_workspace", "workspace", "agent_package", "user", "system"]:
+    def _determine_source(
+        self, skill_dir: Path
+    ) -> Literal["user_workspace", "workspace", "agent_package", "user", "system"]:
         """Determine the source level of a skill.
 
         Priority order matches discovery order:
@@ -331,6 +382,11 @@ class SkillDiscovery:
                 pass
 
         # Check user level
+        try:
+            skill_dir.relative_to(Path.home() / ".agents" / "skills")
+            return "user"
+        except ValueError:
+            pass
         try:
             skill_dir.relative_to(Path.home() / ".quenda")
             return "user"

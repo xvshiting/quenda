@@ -139,6 +139,25 @@ class BlockingSession(InteractionSession):
         return ""
 
 
+class CancellationAwareSession(InteractionSession):
+    def __init__(self, session_id: str) -> None:
+        super().__init__()
+        self.id = session_id
+        self.cancellation_token: Any = None
+
+    async def send(
+        self,
+        message: Any,
+        *,
+        on_event,
+        cancellation_token=None,
+        **_: Any,
+    ) -> str:
+        self.cancellation_token = cancellation_token
+        await asyncio.Event().wait()
+        return ""
+
+
 def fake_setup(session: InteractionSession, tmp_path: Path) -> SimpleNamespace:
     agent = SimpleNamespace(
         open_session=lambda **_: session,
@@ -316,6 +335,88 @@ async def test_interrupt_returns_with_terminal_status_and_closes_event_stream(
 
     assert handle.status is RunStatus.INTERRUPTED
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_a_second_run_while_the_first_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """One mutable Session has at most one active writer."""
+    session = BlockingSession()
+    monkeypatch.setattr(
+        service_module,
+        "setup_agent",
+        lambda *_args, **_kwargs: fake_setup(session, tmp_path),
+    )
+    service = HostService()
+    created = service.create_session(
+        CreateSessionRequest(agent_path=tmp_path, workspace_path=tmp_path)
+    )
+    first = await service.start_run(
+        StartRunRequest(session_id=created.id, message="first")
+    )
+
+    try:
+        with pytest.raises(ValueError, match="already has active run"):
+            await service.start_run(
+                StartRunRequest(session_id=created.id, message="second")
+            )
+    finally:
+        await service.interrupt_run(
+            InterruptRequest(run_id=first.id, session_id=created.id)
+        )
+
+
+@pytest.mark.asyncio
+async def test_interrupt_cancels_only_the_target_runs_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Host cancellation is scoped even when different Sessions run together."""
+    first_runtime_session = CancellationAwareSession("session-1")
+    second_runtime_session = CancellationAwareSession("session-2")
+    sessions = iter([first_runtime_session, second_runtime_session])
+    monkeypatch.setattr(
+        service_module,
+        "setup_agent",
+        lambda *_args, **_kwargs: fake_setup(next(sessions), tmp_path),
+    )
+    service = HostService()
+    first_session = service.create_session(
+        CreateSessionRequest(agent_path=tmp_path, workspace_path=tmp_path)
+    )
+    second_session = service.create_session(
+        CreateSessionRequest(agent_path=tmp_path, workspace_path=tmp_path)
+    )
+    first = await service.start_run(
+        StartRunRequest(session_id=first_session.id, message="first")
+    )
+    second = await service.start_run(
+        StartRunRequest(session_id=second_session.id, message="second")
+    )
+    for _ in range(20):
+        if (
+            first_runtime_session.cancellation_token is not None
+            and second_runtime_session.cancellation_token is not None
+        ):
+            break
+        await asyncio.sleep(0)
+
+    try:
+        await service.interrupt_run(
+            InterruptRequest(run_id=first.id, session_id=first_session.id)
+        )
+
+        assert (
+            first_runtime_session.cancellation_token.is_cancelled,
+            second_runtime_session.cancellation_token.is_cancelled,
+            second.status,
+        ) == (True, False, RunStatus.RUNNING)
+    finally:
+        await service.interrupt_run(
+            InterruptRequest(run_id=second.id, session_id=second_session.id)
+        )
 
 
 def test_request_context_cannot_access_another_users_session(

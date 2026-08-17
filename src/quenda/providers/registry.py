@@ -113,6 +113,10 @@ class ProviderRegistry:
         """List all registered provider IDs."""
         return list(self._specs.keys())
 
+    def get_spec(self, provider_id: str) -> ProviderSpec | None:
+        """Return an inspectable provider specification without instantiating it."""
+        return self._specs.get(provider_id)
+
     def list_all_models(self) -> list[tuple[str, str]]:
         """List all (provider_id, model_id) pairs."""
         result = []

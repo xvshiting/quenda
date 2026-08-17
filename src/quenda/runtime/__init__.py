@@ -8,22 +8,37 @@ This layer is async - it wraps the sync Kernel with real-time event streaming.
 """
 
 from quenda.runtime.agent import Agent, AgentConfig, AgentDefinition
+from quenda.runtime.cancellation import CancellationReason, CancellationToken
 from quenda.runtime.events import (
     AnyEvent,
     ErrorOccurred,
     Event,
+    EvolutionCompleted,
+    EvolutionFailed,
     InteractionRequested,
     ModelCalled,
+    ModelResponseDelta,
     ModelResponded,
     ModelRetrying,
     ModelRouted,
+    PromptCacheObserved,
     RunCompleted,
+    RunInterrupted,
     RunPaused,
     RunStarted,
     RunTerminated,
     ToolExecuted,
 )
-from quenda.runtime.ports import Storage
+from quenda.runtime.lifecycle import (
+    CacheImpact,
+    FailureMode,
+    LifecycleDescriptor,
+    LifecycleRegistry,
+    LifecycleStage,
+    LifecycleStatus,
+    build_default_lifecycle_registry,
+)
+from quenda.runtime.ports import AfterRunContext, AfterRunHandler, Storage
 from quenda.runtime.routing import (
     CapabilityGuard,
     ModelRequirementResolver,
@@ -77,21 +92,38 @@ __all__ = [
     "SystemClock",
     "TemporalContext",
     "Storage",
+    "AfterRunContext",
+    "AfterRunHandler",
     # Run
     "Run",
     "RunState",
     "RunStatus",
     "SkillActivationHandler",
+    "CancellationReason",
+    "CancellationToken",
+    # Lifecycle catalog
+    "CacheImpact",
+    "FailureMode",
+    "LifecycleDescriptor",
+    "LifecycleRegistry",
+    "LifecycleStage",
+    "LifecycleStatus",
+    "build_default_lifecycle_registry",
     # Events
     "AnyEvent",
     "ErrorOccurred",
     "Event",
+    "EvolutionCompleted",
+    "EvolutionFailed",
     "InteractionRequested",
     "ModelCalled",
+    "ModelResponseDelta",
     "ModelRetrying",
     "ModelResponded",
     "ModelRouted",
+    "PromptCacheObserved",
     "RunCompleted",
+    "RunInterrupted",
     "RunPaused",
     "RunStarted",
     "RunTerminated",

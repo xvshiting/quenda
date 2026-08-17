@@ -6,6 +6,7 @@ skill with all its resources and metadata.
 
 Resources are auto-discovered from directory structure:
 - references/ → reference resources (read-only)
+- resources/ → generic reference resources (read-only)
 - templates/ → template resources (read-only)
 - assets/ → asset resources (read-only)
 - scripts/ → executable Python scripts at any depth under the directory
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 # Resource directories and their types
 RESOURCE_DIRECTORIES: dict[str, str] = {
     "references": "reference",
+    "resources": "reference",
     "templates": "template",
     "assets": "asset",
     "scripts": "script",
@@ -70,6 +72,7 @@ class SkillPackage:
 
     Resources are auto-discovered from directory structure:
     - references/ → reference resources
+    - resources/ → generic reference resources
     - templates/ → template resources
     - assets/ → asset resources
     - scripts/ → executable scripts (.py files)

@@ -2,11 +2,12 @@
 Tests for skill integration with runner and instruction composition.
 """
 
-import pytest
 from pathlib import Path
 
-from quenda.host.runner import setup_agent, AgentSetup
-from quenda.host.skill import SkillDiscovery, SkillActivator
+import pytest
+
+from quenda.host.permission_manager import PermissionManager
+from quenda.host.runner import refresh_run_context, setup_agent
 
 
 class TestSkillIntegrationWithRunner:
@@ -128,6 +129,69 @@ This is the {skill_name} instruction content.
         assert any('<skill_content name="test-skill">' in s.content for s in skill_sources)
         assert any('<skill_content name="another-skill">' in s.content for s in skill_sources)
         assert all("Available Skills" not in s.content for s in skill_sources)
+
+    def test_discovered_skill_packages_are_trusted_read_only_roots(
+        self, agent_with_skills: Path
+    ) -> None:
+        """Reading an external discovered Skill never needs a second approval."""
+        agent_dir = agent_with_skills / "agents" / "test-agent"
+        workspace = agent_with_skills / "workspace"
+        skill_dir = agent_dir / "skills" / "test-skill"
+        prompts = []
+        permission_manager = PermissionManager()
+        permission_manager.prompt_handler = lambda request: prompts.append(request) or False
+
+        setup = setup_agent(
+            agent_dir,
+            workspace,
+            permission_policy=permission_manager,
+        )
+
+        assert setup is not None
+        read_file = next(tool for tool in setup.binding.tools if tool.name == "read_file")
+        list_files = next(tool for tool in setup.binding.tools if tool.name == "list_files")
+
+        read_result = read_file.execute(path=str(skill_dir / "SKILL.md"))
+        list_result = list_files.execute(path=str(skill_dir))
+
+        assert not read_result.is_error
+        assert "test-skill instruction content" in read_result.content.lower()
+        assert not list_result.is_error
+        assert "SKILL.md" in list_result.content
+        assert prompts == []
+
+    def test_newly_discovered_skill_is_trusted_on_turn_refresh(
+        self, agent_with_skills: Path
+    ) -> None:
+        """Turn-boundary discovery refreshes trusted Skill read roots too."""
+        agent_dir = agent_with_skills / "agents" / "test-agent"
+        workspace = agent_with_skills / "workspace"
+        prompts = []
+        permission_manager = PermissionManager()
+        permission_manager.prompt_handler = lambda request: prompts.append(request) or False
+        setup = setup_agent(
+            agent_dir,
+            workspace,
+            permission_policy=permission_manager,
+        )
+        assert setup is not None
+
+        new_skill = agent_dir / "skills" / "utilities" / "new-skill"
+        new_skill.mkdir(parents=True)
+        (new_skill / "SKILL.md").write_text("""---
+name: new-skill
+description: Added after capability binding
+---
+# New Skill
+""")
+
+        snapshot = refresh_run_context(setup.binding)
+        read_file = next(tool for tool in setup.binding.tools if tool.name == "read_file")
+        result = read_file.execute(path=str(new_skill / "SKILL.md"))
+
+        assert "new-skill" in {skill.name for skill in snapshot.discovered_skills}
+        assert not result.is_error
+        assert prompts == []
 
     def test_agent_without_skills_config(self, tmp_path: Path) -> None:
         """Test that agents without skills config work correctly."""

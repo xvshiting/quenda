@@ -12,7 +12,7 @@ Provides abstractions for handling Runtime events in different ways:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Protocol, TextIO
 
 if TYPE_CHECKING:
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         CompressionStarted,
         ErrorOccurred,
         ModelResponded,
+        ModelResponseDelta,
         RunCompleted,
         RunInterrupted,
         RunPaused,
@@ -134,6 +135,7 @@ class StreamingEventHandler:
     # Track pending tools for accurate indicator updates
     _pending_tools: int = field(default=0, init=False)
     _tool_summaries: list[str] = field(default_factory=list, init=False)
+    _streaming_response: bool = field(default=False, init=False)
 
     def on_run_started(self, event: RunStarted) -> None:
         """Start the activity indicator."""
@@ -146,6 +148,7 @@ class StreamingEventHandler:
 
     def on_model_called(self, event: AnyEvent) -> None:
         """Show the selected model and reset the compact elapsed timer."""
+        self._streaming_response = False
         label = event.model_id or "Model"
         begin = getattr(self.indicator, "begin", None)
         if callable(begin):
@@ -179,12 +182,26 @@ class StreamingEventHandler:
 
         # Stop indicator, render content, restart if tools pending
         self.indicator.stop()
+        if self._streaming_response:
+            self.output.write("\n")
+            self.output.flush()
+            event = replace(event, content=None)
         rendered = self.renderer.render(event)
         if rendered:
             print(rendered, file=self.output)
 
+        self._streaming_response = False
+
         if event.tool_call_details:
             self.indicator.start()
+
+    def on_model_response_delta(self, event: ModelResponseDelta) -> None:
+        """Write streamed model text immediately without durable duplication."""
+        if not self._streaming_response:
+            self.indicator.stop()
+            self._streaming_response = True
+        self.output.write(event.content)
+        self.output.flush()
 
     def on_tool_executed(self, event: ToolExecuted) -> None:
         """Render tool execution result."""
@@ -267,6 +284,8 @@ class StreamingEventHandler:
             self.on_model_routed(event)  # type: ignore[arg-type]
         elif event.type == "model_responded":
             self.on_model_responded(event)  # type: ignore[arg-type]
+        elif event.type == "model_response_delta":
+            self.on_model_response_delta(event)  # type: ignore[arg-type]
         elif event.type == "tool_executed":
             self.on_tool_executed(event)  # type: ignore[arg-type]
         elif event.type == "run_completed":

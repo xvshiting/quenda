@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from quenda.host.instructions import InstructionScope, InstructionSource
 from quenda.host.mcp.config import MCPConfig
+from quenda.providers.config import ProviderConfig, parse_provider_configs
 from quenda.runtime.agent import AgentConfig
 
 if TYPE_CHECKING:
@@ -30,8 +31,10 @@ if TYPE_CHECKING:
         ContextProviderRegistry,
     )
     from quenda.host.interactions import InteractionRegistry
+    from quenda.host.policy_registry import PolicyRegistryBuilder
     from quenda.host.registry import ToolRegistryBuilder
     from quenda.interface.theme import InterfaceTheme
+    from quenda.providers import ProviderRegistry
 
 
 def _coerce_bool(value: object, default: bool = False) -> bool:
@@ -270,6 +273,33 @@ class CompressionConfig:
 
 
 @dataclass
+class EvolutionConfig:
+    """Post-Run memory evolution configuration."""
+
+    enabled: bool = False
+    write_mode: str = "automatic"
+    every_n_user_turns: int = 5
+    on_explicit_signal: bool = True
+    min_confidence: float = 0.8
+    max_proposals: int = 2
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EvolutionConfig:
+        if not data:
+            return cls()
+        return cls(
+            enabled=_coerce_bool(data.get("enabled", False), False),
+            write_mode=str(data.get("write_mode", "automatic")),
+            every_n_user_turns=int(data.get("every_n_user_turns", 5)),
+            on_explicit_signal=_coerce_bool(
+                data.get("on_explicit_signal", True), True
+            ),
+            min_confidence=float(data.get("min_confidence", 0.8)),
+            max_proposals=int(data.get("max_proposals", 2)),
+        )
+
+
+@dataclass
 class ToolsConfig:
     """
     Tool capability request from agent package.
@@ -305,10 +335,10 @@ class ToolsConfig:
 @dataclass
 class PythonExecutionConfig:
     """
-    Python sandbox capability request from agent package.
+    Legacy Python execution configuration from an agent package.
 
-    Agent can request additional modules to be allowed in Python sandbox.
-    Host decides final allowed modules based on security policy.
+    ``allowed_modules`` remains parseable for compatibility but is not an
+    isolation or import-enforcement mechanism.
 
     Example config.yaml:
         execution:
@@ -336,9 +366,12 @@ class ExecutionConfig:
     """
     Execution capability request from agent package.
 
-    Controls sandbox and execution environment capabilities.
+    ``local-trusted`` is the only built-in backend today. It provides process
+    lifecycle control, not a filesystem or network isolation boundary.
     """
 
+    backend: str = "local-trusted"
+    requires_isolation: bool = False
     python: PythonExecutionConfig = field(default_factory=PythonExecutionConfig)
 
     @classmethod
@@ -349,6 +382,11 @@ class ExecutionConfig:
 
         python_data = data.get("python", {})
         return cls(
+            backend=str(data.get("backend", "local-trusted")),
+            requires_isolation=_coerce_bool(
+                data.get("requires_isolation", False),
+                False,
+            ),
             python=PythonExecutionConfig.from_dict(python_data),
         )
 
@@ -435,6 +473,7 @@ class AgentConfigYaml:
         model_provider: Default model provider (legacy, prefer models.default).
         model_name: Default model name (legacy, prefer models.default).
         models: Model roles configuration (ADR-028).
+        providers: Declarative provider definitions and builtin overrides.
         instructions_include: List of instruction files bundled with the agent.
         instruction_files: Project-user instruction filenames to discover across
             user, project, and user-project scopes.
@@ -442,6 +481,7 @@ class AgentConfigYaml:
         mcp: MCP server configuration.
         theme: Theme configuration for interface layer.
         compression: Compression configuration (ADR-015).
+        evolution: Post-Run memory evolution configuration.
         tools: Tool capability request.
         execution: Execution capability request.
         policies: Runtime policy bindings.
@@ -450,6 +490,7 @@ class AgentConfigYaml:
     model_provider: str | None = None
     model_name: str | None = None
     models: ModelsConfig = field(default_factory=ModelsConfig)
+    providers: tuple[ProviderConfig, ...] = ()
     instructions_include: list[str] = field(default_factory=list)
     instruction_files: list[str] = field(default_factory=lambda: ["QUENDA.md"])
     skills: list[str] = field(default_factory=list)
@@ -457,6 +498,7 @@ class AgentConfigYaml:
     mcp: MCPConfig | None = None
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
+    evolution: EvolutionConfig = field(default_factory=EvolutionConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     policies: PoliciesConfig = field(default_factory=PoliciesConfig)
@@ -466,10 +508,12 @@ class AgentConfigYaml:
         """Create from parsed YAML dictionary."""
         model = data.get("model", {})
         models_data = data.get("models", {})
+        providers_data = data.get("providers", {})
         instructions = data.get("instructions", {})
         instruction_files = data.get("instruction_files", None)
         theme_data = data.get("theme", {})
         compression_data = data.get("compression", {})
+        evolution_data = data.get("evolution", {})
         tools_data = data.get("tools", {})
         execution_data = data.get("execution", {})
         policies_data = data.get("policies", {})
@@ -526,6 +570,7 @@ class AgentConfigYaml:
             model_provider=model.get("provider") if isinstance(model, dict) else None,
             model_name=model.get("name") if isinstance(model, dict) else None,
             models=models_config,
+            providers=parse_provider_configs(providers_data),
             instructions_include=instructions.get("include", []) if isinstance(instructions, dict) else [],
             instruction_files=_parse_instruction_files(instruction_files),
             skills=skills_list,
@@ -535,6 +580,7 @@ class AgentConfigYaml:
             mcp=mcp_config,
             theme=ThemeConfig.from_dict(theme_data),
             compression=CompressionConfig.from_dict(compression_data),
+            evolution=EvolutionConfig.from_dict(evolution_data),
             tools=ToolsConfig.from_dict(tools_data),
             execution=ExecutionConfig.from_dict(execution_data),
             policies=PoliciesConfig.from_dict(policies_data),
@@ -764,83 +810,15 @@ def _parse_frontmatter(content: str, path: Path) -> dict[str, object]:
 
 
 def _parse_simple_yaml(content: str) -> dict[str, Any]:
-    """
-    Parse simple YAML content.
+    """Parse config.yaml with the project's required YAML implementation."""
+    import yaml  # type: ignore[import-untyped]
 
-    Supports:
-    - key: value (top-level)
-    - nested dicts with indentation
-    - lists with -
-    """
-    result: dict[str, Any] = {}
-
-    # Stack of dicts: [result, level1_dict, level2_dict, ...]
-    dict_stack: list[dict[str, Any]] = [result]
-    # Stack of keys for nested dicts
-    key_stack: list[str] = []
-    # Current list being built and its parent
-    current_list: list[str] | None = None
-    current_list_dict: dict[str, Any] | None = None
-    current_list_key: str | None = None
-
-    for line in content.split("\n"):
-        stripped = line.rstrip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        indent = len(line) - len(line.lstrip())
-        indent_level = indent // 2  # 0, 1, 2, ...
-
-        # Handle list items (check lstrip to handle indentation)
-        lstripped = stripped.lstrip()
-        if lstripped.startswith("- "):
-            if current_list is None:
-                current_list = []
-            current_list.append(lstripped[2:].strip("\"'"))
-            continue
-
-        # Handle key: value
-        if ":" in stripped:
-            # Save any pending list to its parent dict
-            if current_list is not None and current_list_dict is not None and current_list_key is not None:
-                current_list_dict[current_list_key] = current_list
-                current_list = None
-                current_list_dict = None
-                current_list_key = None
-
-            key, value = stripped.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-
-            # Adjust stack to current indent level
-            while len(key_stack) > indent_level:
-                key_stack.pop()
-                if len(dict_stack) > 1:
-                    dict_stack.pop()
-
-            current_dict = dict_stack[-1]
-
-            if value == "":
-                # Start of nested structure (could become dict or list)
-                # For now, create empty dict; will be replaced if list follows
-                current_dict[key] = {}
-                dict_stack.append(current_dict[key])
-                key_stack.append(key)
-                # Remember this location in case a list follows
-                current_list_dict = current_dict
-                current_list_key = key
-            else:
-                # Regular value
-                current_dict[key] = value.strip("\"'")
-                # Clear list tracking since this is a value, not a list parent
-                current_list_dict = None
-                current_list_key = None
-
-    # Save any pending list at end
-    if current_list is not None and current_list_dict is not None and current_list_key is not None:
-        current_list_dict[current_list_key] = current_list
-
-    return result
+    parsed = yaml.safe_load(content)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError("config.yaml must contain a top-level mapping")
+    return parsed
 
 
 def load_agent_commands(
@@ -1143,8 +1121,6 @@ def load_agent_policies(
     1. `policies` dict - mapping policy name to policy instance or factory
     2. `register(builder)` function - called to register policies
     """
-    from quenda.host.policy_registry import PolicyRegistryBuilder
-
     policies_dir = agent_path / "extensions" / "policies"
     if not policies_dir.exists():
         return 0
@@ -1189,6 +1165,7 @@ def load_agent_policies(
 
 def load_agent_providers(
     agent_path: Path,
+    registry: ProviderRegistry | None = None,
 ) -> int:
     """
     Load provider extensions from an agent package.
@@ -1215,7 +1192,7 @@ def load_agent_providers(
     if not providers_dir.exists():
         return 0
 
-    registry = get_provider_registry()
+    registry = registry or get_provider_registry()
     loaded = 0
 
     for py_file in providers_dir.glob("*.py"):
@@ -1342,6 +1319,7 @@ def find_builtin_agent(name: str) -> Path | None:
 __all__ = [
     "ThemeConfig",
     "CompressionConfig",
+    "EvolutionConfig",
     "ToolsConfig",
     "PythonExecutionConfig",
     "ExecutionConfig",

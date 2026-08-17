@@ -136,8 +136,8 @@ class WorkspaceService:
         if not ws_data:
             raise ValueError(f"Workspace '{workspace_id}' not found")
         
-        ws_path = Path(ws_data["path"])
-        target_path = ws_path / path
+        ws_path = Path(ws_data["path"]).expanduser().resolve()
+        target_path = (ws_path / path).resolve()
         
         if not target_path.exists():
             raise ValueError(f"Path '{path}' does not exist in workspace")
@@ -163,8 +163,8 @@ class WorkspaceService:
         if not ws_data:
             raise ValueError(f"Workspace '{workspace_id}' not found")
         
-        ws_path = Path(ws_data["path"])
-        target_path = ws_path / file_path
+        ws_path = Path(ws_data["path"]).expanduser().resolve()
+        target_path = (ws_path / file_path).resolve()
         
         if not target_path.exists():
             raise FileNotFoundError(f"File '{file_path}' not found")

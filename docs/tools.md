@@ -86,7 +86,7 @@ The 11 essential framework tools, available via
 | `write_file` | Create new files | `>` |
 | `apply_patch` | Modify existing files | `sed`, `patch` |
 | `run_shell` | Execute and verify | `pytest`, `git`, `npm`, … |
-| `execute_python` | Run sandboxed Python | quick scripts, data transforms |
+| `execute_python` | Run trusted local Python | quick scripts, data transforms |
 | `get_current_datetime` | Get exact current time | timestamps, timezone conversion |
 | `request_interaction` | Ask a human for a decision | choices, confirmations, input |
 | `request_skill_activation` | Ask Host to activate skills | skill package activation |
@@ -275,8 +275,9 @@ shell_tool.execute(command="long_running.sh", timeout=60)
 
 ### PythonExecutionTool
 
-Execute Python code in a sandboxed environment with AST validation,
-import restrictions, and restricted builtins.
+Execute Python code in a local subprocess with timeout and output limits.
+This is the `local-trusted` backend: it does not isolate filesystem access,
+network access, imports, or child processes.
 
 ```python
 from quenda.tools import PythonExecutionTool, SandboxConfig
@@ -286,7 +287,6 @@ python_tool = PythonExecutionTool()  # workspace optional
 config = SandboxConfig(
     default_timeout=30,
     max_timeout=60,
-    max_ast_nodes=5000,
 )
 python_tool = PythonExecutionTool(config=config)
 ```
@@ -396,6 +396,11 @@ fetch_tool.execute(url="https://example.com/article")
 - Redirects are re-validated
 - Sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`) are
   blocked from outgoing requests
+
+The Host adds exact origins from declarative Agent `providers` to the network
+tools' private-origin allowlist. This permits discovery endpoints such as a
+configured llama-server's `/v1/models` without allowing the rest of the LAN.
+Redirect targets are checked against the same exact-origin rule.
 
 ---
 

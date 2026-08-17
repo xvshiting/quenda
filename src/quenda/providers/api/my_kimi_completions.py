@@ -21,12 +21,11 @@ import re
 from collections.abc import Generator
 from typing import TYPE_CHECKING, override
 
-from quenda.kernel.types import Message, ModelResponse, StreamChunk, ToolCall, UsageStats
 from quenda.kernel.tool import Tool
+from quenda.kernel.types import Message, ModelResponse, StreamChunk, ToolCall
 from quenda.providers.api.base import Api
 from quenda.providers.api.converters import (
     convert_messages_to_openai,
-    convert_tools_to_openai,
 )
 from quenda.providers.errors import (
     APIError,
@@ -35,7 +34,9 @@ from quenda.providers.errors import (
     RateLimitError,
     ToolCallDecodeError,
 )
+from quenda.providers.observability import register_cancellation_callback
 from quenda.providers.retry import retry_with_backoff
+from quenda.providers.usage import normalize_openai_usage
 
 if TYPE_CHECKING:
     pass
@@ -87,7 +88,7 @@ class MyKimiCompletionsApi(Api):
             client = openai.OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                timeout=timeout or 120.0,
+                timeout=timeout if timeout is not None else 120.0,
                 default_headers=headers if headers else None,
             )
 
@@ -164,26 +165,40 @@ class MyKimiCompletionsApi(Api):
         client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=timeout or 120.0,
+            timeout=timeout if timeout is not None else 120.0,
             default_headers=headers if headers else None,
         )
 
         # Convert messages - inject tool instructions if needed
         openai_messages = self._convert_messages_with_tool_instructions(messages, tools)
 
+        unregister_cancel = lambda: None
+        close_stream = lambda: None
         try:
             # Make streaming request WITHOUT tools parameter
             stream = client.chat.completions.create(
                 model=model,
                 messages=openai_messages,
                 stream=True,
+                stream_options={"include_usage": True},
             )
+            candidate_close = getattr(stream, "close", None)
+            if callable(candidate_close):
+                close_stream = candidate_close
+                unregister_cancel = register_cancellation_callback(close_stream)
 
             # Track content buffer for parsing tool calls
             content_buffer: str = ""
 
             for chunk in stream:
+                usage = (
+                    normalize_openai_usage(chunk.usage)
+                    if getattr(chunk, "usage", None)
+                    else None
+                )
                 if not chunk.choices:
+                    if usage is not None:
+                        yield StreamChunk(usage=usage)
                     continue
 
                 delta = chunk.choices[0].delta
@@ -202,11 +217,24 @@ class MyKimiCompletionsApi(Api):
                             tools
                         )
                         if parsed_calls:
-                            yield StreamChunk(tool_calls=parsed_calls, is_final=True)
+                            yield StreamChunk(
+                                tool_calls=parsed_calls,
+                                is_final=True,
+                                stop_reason="tool_use",
+                                usage=usage,
+                            )
                         else:
-                            yield StreamChunk(is_final=True)
+                            yield StreamChunk(
+                                is_final=True,
+                                stop_reason="end_turn",
+                                usage=usage,
+                            )
                     else:
-                        yield StreamChunk(is_final=True)
+                        yield StreamChunk(
+                            is_final=True,
+                            stop_reason="end_turn",
+                            usage=usage,
+                        )
 
         except openai.RateLimitError as e:
             retry_after = None
@@ -235,6 +263,9 @@ class MyKimiCompletionsApi(Api):
 
         except openai.APIError as e:
             raise APIError(f"API error: {e}")
+        finally:
+            unregister_cancel()
+            close_stream()
 
     def _convert_messages_for_kimi(
         self,
@@ -354,12 +385,7 @@ class MyKimiCompletionsApi(Api):
         # Extract usage statistics
         usage = None
         if hasattr(response, 'usage') and response.usage:
-            usage = UsageStats(
-                input_tokens=getattr(response.usage, 'prompt_tokens', 0) or 0,
-                output_tokens=getattr(response.usage, 'completion_tokens', 0) or 0,
-                cached_input_tokens=None,
-                reasoning_tokens=None,
-            )
+            usage = normalize_openai_usage(response.usage)
 
         # If we extracted tool calls from content, don't return the content
         content = choice.message.content if not tool_calls else None

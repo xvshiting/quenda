@@ -18,6 +18,7 @@ Provides instruction composition from multiple scopes:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -43,7 +44,10 @@ Skills are progressively disclosed instruction packages. Resolution priority is:
 2. agent-bundled skills
 3. user skills (lowest priority)
 
-Each skill is rooted at a `skills/<skill-name>/SKILL.md` package.
+Each skill is rooted at a directory containing `SKILL.md`. Skill roots may be
+organized below any number of category directories under `skills/`, for example
+`skills/documents/office/docx/SKILL.md`; the category path is organizational and
+the exact frontmatter `name` remains the Skill identity.
 
 The available-skill catalog contains routing metadata only. When a task matches a
 skill, request its activation by exact name. Do not assume it is active until the
@@ -53,6 +57,22 @@ tools. Do not invent resource contents or paths.
 
 Skill discovery is refreshed at turn boundaries. Use `/skill` commands only when
 the user explicitly asks to inspect or control activation state.
+
+Agent runtime configuration lives in the Agent Home `config.yaml`. It can declare
+several providers under `providers:` and select roles with `models.default` and
+`models.vision`, each using `provider/model`. For a local llama.cpp server use a
+provider entry with `type: llama-server`, its `/v1` URL, and the exact served model
+ID. For another OpenAI-compatible endpoint use `type: custom`, `api: openai`, URL,
+key, and model catalog. Keys may be direct values or `${ENV_VAR}` references;
+prefer environment references and never reveal configured credentials. Built-in
+providers can be given an `api_key` without repeating their URL or model catalog.
+Inspect via `explain_agent_config`; use `apply_agent_config_patch` for changes.
+Provider URLs trust only their exact scheme/host/port.
+
+Post-Run memory evolution is configured under `evolution:`. It supports
+`write_mode: automatic|review|disabled`, a periodic `every_n_user_turns` trigger,
+and an `on_explicit_signal` shortcut. Evolution uses an isolated model call after
+the main Run, so it does not rewrite the active Run's prompt prefix.
 """
 
 
@@ -272,6 +292,28 @@ def resolve_instruction_sources(
             path=None,
         ))
 
+    # Identity and location are Host facts, not details each AGENT.md author
+    # should have to remember to interpolate. Keep this authoritative context
+    # close to the framework contract so copied agents cannot accidentally
+    # identify themselves as their source package.
+    resolved_agent_home = agent_package_path.expanduser().resolve()
+    resolved_workspace = workspace_path.expanduser().resolve()
+    sources.append(InstructionSource(
+        scope=InstructionScope.FRAMEWORK,
+        content=(
+            "## Current Agent Identity\n\n"
+            f"- Agent name: {agent_name}\n"
+            f"- Agent home: {resolved_agent_home}\n"
+            f"- Current workspace: {resolved_workspace}\n\n"
+            "Your Agent home contains your editable identity, instructions, skills, "
+            "memory, sessions, and default workspace. The current workspace is where "
+            "file and command tools operate for this session; it may be your default "
+            "workspace or an explicitly selected project. Do not infer another Agent "
+            "Home from source-package names, nearby directories, examples, or memories."
+        ),
+        path=None,
+    ))
+
     # 2. Agent package AGENT.md (base prompt)
     sources.append(InstructionSource(
         scope=InstructionScope.AGENT_PACKAGE,
@@ -286,8 +328,11 @@ def resolve_instruction_sources(
     # memory beside AGENT.md. Package agents without agent.yaml retain the
     # existing user-scoped overlay behavior.
     if (agent_package_path / "agent.yaml").is_file():
-        for filename in ("SOUL.md", "USER.md", "MEMORY.md"):
-            home_instruction = agent_package_path / filename
+        home_files = list(resolve_identity_files(agent_package_path))
+        home_files.extend(
+            agent_package_path / filename for filename in ("USER.md", "MEMORY.md")
+        )
+        for home_instruction in home_files:
             if home_instruction.is_file():
                 content = home_instruction.read_text(encoding="utf-8").strip()
                 if content:
@@ -439,12 +484,76 @@ def resolve_mode_instruction_source(
     ]
 
 
+def resolve_identity_files(agent_home: Path) -> tuple[Path, ...]:
+    """Return the independent identity and soul documents that exist."""
+    return tuple(
+        path
+        for path in (agent_home / "IDENTITY.md", agent_home / "SOUL.md")
+        if path.is_file()
+    )
+
+
+def resolve_prompt_sources(
+    *,
+    agent_package_path: Path,
+    agent_name: str,
+    agent_md_content: str,
+    agent_instructions: list[InstructionSource],
+    workspace_path: Path,
+    user: User,
+    mode: str,
+    workspace_id: str | None = None,
+    instruction_files: list[str] | None = None,
+    discovered_skills: list[SkillPackage] | None = None,
+    active_skills: list[SkillPackage] | None = None,
+    include_skill_catalog: bool = False,
+    temporal_context: TemporalContext | None = None,
+    additional_sources: Iterable[InstructionSource] = (),
+) -> list[InstructionSource]:
+    """Resolve, order, and de-duplicate every source for one prompt build.
+
+    This is the canonical source-collection seam shared by turn refreshes and
+    compatibility rebuilds. Extensions contribute sources; they do not need to
+    reproduce framework ordering or path de-duplication policy.
+    """
+    sources = resolve_instruction_sources(
+        agent_package_path=agent_package_path,
+        agent_name=agent_name,
+        agent_md_content=agent_md_content,
+        agent_instructions=agent_instructions,
+        workspace_path=workspace_path,
+        user=user,
+        workspace_id=workspace_id,
+        instruction_files=instruction_files,
+        discovered_skills=discovered_skills,
+        active_skills=active_skills,
+        include_skill_catalog=include_skill_catalog,
+        temporal_context=temporal_context,
+    )
+    sources.extend(resolve_mode_instruction_source(agent_package_path, mode))
+    sources.extend(additional_sources)
+    sources.sort(key=lambda source: source.scope)
+
+    deduplicated: list[InstructionSource] = []
+    seen_paths: set[Path] = set()
+    for source in sources:
+        if source.path is not None:
+            resolved_path = source.path.resolve()
+            if resolved_path in seen_paths:
+                continue
+            seen_paths.add(resolved_path)
+        deduplicated.append(source)
+    return deduplicated
+
+
 __all__ = [
     "InstructionScope",
     "InstructionSource",
     "TemplateContext",
     "InstructionComposer",
     "resolve_instruction_sources",
+    "resolve_identity_files",
     "resolve_mode_instruction_source",
+    "resolve_prompt_sources",
     "FRAMEWORK_CONTRACT",
 ]

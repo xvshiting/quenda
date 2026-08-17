@@ -173,6 +173,8 @@ class StreamChunk:
     content: str | None = None
     tool_calls: list[ToolCall] | None = None
     is_final: bool = False
+    stop_reason: Literal["end_turn", "tool_use", "max_tokens", "stop_sequence"] | None = None
+    usage: "UsageStats | None" = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +189,7 @@ class UsageStats:
     input_tokens: int = 0
     output_tokens: int = 0
     cached_input_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
     reasoning_tokens: int | None = None
 
 

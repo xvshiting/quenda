@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   
@@ -20,6 +20,41 @@
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+.message-surface > :first-child,
+.message-surface > div > :first-child {
+  margin-top: 0;
+}
+
+.assistant-markdown {
+  overflow-wrap: anywhere;
+  letter-spacing: 0.005em;
+}
+
+.assistant-markdown > :last-child,
+.user-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.user-markdown code:not([class]) {
+  background: rgb(255 255 255 / 0.16);
+  color: white;
+}
+
+.user-markdown a {
+  color: white;
+  text-decoration-color: rgb(255 255 255 / 0.55);
+}
+
+.user-markdown blockquote {
+  border-color: rgb(255 255 255 / 0.5);
+  background: rgb(255 255 255 / 0.1);
+  color: rgb(255 255 255 / 0.9);
+}
+
+.user-markdown strong {
+  color: white;
 }
 
 @media (prefers-color-scheme: light) {

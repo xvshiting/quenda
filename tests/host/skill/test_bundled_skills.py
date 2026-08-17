@@ -2,11 +2,12 @@
 Tests for agent package bundled skills.
 """
 
-import pytest
 from pathlib import Path
 
-from quenda.host.skill import SkillDiscovery, SkillActivator
+import pytest
+
 from quenda.host.runner import setup_agent
+from quenda.host.skill import SkillDiscovery
 
 
 class TestAgentPackageBundledSkills:
@@ -235,6 +236,31 @@ description: Documentation generator
         script = next((r for r in skill.resources if r.type == "script"), None)
         assert script is not None
         assert script.executable is True
+
+    def test_quenda_code_bundles_nested_framework_authoring_skill(self) -> None:
+        """Official framework guidance is shipped as a recursively found Skill."""
+        repository_root = Path(__file__).parents[3]
+        agent_dir = (
+            repository_root
+            / "agents"
+            / "quenda-code"
+            / "src"
+            / "quenda_code"
+            / "agent"
+        )
+
+        skills = SkillDiscovery(agent_package_path=agent_dir).discover_skills()
+        authoring = next(
+            skill for skill in skills if skill.name == "quenda-framework-authoring"
+        )
+
+        assert authoring.source == "agent_package"
+        assert authoring.path.parent.name == "framework"
+        assert {resource.path.name for resource in authoring.resources} == {
+            "agent-config.md",
+            "extension-seams.md",
+            "vendor-boundaries.md",
+        }
 
     def test_mixed_skill_sources(self, tmp_path: Path) -> None:
         """Test skills from multiple sources."""

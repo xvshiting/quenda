@@ -5,7 +5,7 @@ Core API for the Quenda framework.
 ## Public API
 
 ```python
-from quenda import Agent, Session, tool
+from quenda import Agent, Session, build_framework_capability_manifest, tool
 ```
 
 Provider exports:
@@ -19,6 +19,183 @@ from quenda.providers import (
     get_provider_registry,
 )
 ```
+
+---
+
+## Framework capability manifest
+
+Quenda exposes one versioned, credential-free source of truth for framework
+authoring tools, documentation, and Agents:
+
+```python
+manifest = build_framework_capability_manifest()
+```
+
+The same manifest is available from Unix-friendly and Web interfaces:
+
+```sh
+quenda capabilities --json
+quenda capabilities --json --section configuration
+```
+
+```text
+GET /api/system/capabilities
+```
+
+The manifest reports supported configuration shapes, Skill discovery behavior,
+registered provider protocols/catalogs, and public extension contracts. It
+never includes API keys, resolved credentials, request headers, or environment
+values.
+
+The lifecycle catalog is generated from the same code-owned registry:
+
+```sh
+quenda capabilities --json --section lifecycle
+```
+
+Each descriptor identifies its ordered stage, contract, registration surface,
+owner, failure mode, permitted mutation, transition authority, cache impact,
+and whether the seam is active or reserved.
+
+Prompt assembly exposes content-free cache telemetry through
+`PromptAssembly.observe(previous)`. `HostService` emits the same information as
+`prompt_cache_observed`, including stable/reused prefix digests, segment counts,
+and estimated tokens. These estimates are diagnostic; provider-reported cached
+input remains authoritative for billing. Provider usage is normalized to one
+framework invariant: `input_tokens` is the total logical input for the request,
+`cached_input_tokens` is the subset served from an existing cache, and
+`cache_creation_input_tokens` records newly written cache input when the provider
+reports it. This keeps session totals comparable even when provider wire formats
+use overlapping versus disjoint counters.
+
+All prompt-building callers collect sources through `resolve_prompt_sources()`
+and render them through `PromptAssembler`. Context providers contribute typed
+`InstructionSource` values at that seam; scope ordering and path de-duplication
+remain Host policy rather than extension responsibilities.
+
+### Revisioned memory evolution
+
+`quenda.evolution` provides a policy-controlled local store for `MEMORY.md`,
+`USER.md`, `IDENTITY.md`, and `SOUL.md`:
+
+```python
+from quenda.evolution import (
+    MemoryEvolutionPolicy,
+    MemoryEvolutionStore,
+    MemoryProposal,
+    MemoryTarget,
+    MemoryWriteMode,
+)
+
+store = MemoryEvolutionStore(
+    agent_home,
+    policy=MemoryEvolutionPolicy(write_mode=MemoryWriteMode.AUTOMATIC),
+)
+proposal = MemoryProposal(
+    target=MemoryTarget.CORE_MEMORY,
+    proposed_content=updated_markdown,
+    reason="The user explicitly corrected this preference",
+    expected_revision=store.current_revision(MemoryTarget.CORE_MEMORY),
+    source_run_id=run_id,
+)
+report = store.validate(proposal)
+if report.valid:
+    revision = store.apply(proposal, actor="default-evolution-policy")
+```
+
+The write uses optimistic concurrency and an atomic file replacement. Immutable,
+content-addressed Markdown revisions and an append-only JSONL journal live under
+`<agent-home>/.quenda/evolution/memory/`. Rollback restores an existing snapshot
+as a new journal entry, so history is never rewritten. Possible credentials are
+rejected by the default validator. `MemoryEvolutionPolicy` selects `automatic`,
+`review`, or `disabled`; the official default is `automatic`. A proposal still
+has no mutation authority by itself—the configured policy grants that authority
+when `apply()` is invoked and the journal records whether the commit was automatic
+or explicitly approved.
+
+`IDENTITY.md` and `SOUL.md` are independent and both are loaded. Identity defines
+role, responsibilities, and operating scope; Soul defines personality, values,
+and temperament.
+
+Agent packages enable the official after-Run implementation declaratively:
+
+```yaml
+evolution:
+  enabled: true
+  write_mode: automatic       # automatic | review | disabled
+  every_n_user_turns: 5
+  on_explicit_signal: true
+  min_confidence: 0.8
+  max_proposals: 2
+```
+
+The normal Run completes first. The trigger then uses a separate model request,
+containing only current evolution documents and the recent conversation tail.
+This keeps the main Agent prompt prefix unchanged. Explicit preference,
+remember/forget, and correction signals can trigger evaluation before the
+periodic interval. `review` stores validated JSON proposals under
+`.quenda/evolution/memory/pending/`; `automatic` commits them; `disabled` avoids
+the evaluation call entirely. Failures emit `evolution_failed` but cannot turn a
+successful Run into a failed Run.
+
+---
+
+## Agent package validation
+
+Validate an Agent package without starting a Session, importing extensions,
+resolving credentials, or contacting a model provider:
+
+```python
+from quenda.host import validate_agent_package
+
+report = validate_agent_package("path/to/agent", workspace_path="path/to/project")
+if not report.valid:
+    for diagnostic in report.diagnostics:
+        print(diagnostic.code, diagnostic.message)
+```
+
+The CLI exposes the same interface with meaningful exit status and pipeable
+JSON:
+
+```sh
+quenda agent validate path/to/agent --json
+```
+
+Inside a running Agent, the always-bound read-only
+`validate_agent_package` framework Tool validates the current Agent when `path`
+is omitted. Explicit targets are restricted to the current workspace or Agent
+package.
+
+Validation checks declarative providers and model roles, configured
+instructions and Skills, tool bundles, and Python extension syntax. References
+implemented by Agent-local extensions are reported as deferred warnings because
+static validation deliberately does not execute extension code.
+
+The always-bound `apply_agent_config_patch` framework Tool is the guarded
+mutation counterpart. It accepts an RFC 7396 JSON Merge Patch and defaults to a
+side-effect-free preview. Commit requires the preview's `base_revision` and a
+separate `agent_config.write` approval. The implementation redacts secrets from
+diffs, validates the complete candidate package, writes atomically, and stores
+the prior content under `.quenda/config-revisions/` with an audit entry in
+`.quenda/config-journal.jsonl`.
+
+Before proposing a patch, `explain_agent_config` returns a credential-free,
+normalized view of the current effective configuration. Callers can select
+`summary`, `models`, `providers`, `tools`, `skills`, `execution`, `evolution`,
+or `all`. Its `quenda.agent-config-inspection/v1` result includes the current
+revision, validation report, and the matching live capability-registry facts;
+provider credentials, header values, URL userinfo, and URL queries are omitted.
+
+Skill changes use two separate always-bound framework Tools.
+`inspect_skill_evolution` lists active revision, proposal metadata, validation
+findings, and history without returning candidate file contents.
+`apply_skill_evolution` stages package-relative replacements in quarantine;
+commit and rollback require a non-cacheable `skill_evolution.write` approval
+and an expected active revision. Candidate Python is compiled but never
+imported or executed. A successful commit changes the installed package while
+existing Host bindings retain their content-addressed Skill snapshot until an
+explicit `advance_skill_activation_epoch()` call, Skill activation request, or
+new capability binding.
 
 ---
 
@@ -347,6 +524,11 @@ for chunk in model.invoke_stream(messages, tools=tools):
 For custom providers, register a `ProviderSpec` with one or more
 `ModelSpec` entries:
 
+Agent packages can declare the same catalog without executable Python by using
+the `providers:` mapping in `config.yaml`. Supported entry types are `builtin`,
+`custom`, and `llama-server`; role selection remains under `models.default` and
+`models.vision`. See the [Provider tutorial](tutorials/agent/04-providers.md).
+
 ```python
 from quenda.providers import ModelSpec, ProviderSpec, get_provider_registry
 
@@ -508,6 +690,11 @@ class ModelResponded(Event):
     content: str | None = None
     tool_calls: list[str] = []  # field(default_factory=list)
     stop_reason: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
 ```
 
 ### ToolExecuted

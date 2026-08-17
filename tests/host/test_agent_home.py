@@ -18,6 +18,7 @@ def test_create_blank_agent_home_builds_runnable_scaffold(tmp_path: Path) -> Non
     assert home.path == tmp_path / "agent-reviewer"
     assert home.workspace.is_dir()
     assert (home.path / "AGENT.md").is_file()
+    assert (home.path / "IDENTITY.md").is_file()
     assert (home.path / "SOUL.md").is_file()
     assert (home.path / "USER.md").is_file()
     assert (home.path / "MEMORY.md").is_file()
@@ -39,8 +40,49 @@ def test_create_from_source_copies_content_and_renames_agent(tmp_path: Path) -> 
     (source / "custom.txt").write_text("changed later", encoding="utf-8")
 
     assert load_agent_package(home.path).name == "coder"
+    prompt = (home.path / "AGENT.md").read_text(encoding="utf-8")
+    assert "canonical Agent name is **`coder`**" in prompt
+    assert "Agent Home is named **`agent-coder`**" in prompt
     assert (home.path / "custom.txt").read_text(encoding="utf-8") == "source content"
     assert home.created_from == str(source)
+
+
+def test_ensure_installs_source_once_and_preserves_local_changes(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "AGENT.md").write_text("---\nname: template\n---\n\nPrompt.\n")
+    manager = AgentHomeManager(tmp_path / "homes")
+
+    installed = manager.ensure("quenda-code", source=source)
+    (installed.path / "AGENT.md").write_text("local changes")
+    ensured_again = manager.ensure("quenda-code", source=source)
+
+    assert ensured_again.path == installed.path
+    assert (installed.path / "AGENT.md").read_text() == "local changes"
+
+    clone = manager.create("coding-assistant", source="quenda-code")
+    assert (clone.path / "AGENT.md").read_text() != "local changes"
+    assert "local changes" in (clone.path / "AGENT.md").read_text()
+
+
+def test_prepare_migrates_existing_home_identity_without_rewriting_source_body(
+    tmp_path: Path,
+) -> None:
+    manager = AgentHomeManager(tmp_path)
+    home = manager.create("codertest")
+    (home.path / "AGENT.md").write_text(
+        "---\nname: quenda-code\n---\n\nYou are Quenda Code.\n",
+        encoding="utf-8",
+    )
+
+    prepared = manager.prepare("codertest")
+    prompt = (home.path / "AGENT.md").read_text(encoding="utf-8")
+
+    assert prepared == home
+    assert load_agent_package(home.path).name == "codertest"
+    assert "canonical Agent name is **`codertest`**" in prompt
+    assert "Any other Agent name in copied source content" in prompt
+    assert "You are Quenda Code." in prompt
 
 
 def test_create_from_agent_home_does_not_copy_runtime_state(tmp_path: Path) -> None:
@@ -129,4 +171,10 @@ def test_agent_home_core_prompt_files_are_context_sources(tmp_path: Path) -> Non
         for source in sources
         if source.path is not None and source.path.parent == home.path
     }
-    assert {"AGENT.md", "SOUL.md", "USER.md", "MEMORY.md"} <= home_source_names
+    assert {
+        "AGENT.md",
+        "IDENTITY.md",
+        "SOUL.md",
+        "USER.md",
+        "MEMORY.md",
+    } <= home_source_names

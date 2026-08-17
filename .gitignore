@@ -57,6 +57,9 @@ Thumbs.db
 .kora/
 
 claude-code/
+# Upstream agent sources kept locally for architecture research only
+research/vendor/hermes-agent/
+research/vendor/openclaw/
 # Custom providers (may contain company-specific configuration)
 agents/quenda-code/src/quenda_code/agent/extensions/providers/
 
@@ -64,5 +67,4 @@ agents/quenda-code/src/quenda_code/agent/extensions/providers/
 .mypy_cache
 .ruff_cache 
 uv.lock 
-
 

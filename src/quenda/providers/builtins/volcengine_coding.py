@@ -123,6 +123,10 @@ VOLCENGINE_CODING_SPEC = ProviderSpec(
     base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
     api="openai-completions",
     api_key="${VOLCENGINE_API_KEY}",
+    # Coding turns commonly include large repository context. The generic
+    # 30-second transport default is too short for first-token latency here.
+    timeout=120.0,
+    max_retries=2,
     models=_coding_plan_models(),
 )
 
@@ -132,5 +136,7 @@ VOLCENGINE_CODING_ANTHROPIC_SPEC = ProviderSpec(
     base_url="https://ark.cn-beijing.volces.com/api/coding",
     api="anthropic-messages",
     api_key="${VOLCENGINE_API_KEY}",
+    timeout=120.0,
+    max_retries=2,
     models=_coding_plan_models(),
 )

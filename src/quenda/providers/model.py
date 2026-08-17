@@ -11,6 +11,16 @@ from collections.abc import Generator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping
 
+from quenda.kernel.types import ModelResponse
+from quenda.providers.errors import (
+    APIError,
+    NetworkError,
+    RateLimitError,
+    RequestCancelledError,
+)
+from quenda.providers.observability import cancellation_requested, notify_stream_delta
+from quenda.providers.retry import retry_with_backoff
+
 if TYPE_CHECKING:
     from quenda.kernel.tool import Tool
     from quenda.kernel.types import Message, ModelResponse, StreamChunk
@@ -202,7 +212,65 @@ class Model:
         if api is None:
             raise ValueError(f"Unknown API protocol: {api_id}")
 
-        # Delegate to API
+        max_retries = (
+            self._provider.spec.max_retries
+            if self._provider.spec.max_retries is not None
+            else 3
+        )
+
+        if self._spec.streaming:
+            @retry_with_backoff(max_retries=max_retries)
+            def _invoke_buffered_stream() -> ModelResponse:
+                content_parts: list[str] = []
+                tool_calls = []
+                stop_reason = None
+                usage = None
+
+                try:
+                    if cancellation_requested():
+                        raise RequestCancelledError("Model request cancelled")
+                    for chunk in api.invoke_stream(
+                        base_url=base_url,
+                        api_key=api_key,
+                        headers=headers,
+                        model=self._spec.id,
+                        messages=messages,
+                        tools=tools,
+                        timeout=self._provider.spec.timeout,
+                        max_retries=max_retries,
+                    ):
+                        if cancellation_requested():
+                            raise RequestCancelledError("Model request cancelled")
+                        if chunk.content:
+                            content_parts.append(chunk.content)
+                            notify_stream_delta(chunk.content)
+                        if chunk.tool_calls is not None:
+                            tool_calls = chunk.tool_calls
+                        if chunk.stop_reason is not None:
+                            stop_reason = chunk.stop_reason
+                        if chunk.usage is not None:
+                            usage = chunk.usage
+                except (NetworkError, RateLimitError) as exc:
+                    if cancellation_requested():
+                        raise RequestCancelledError("Model request cancelled") from exc
+                    if content_parts:
+                        raise APIError(
+                            "Streaming response was interrupted after output started: "
+                            f"{exc}"
+                        ) from exc
+                    raise
+
+                return ModelResponse(
+                    content="".join(content_parts) or None,
+                    tool_calls=tool_calls,
+                    stop_reason=stop_reason
+                    or ("tool_use" if tool_calls else "end_turn"),
+                    usage=usage,
+                )
+
+            return _invoke_buffered_stream()
+
+        # Fall back for models that explicitly do not support streaming.
         return api.invoke(
             base_url=base_url,
             api_key=api_key,
@@ -211,7 +279,7 @@ class Model:
             messages=messages,
             tools=tools,
             timeout=self._provider.spec.timeout,
-            max_retries=self._provider.spec.max_retries or 3,
+            max_retries=max_retries,
         )
 
     def invoke_stream(
@@ -249,6 +317,12 @@ class Model:
         if api is None:
             raise ValueError(f"Unknown API protocol: {api_id}")
 
+        max_retries = (
+            self._provider.spec.max_retries
+            if self._provider.spec.max_retries is not None
+            else 3
+        )
+
         # Delegate to API streaming
         yield from api.invoke_stream(
             base_url=base_url,
@@ -258,7 +332,7 @@ class Model:
             messages=messages,
             tools=tools,
             timeout=self._provider.spec.timeout,
-            max_retries=self._provider.spec.max_retries or 3,
+            max_retries=max_retries,
         )
 
     def __repr__(self) -> str:

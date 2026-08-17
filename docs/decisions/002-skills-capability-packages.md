@@ -106,6 +106,12 @@ Project-level Skills should therefore be treated as trusted workspace
 configuration. Any future support for third-party Skills needs explicit
 trust, provenance, and permission controls.
 
+Once the Host discovers a local Skill package, its package directory is a
+session-scoped trusted **read-only** root. This prevents redundant approval
+prompts when the Agent reads `SKILL.md` or supporting resources outside the
+project workspace. The grant does not include write, delete, shell execution,
+or network access, and newly discovered packages are added at turn boundaries.
+
 ## Alternatives Considered
 
 ### Treat Skills as Tools

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
+from quenda.host.loader import AgentConfigYaml
+from quenda.host.runner import _resolve_tools
 from quenda.tools.network import HTTPRequestTool, WebFetchTool
 
 
@@ -226,6 +228,46 @@ def test_http_request_uses_safe_default_headers(monkeypatch) -> None:
     assert "Mozilla/5.0" in calls[0]["headers"]["User-Agent"]
     assert "gzip" in calls[0]["headers"]["Accept-Encoding"]
     assert "application/json" in calls[0]["headers"]["Accept"]
+
+
+def test_network_bundle_trusts_only_configured_private_provider_origin(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A declared local provider is reachable without opening the whole LAN."""
+    calls = install_fake_httpx(
+        monkeypatch,
+        [
+            FakeResponse(
+                '{"data":[{"id":"local-model"}]}',
+                headers={"content-type": "application/json"},
+                url="http://192.168.31.135:8080/v1/models",
+            )
+        ],
+    )
+    config = AgentConfigYaml.from_dict(
+        {
+            "providers": {
+                "llama": {
+                    "type": "llama-server",
+                    "url": "http://192.168.31.135:8080/v1",
+                    "models": [{"id": "local-model"}],
+                }
+            },
+            "tools": {"bundles": ["network"]},
+        }
+    )
+    tool = next(
+        tool for tool in _resolve_tools(tmp_path, config) if tool.name == "http_request"
+    )
+
+    allowed = tool.execute(url="http://192.168.31.135:8080/v1/models")
+    blocked = tool.execute(url="http://192.168.31.136:8080/v1/models")
+
+    assert not allowed.is_error, allowed.content
+    assert calls[0]["url"] == "http://192.168.31.135:8080/v1/models"
+    assert blocked.is_error
+    assert "private/internal networks is blocked" in blocked.content
 
 
 def test_http_request_does_not_request_brotli_without_decoder(monkeypatch) -> None:
