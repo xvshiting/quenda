@@ -168,9 +168,22 @@ class StreamChunk:
     A chunk of streamed response.
 
     Used for streaming model responses incrementally.
+
+    Attributes:
+        content: Visible response text (what the model says to the user).
+        reasoning_content: Internal reasoning/thinking text. Kept separate so
+            it is not streamed to the terminal or mixed into the visible
+            response. When a model puts its *actual* response in
+            ``reasoning_content`` (Kimi-K2.5 compatibility), the buffered
+            stream falls back to this field only when ``content`` is empty.
+        tool_calls: Complete tool calls assembled from incremental deltas.
+        is_final: True on the last chunk of the stream.
+        stop_reason: Why generation stopped.
+        usage: Token usage statistics.
     """
 
     content: str | None = None
+    reasoning_content: str | None = None
     tool_calls: list[ToolCall] | None = None
     is_final: bool = False
     stop_reason: Literal["end_turn", "tool_use", "max_tokens", "stop_sequence"] | None = None

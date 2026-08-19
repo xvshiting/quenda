@@ -212,9 +212,13 @@ class OpenAICompletionsApi(Api):
                 if delta.content:
                     yield StreamChunk(content=delta.content, is_final=False)
 
-                # Handle reasoning_content (Kimi-K2.5 puts response here)
+                # Handle reasoning_content separately.
+                # For reasoning models (Qwen3, DeepSeek-R1, etc.) this is the
+                # thinking trace and must NOT be treated as visible content.
+                # The buffered stream in model.py uses it as a fallback only
+                # when no visible content was collected (Kimi-K2.5 compat).
                 if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                    yield StreamChunk(content=delta.reasoning_content, is_final=False)
+                    yield StreamChunk(reasoning_content=delta.reasoning_content, is_final=False)
 
                 # Handle tool calls (streamed incrementally)
                 if delta.tool_calls:

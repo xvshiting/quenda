@@ -56,6 +56,21 @@ class TextStreamingApi(RecordingStreamingApi):
         yield StreamChunk(is_final=True, stop_reason="end_turn")
 
 
+class ReasoningStreamingApi(RecordingStreamingApi):
+    """Simulates a reasoning model (e.g. Qwen3) that emits thinking then text."""
+
+    def invoke_stream(self, **kwargs):
+        self.stream_calls += 1
+        self.max_retries = kwargs["max_retries"]
+        # Thinking phase: reasoning_content only
+        yield StreamChunk(reasoning_content="let me think...")
+        yield StreamChunk(reasoning_content=" done thinking.")
+        # Response phase: visible content
+        yield StreamChunk(content="hello ")
+        yield StreamChunk(content="world")
+        yield StreamChunk(is_final=True, stop_reason="end_turn")
+
+
 class InterruptedStreamingApi(RecordingStreamingApi):
     def invoke_stream(self, **kwargs):
         self.stream_calls += 1
@@ -176,3 +191,49 @@ async def test_cancelling_run_closes_active_stream_without_retrying() -> None:
         and event.content == "must-not-be-visible"
         for event in events
     )
+
+
+def test_reasoning_content_is_not_streamed_or_in_final_content() -> None:
+    """Reasoning/thinking content must not pollute visible output or messages."""
+    api = ReasoningStreamingApi()
+
+    response = _model(api).invoke([Message(role="user", content="hi")], tools=[])
+
+    # Final content must be the visible response only, no thinking.
+    assert response.content == "hello world"
+    assert "let me think" not in response.content
+    assert "done thinking" not in response.content
+
+
+@pytest.mark.asyncio
+async def test_reasoning_content_does_not_emit_stream_deltas() -> None:
+    """Reasoning_content must not be emitted as ModelResponseDelta events."""
+    model = _model(ReasoningStreamingApi())
+    run = Run.create(
+        AgentConfig(name="reasoning-agent"),
+        SessionState.create("reasoning-agent"),
+        model,
+    )
+
+    events = await run.execute_to_completion("hi")
+
+    deltas = [event.content for event in events if isinstance(event, ModelResponseDelta)]
+    # Only the visible "hello " and "world" chunks should be streamed.
+    assert deltas == ["hello ", "world"]
+    assert not any("think" in d for d in deltas)
+
+
+def test_reasoning_only_model_falls_back_to_reasoning_as_content() -> None:
+    """Kimi-K2.5 compat: if only reasoning_content is emitted, use it as content."""
+
+    class ReasoningOnlyApi(RecordingStreamingApi):
+        def invoke_stream(self, **kwargs):
+            self.stream_calls += 1
+            self.max_retries = kwargs["max_retries"]
+            yield StreamChunk(reasoning_content="actual response via reasoning")
+            yield StreamChunk(is_final=True, stop_reason="end_turn")
+
+    api = ReasoningOnlyApi()
+    response = _model(api).invoke([Message(role="user", content="hi")], tools=[])
+
+    assert response.content == "actual response via reasoning"

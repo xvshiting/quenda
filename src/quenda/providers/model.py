@@ -222,6 +222,7 @@ class Model:
             @retry_with_backoff(max_retries=max_retries)
             def _invoke_buffered_stream() -> ModelResponse:
                 content_parts: list[str] = []
+                reasoning_parts: list[str] = []
                 tool_calls = []
                 stop_reason = None
                 usage = None
@@ -244,6 +245,8 @@ class Model:
                         if chunk.content:
                             content_parts.append(chunk.content)
                             notify_stream_delta(chunk.content)
+                        if chunk.reasoning_content:
+                            reasoning_parts.append(chunk.reasoning_content)
                         if chunk.tool_calls is not None:
                             tool_calls = chunk.tool_calls
                         if chunk.stop_reason is not None:
@@ -253,15 +256,22 @@ class Model:
                 except (NetworkError, RateLimitError) as exc:
                     if cancellation_requested():
                         raise RequestCancelledError("Model request cancelled") from exc
-                    if content_parts:
+                    if content_parts or reasoning_parts:
                         raise APIError(
                             "Streaming response was interrupted after output started: "
                             f"{exc}"
                         ) from exc
                     raise
 
+                content = "".join(content_parts) or None
+                # Kimi-K2.5 compatibility: if the model puts its actual response
+                # in reasoning_content (and no visible content was produced),
+                # use reasoning_content as the response content.
+                if not content and reasoning_parts:
+                    content = "".join(reasoning_parts) or None
+
                 return ModelResponse(
-                    content="".join(content_parts) or None,
+                    content=content,
                     tool_calls=tool_calls,
                     stop_reason=stop_reason
                     or ("tool_use" if tool_calls else "end_turn"),
