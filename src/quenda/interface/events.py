@@ -34,6 +34,8 @@ if TYPE_CHECKING:
         ToolExecuted,
     )
 
+from quenda.interface.markdown import render_markdown_lite
+
 
 class EventHandler(Protocol):
     """
@@ -136,6 +138,7 @@ class StreamingEventHandler:
     _pending_tools: int = field(default=0, init=False)
     _tool_summaries: list[str] = field(default_factory=list, init=False)
     _streaming_response: bool = field(default=False, init=False)
+    _streamed_text: str = field(default="", init=False)
 
     def on_run_started(self, event: RunStarted) -> None:
         """Start the activity indicator."""
@@ -183,8 +186,14 @@ class StreamingEventHandler:
         # Stop indicator, render content, restart if tools pending
         self.indicator.stop()
         if self._streaming_response:
+            # The deltas already rendered the content as it arrived (with
+            # live markdown), so only emit a final newline and skip the
+            # durable render to avoid printing the content twice.
             self.output.write("\n")
             self.output.flush()
+            self._streamed_text = ""
+            self._last_rendered_delta = ""
+            self._last_rendered_newlines = 0
             event = replace(event, content=None)
         rendered = self.renderer.render(event)
         if rendered:
@@ -196,12 +205,76 @@ class StreamingEventHandler:
             self.indicator.start()
 
     def on_model_response_delta(self, event: ModelResponseDelta) -> None:
-        """Write streamed model text immediately without durable duplication."""
+        """Render streamed model text incrementally as live markdown.
+
+        Delimiters that only make sense in a final render (```-fence lines,
+        ``` language headers, and bullet list markers) are held back until
+        they are known to be complete, so typing output stays clean. The
+        accumulated text is redrawn in place on each delta. On a non-TTY
+        output (pipes, CI, tests) plain text is appended so logs stay clean.
+        """
         if not self._streaming_response:
             self.indicator.stop()
             self._streaming_response = True
-        self.output.write(event.content)
+            self._streamed_text = ""
+        self._streamed_text += event.content
+
+        interactive = getattr(self.output, "isatty", lambda: False)()
+        if not interactive or not self._color_enabled:
+            # Non-interactive output: append plain text like before.
+            self.output.write(event.content)
+            self.output.flush()
+            return
+
+        rendered = render_markdown_lite(
+            self._streamed_text,
+            enable_colors=self._color_enabled,
+            preserve_leading=True,
+        )
+        # Prevent flicker: only draw when the rendered text changed, and
+        # suppress live block/fence delimiters until they complete.
+        deferred = self._deferred_fence(rendered)
+        if not deferred or deferred == self._last_rendered_delta:
+            return
+        # Move the cursor back up over the previous render, then clear
+        # everything below before redrawing. This redraws incrementally
+        # (only the lines that actually changed appear on screen) while
+        # `\x1b[J` also removes any stale lines when a redraw is shorter
+        # than the previous one (e.g. code-fence delimiters are dropped).
+        if self._last_rendered_newlines:
+            self.output.write(f"\x1b[{self._last_rendered_newlines}A")
+        self.output.write("\r\x1b[J")
+        self.output.write(rendered)
+        self._last_rendered_delta = deferred
+        self._last_rendered_newlines = rendered.count("\n")
         self.output.flush()
+
+    _last_rendered_delta: str = field(default="", init=False)
+    _last_rendered_newlines: int = field(default=0, init=False)
+
+    @property
+    def _color_enabled(self) -> bool:
+        """Whether markdown color rendering is enabled for this handler."""
+        flag = getattr(self.theme, "enable_colors", True)
+        return True if flag is None else bool(flag)
+
+    def _deferred_fence(self, text: str) -> str:
+        """Strip a trailing code fence or list marker from the live preview.
+
+        These delimiters only make sense once complete (a ``` open line,
+        ``` language headers, or ``- ``/``1. `` bullets); showing them while
+        they are still being typed would flicker on every delta.
+        """
+        lines = text.splitlines()
+        while lines and lines[-1].startswith("```"):
+            lines.pop()
+        while lines and (
+            lines[-1].startswith("- ")
+            or lines[-1].startswith("1. ")
+            or (len(lines[-1]) >= 2 and lines[-1][0].isdigit() and lines[-1][1] == ".")
+        ):
+            lines.pop()
+        return "\n".join(lines)
 
     def on_tool_executed(self, event: ToolExecuted) -> None:
         """Render tool execution result."""

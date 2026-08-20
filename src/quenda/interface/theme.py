@@ -117,6 +117,10 @@ class InterfaceTheme:
     output_stream: TextIO | None = None
     error_stream: TextIO | None = None
 
+    # === Markdown rendering ===
+    # When None, color is enabled only when output is a TTY.
+    enable_colors: bool | None = None
+
     @classmethod
     def minimal(cls) -> InterfaceTheme:
         """

@@ -46,14 +46,25 @@ class MarkdownLiteRenderer:
         self._yellow_on = "\033[33m" if enable_colors else ""
         self._yellow_off = "\033[0m" if enable_colors else ""
 
-    def render(self, text: str) -> str:
-        """Render markdown-lite text to terminal-friendly output."""
+        # True when the renderer was constructed without ANSI color support.
+        # Streaming output needs this to decide whether redrawing in place
+        # (cursor control) is safe.
+        self._no_color = not enable_colors
+
+    def render(self, text: str, *, preserve_leading: bool = False) -> str:
+        """Render markdown-lite text to terminal-friendly output.
+
+        Args:
+            text: Markdown text to render.
+            preserve_leading: Keep leading whitespace on the first line. Used
+                when rendering a continuation fragment that starts mid-line.
+        """
         if not text:
             return text
 
         result = text
         result, code_blocks = self._protect_code_blocks(result)
-        result = self._normalize_indentation(result)
+        result = self._normalize_indentation(result, preserve_leading=preserve_leading)
         result = self._render_headers(result)
         result = self._render_horizontal_rules(result)
         result = self._render_unordered_lists(result)
@@ -91,12 +102,25 @@ class MarkdownLiteRenderer:
                 text = text.replace(placeholder, f"{indented}")
         return text
 
-    def _normalize_indentation(self, text: str) -> str:
+    def _normalize_indentation(self, text: str, *, preserve_leading: bool = False) -> str:
         """Strip accidental indentation from non-empty lines.
 
         The renderer does not support nested markdown structure, so keeping
         leading spaces usually makes prose drift to the right for no benefit.
+
+        The first line is exempted when ``preserve_leading`` is set, so a
+        continuation fragment that starts mid-line (e.g. a streaming delta
+        that continues ``- item`` or ``1. item``) keeps its indentation.
         """
+        if preserve_leading:
+            lines = text.splitlines(keepends=True)
+            first = lines[0] if lines else ""
+            rest = "".join(lines[1:])
+            first_clean = first.lstrip(" ")
+            rest_clean = "\n".join(
+                line.lstrip(" ") if line.strip() else line for line in rest.splitlines()
+            )
+            return first_clean + rest_clean
         return "\n".join(line.lstrip(" ") if line.strip() else line for line in text.splitlines())
 
     def _render_headers(self, text: str) -> str:
@@ -264,9 +288,12 @@ def render_markdown_lite(
     enable_colors: bool = True,
     wrap: bool = False,
     width: int | None = None,
+    preserve_leading: bool = False,
 ) -> str:
     """Render markdown-lite text."""
-    rendered = MarkdownLiteRenderer(enable_colors=enable_colors).render(text)
+    rendered = MarkdownLiteRenderer(enable_colors=enable_colors).render(
+        text, preserve_leading=preserve_leading
+    )
     if wrap:
         rendered = wrap_terminal_text(rendered, width=width)
     return rendered
